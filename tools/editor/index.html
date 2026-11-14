@@ -83,9 +83,16 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
 details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; }
 #saveBox details > * + * { margin-top: 8px; }
 
-#zoneBox { display: flex; flex-direction: column; gap: 8px; }
+#zoneBox, #intelBox { display: flex; flex-direction: column; gap: 8px; }
+#intelList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#intelList li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
+#intelList b { color: var(--warn); }
+#layerBox { top: 64px; right: 12px; flex-direction: column; align-items: stretch; gap: 4px; max-height: 60%; overflow-y: auto; font-size: 12.5px; padding: 10px 12px; }
+#layerBox label { display: flex; gap: 8px; align-items: center; }
+#layerBox .n { margin-left: auto; font: 11px var(--mono); color: var(--ink-2); padding-left: 12px; }
 #zoneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#zoneList li { display: grid; grid-template-columns: 62px 1fr 70px auto; gap: 6px; align-items: center; font-size: 12.5px; }
+#zoneList li { display: grid; grid-template-columns: 52px 1fr 54px auto; gap: 6px; align-items: center; font-size: 12.5px; }
+#zoneList li label { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
 #zoneList input { padding: 3px 6px; }
 #list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 176px; overflow-y: auto; }
 #list li button { width: 100%; display: grid; grid-template-columns: 30px 62px 1fr auto; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 6px; cursor: pointer; font-size: 12.5px; }
@@ -176,6 +183,10 @@ body.dragging #drop { display: flex; }
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
     <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf.</p>
+    <div id="intelBox" hidden>
+      <h2>Intel items</h2>
+      <ul id="intelList"></ul>
+    </div>
     <div id="zoneBox" hidden>
       <h2>Zones</h2>
       <ul id="zoneList"></ul>
@@ -241,10 +252,12 @@ body.dragging #drop { display: flex; }
     <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
     <button class="btn" type="button" id="fit">Fit</button>
     <span class="sep"></span>
+    <button class="btn" type="button" id="layersBtn" hidden title="Switch parts of the 3D map on and off, for example invisible walls">Layers</button>
     <button class="btn" type="button" id="floorDown" title="Hide the top floor to see the one below (PageDown)">Floor ▼</button>
     <button class="btn" type="button" id="floorUp" title="Show the next floor up (PageUp)">Floor ▲</button>
     <label id="floor" title="Hide everything above this height"><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10" aria-label="Show up to height"><output id="ceilingOut" for="ceiling">all floors</output></label>
   </div>
+  <div class="float" id="layerBox" hidden></div>
   <div class="float" id="banner" hidden></div>
   <div class="float" id="status"><span id="hintLine"></span><span id="coords"></span></div>
   <div id="drop">Drop map, scenario or recon files</div>
@@ -453,6 +466,13 @@ function loadExample() {
 }
 
 // ------------------------------------------------------------------ scenario data
+// While connected to the game, a new enemy starts out looking at the nearest player.
+function facePlayers(e) {
+  let best = null;
+  for (const p of live.players) { const d = Math.hypot(p.pos[0] - e.pos[0], p.pos[2] - e.pos[2]); if (!best || d < best.d) best = { d, p }; }
+  if (live.on && best && best.d > 0.5) e.yaw = (Math.atan2(best.p.pos[0] - e.pos[0], best.p.pos[2] - e.pos[2]) * 180 / Math.PI + 360) % 360;
+  return e;
+}
 function newEnemy(pos, role, group) {
   return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0,
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
@@ -485,8 +505,8 @@ function spawnOf(e) {
 }
 const objectivesOut = () => state.objectives.map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
 const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained }));
-const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius) }));
-const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)) }));
+const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius), facePlayer: z.facePlayer !== false }));
+const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false }));
 function enemyOf(s, i) {
   if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
   const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
@@ -501,21 +521,55 @@ function enemyOf(s, i) {
 }
 // Solid map geometry exported by the mod. Returns the number of triangles kept.
 function loadGeo(buf, name) {
-  const dv = new DataView(buf), nv = dv.getInt32(8, true), ni = dv.getInt32(12, true);
-  if (nv <= 0 || ni <= 0 || 16 + nv * 12 + ni * 4 > buf.byteLength) throw new Error('The 3D map file is cut off or damaged. Export it again.');
-  const pos = new Float32Array(buf.slice(16, 16 + nv * 12)), all = new Uint32Array(buf.slice(16 + nv * 12, 16 + nv * 12 + ni * 4));
+  const dv = new DataView(buf), v2 = new TextDecoder().decode(new Uint8Array(buf, 0, 6)) === 'MLGEO2';
+  const nv = dv.getInt32(8, true), ni = dv.getInt32(12, true), ng = v2 ? dv.getInt32(16, true) : 0, head = v2 ? 20 : 16;
+  if (nv <= 0 || ni <= 0 || ng < 0 || head + nv * 12 + ni * 4 + ng * 16 > buf.byteLength) throw new Error('The 3D map file is cut off or damaged. Export it again.');
+  const pos = new Float32Array(buf.slice(head, head + nv * 12)), all = new Uint32Array(buf.slice(head + nv * 12, head + nv * 12 + ni * 4));
+  let groups = [], layers = [], o = head + nv * 12 + ni * 4;
+  if (v2) {
+    const g = new Int32Array(buf.slice(o, o + ng * 16)); o += ng * 16;
+    for (let i = 0; i < ng; i++) groups.push({ start: g[i * 4], count: g[i * 4 + 1], layer: g[i * 4 + 2], flags: g[i * 4 + 3] });
+    for (let l = 0; l < 32 && o + 4 <= buf.byteLength; l++) { const len = dv.getInt32(o, true); o += 4; layers.push(new TextDecoder().decode(new Uint8Array(buf, o, len)) || 'Layer ' + l); o += len; }
+  }
+  if (!groups.length) groups = [{ start: 0, count: all.length, layer: -1, flags: 1 }];
   // Maps are wrapped in invisible boxes many kilometres wide. Drawn, they would hide everything else.
-  const keep = new Uint32Array(all.length); let n = 0;
+  const bad = new Uint8Array(Math.ceil(all.length / 3)); let good = 0;
   for (let t = 0; t + 2 < all.length; t += 3) {
     const a = all[t] * 3, b = all[t + 1] * 3, c = all[t + 2] * 3;
-    if (a >= pos.length || b >= pos.length || c >= pos.length) continue;
     const far = (p, q) => Math.abs(pos[p] - pos[q]) > 1000 || Math.abs(pos[p + 1] - pos[q + 1]) > 1000 || Math.abs(pos[p + 2] - pos[q + 2]) > 1000;
-    if (far(a, b) || far(b, c) || far(c, a)) continue;
-    keep[n++] = all[t]; keep[n++] = all[t + 1]; keep[n++] = all[t + 2];
+    if (a >= pos.length || b >= pos.length || c >= pos.length || far(a, b) || far(b, c) || far(c, a)) bad[t / 3] = 1; else good++;
   }
-  state.geo = { positions: pos, indices: keep.slice(0, n), name };
-  view3d.dropGeo();
-  return n / 3;
+  state.geo = { positions: pos, all, bad, groups, layers, name };
+  view3d.dropGeo(); syncLayers();
+  return good;
+}
+// Which layers of the 3D map are switched off (remembered between visits).
+const hidden = { layers: new Set(), unmodelled: false };
+try { const h = JSON.parse(localStorage.getItem('missionlab-hidden-layers') || 'null'); if (h) { hidden.layers = new Set(h.layers || []); hidden.unmodelled = !!h.unmodelled; } } catch (e) { /* no storage */ }
+const layerName = g => g.layer < 0 ? 'Everything' : (state.geo.layers[g.layer] || 'Layer ' + g.layer);
+function geoIndices() {
+  const geo = state.geo, out = new Uint32Array(geo.all.length); let n = 0;
+  for (const g of geo.groups) {
+    if (hidden.layers.has(layerName(g)) || (hidden.unmodelled && !(g.flags & 1))) continue;
+    for (let t = g.start; t + 2 < g.start + g.count; t += 3) { if (geo.bad[t / 3 | 0]) continue; out[n++] = geo.all[t]; out[n++] = geo.all[t + 1]; out[n++] = geo.all[t + 2]; }
+  }
+  return out.slice(0, n);
+}
+function syncLayers() {
+  const geo = state.geo, box = $('layerBox'), has = !!(geo && geo.layers.length);
+  $('layersBtn').hidden = !(has && state.mode === '3d'); if (!has || state.mode !== '3d') box.hidden = true;
+  if (!has) return;
+  const sums = new Map(); let bare = 0;
+  for (const g of geo.groups) { const k = layerName(g); sums.set(k, (sums.get(k) || 0) + g.count / 3); if (!(g.flags & 1)) bare += g.count / 3; }
+  box.textContent = '';
+  const row = (text, n, on, change) => {
+    const l = document.createElement('label'), c = document.createElement('input'), t = document.createElement('span'), k = document.createElement('span');
+    c.type = 'checkbox'; c.checked = on; c.addEventListener('change', () => { change(c.checked); try { localStorage.setItem('missionlab-hidden-layers', JSON.stringify({ layers: [...hidden.layers], unmodelled: hidden.unmodelled })); } catch (e) { /* no storage */ } view3d.dropGeo(); });
+    t.textContent = text; k.className = 'n'; k.textContent = Math.round(n).toLocaleString('en'); l.append(c, t, k); box.appendChild(l);
+  };
+  const title = document.createElement('b'); title.textContent = 'Show in 3D (triangles)'; box.appendChild(title);
+  [...sums.entries()].sort((p, q) => q[1] - p[1]).forEach(([name, n]) => row(name, n, !hidden.layers.has(name), on => { if (on) hidden.layers.delete(name); else hidden.layers.add(name); }));
+  row('Shapes without a visible model (often invisible walls)', bare, !hidden.unmodelled, on => { hidden.unmodelled = !on; });
 }
 function scenarioText() {
   const o = scenarioObject(), head = Object.assign({}, o); delete head.spawns;
@@ -555,7 +609,7 @@ async function openFiles(files) {
   for (const f of files) {
     try {
       const buf = await f.arrayBuffer(), head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
-      if (buf.byteLength > 16 && new TextDecoder().decode(new Uint8Array(buf, 0, 6)) === 'MLGEO1') {
+      if (buf.byteLength > 16 && /^MLGEO[12]$/.test(new TextDecoder().decode(new Uint8Array(buf, 0, 6)))) {
         const n = loadGeo(buf, f.name);
         notes.push(f.name + ': ' + Math.round(n).toLocaleString('en') + ' triangles of walls, floors and furniture for the 3D view.');
         if (state.mode !== '3d') setMode('3d');
@@ -852,7 +906,7 @@ const view3d = (() => {
     const geo = state.geo; if (!geo) return;
     const p = new Float32Array(geo.positions.length);
     for (let i = 0; i < p.length; i += 3) { p[i] = geo.positions[i]; p[i + 1] = geo.positions[i + 1]; p[i + 2] = -geo.positions[i + 2]; }
-    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(p, 3)); g.setIndex(new T.BufferAttribute(geo.indices, 1));
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(p, 3)); g.setIndex(new T.BufferAttribute(geoIndices(), 1));
     geoMesh = new T.Mesh(g, new T.MeshPhongMaterial({ color: col('ground-lo').lerp(col('ground-hi'), 0.4), flatShading: true, shininess: 0, side: T.DoubleSide }));
     scene.add(geoMesh);
   }
@@ -951,6 +1005,7 @@ const view3d = (() => {
   function invalidate3() { if (renderer && state.mode === '3d' && !raf) raf = requestAnimationFrame(frame); }
   return {
     available, home, focus, syncEnemies, syncLive, screenOf, invalidate: invalidate3,
+    lookFrom(p) { if (!renderer) return; camera.position.set(p[0], p[1] + 7, -(p[2] - 8)); yaw = 0; pitch = -0.72; invalidate3(); },
     open() { if (!mapMesh && state.map) buildMap(); if (!geoMesh && state.geo) buildGeo(); if (!started) { started = true; home(); } syncEnemies(); },
     dropMap() { if (renderer) { buildMap(); if (state.mode === '3d') home(); } },
     dropGeo() { if (renderer) { buildGeo(); buildMap(); } },
@@ -981,7 +1036,7 @@ function setMode(mode) {
   $('mode2d').setAttribute('aria-pressed', String(mode === '2d')); $('mode3d').setAttribute('aria-pressed', String(mode === '3d'));
   $('zoomIn').hidden = $('zoomOut').hidden = mode === '3d';
   if (mode === '3d') view3d.open();
-  setTool(state.tool); invalidate();
+  syncLayers(); setTool(state.tool); invalidate();
 }
 function setTool(t) {
   state.tool = t;
@@ -1032,7 +1087,7 @@ canvas.addEventListener('pointerup', ev => {
   if (state.tool === 'add' && !d.target) {
     if (y === null) return say('Nobody can walk there. Click on the shaded ground' + (isFinite(state.ceiling) ? ', or raise "Show up to" to reach higher floors.' : '.'));
     pushUndo();
-    state.enemies.push(newEnemy([wx, y, wz], state.lastRole === 'Patrol' ? 'Guard' : state.lastRole, state.lastGroup));
+    state.enemies.push(facePlayers(newEnemy([wx, y, wz], state.lastRole === 'Patrol' ? 'Guard' : state.lastRole, state.lastGroup)));
     state.selected = state.enemies.length - 1; changed(); say('Enemy ' + state.enemies.length + ' placed.');
   } else if (state.tool === 'route' && !d.target) {
     const e = state.enemies[state.selected];
@@ -1117,6 +1172,15 @@ function syncSide() {
 
   setVal($('title'), state.title); setVal($('scene'), state.scene);
   $('zoneBox').hidden = !state.zones.length; $('objectiveHint').hidden = !state.objectives.length;
+  $('intelBox').hidden = !state.objectives.length;
+  const il = $('intelList'); il.textContent = '';
+  state.objectives.forEach(o => {
+    const li = document.createElement('li'), name = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button');
+    name.textContent = o.label + (o.obtained ? ' (picked up)' : ''); at.textContent = o.pos[0].toFixed(0) + ', ' + o.pos[2].toFixed(0) + ' · height ' + o.pos[1].toFixed(1); at.className = 'hint';
+    show.type = 'button'; show.className = 'btn'; show.textContent = 'Show'; show.style.padding = '3px 8px';
+    show.addEventListener('click', () => { if (state.mode === '3d') view3d.lookFrom(o.pos); else { state.view.cx = o.pos[0]; state.view.cz = o.pos[2]; state.view.scale = Math.max(state.view.scale, 14); invalidate(); } });
+    li.append(name, at, show); il.appendChild(li);
+  });
   const zl = $('zoneList');
   if (!zl.contains(document.activeElement)) {
     zl.textContent = '';
@@ -1129,7 +1193,10 @@ function syncSide() {
       rad.addEventListener('change', () => { pushUndo(); z.radius = Math.max(2, Math.min(200, +rad.value || 10)); changed(); });
       del.type = 'button'; del.className = 'btn danger'; del.textContent = 'Delete'; del.style.padding = '3px 8px';
       del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); changed(); });
-      li.append(label, bound, rad, del); zl.appendChild(li);
+      const face = document.createElement('label'), box = document.createElement('input');
+      box.type = 'checkbox'; box.checked = z.facePlayer !== false; box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
+      face.append(box, document.createTextNode('Its enemies appear looking at the player who walks in'));
+      li.append(label, bound, rad, del, face); zl.appendChild(li);
     });
   }
   $('triggerRow').hidden = !(e && state.zones.length);
@@ -1178,7 +1245,7 @@ $('trigger').addEventListener('change', ev => edit(e => { e.trigger = +ev.target
 function addZone(x, y, z) {
   pushUndo();
   const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1;
-  state.zones.push({ id, name: '', pos: [x, y, z], radius: 12 });
+  state.zones.push({ id, name: '', pos: [x, y, z], radius: 12, facePlayer: true });
   const e = state.enemies[state.selected];
   changed();
   say('Zone ' + id + ' placed. Select an enemy and set "Appears" to bind it to this zone.' + (e ? '' : ''));
@@ -1188,6 +1255,7 @@ $('del').addEventListener('click', removeSelected);
 $('title').addEventListener('input', ev => { state.title = ev.target.value; changed(); });
 $('scene').addEventListener('input', ev => { state.scene = ev.target.value; changed(); });
 document.querySelectorAll('#tools .tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+$('layersBtn').addEventListener('click', () => { $('layerBox').hidden = !$('layerBox').hidden; });
 $('mode2d').addEventListener('click', () => setMode('2d'));
 $('mode3d').addEventListener('click', () => setMode('3d'));
 window.addEventListener('keyup', ev => view3d.key(ev.key.toLowerCase(), false));
@@ -1208,7 +1276,7 @@ function click3d(p, enemyIndex, button) {
     const walk = level !== undefined;
     const e = newEnemy(walk ? [p[0], level, p[2]] : p, walk ? (state.lastRole === 'Patrol' ? 'Guard' : state.lastRole) : 'Guard', state.lastGroup);
     if (!walk) e.fixed = true;                           // on furniture, a roof, under a bed: it can only stay put
-    state.enemies.push(e); state.selected = state.enemies.length - 1; changed();
+    state.enemies.push(facePlayers(e)); state.selected = state.enemies.length - 1; changed();
     say('Enemy ' + state.enemies.length + ' placed' + (walk ? '.' : ' as a fixed sentry: nobody can walk on that spot.'));
   } else if (state.tool === 'route') {
     const e = state.enemies[state.selected];
@@ -1279,6 +1347,7 @@ $('copy').addEventListener('click', async () => {
 // ------------------------------------------------------------------ live link to the running game
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
 // players and enemies where they are right now. Every change you make here is carried out in the game.
+const PAGE_STAMP = '__ML_PAGE_STAMP__';        // filled in by the game when it serves this page
 const live = { on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0 };
 const api = (path, body) => fetch(path, body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-MissionLab': '1' }, body: JSON.stringify(body) }).then(r => r.json());
 function startLive() {
@@ -1298,6 +1367,10 @@ function clearLive() {
   view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
 }
 async function applyLive(s) {
+  if (s && s.page && PAGE_STAMP.indexOf('ML_PAGE_STAMP') < 0 && s.page !== PAGE_STAMP) {
+    let tried = ''; try { tried = sessionStorage.getItem('ml-reloaded') || ''; } catch (e) { /* no storage */ }
+    if (tried !== s.page) { try { sessionStorage.setItem('ml-reloaded', s.page); } catch (e) { /* no storage */ } location.reload(); return; }
+  }
   if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
   if (s.navFile && s.navFile !== live.nav) {                 // a new mission: fetch its map from the game folder
     live.nav = s.navFile; live.hasGeo = false; live.rev = null;
@@ -1323,7 +1396,7 @@ async function applyLive(s) {
   }
   const waiting = mine.filter(m => m.waiting).length;
   $('liveStatus').textContent = (s.scene || 'Mission') + ': ' + live.players.length + (live.players.length === 1 ? ' player, ' : ' players, ') + live.enemies.length + ' enemies alive' + (waiting ? ', ' + waiting + ' waiting' : '') + (s.busy ? ' (spawning...)' : '');
-  $('liveSpawn').disabled = !waiting; $('liveExport').hidden = !!s.hasGeo;
+  $('liveSpawn').disabled = !waiting; $('liveExport').hidden = false; $('liveExport').textContent = s.hasGeo ? 'Make the 3D map again' : 'Make the 3D map';
   if (s.message && s.message !== live.lastMessage) { live.lastMessage = s.message; say(s.message.replace(/^MissionLab( GM)?: /, '')); }
   view3d.syncLive(); invalidate();
 }
@@ -1339,7 +1412,7 @@ function pushLive() {
 const liveCommand = cmd => api('/api/command', { cmd }).then(s => { live.rev = null; return applyLive(s); }).catch(() => say('The game did not answer.'));
 $('liveSpawn').addEventListener('click', () => liveCommand('spawnWaiting'));
 $('liveClear').addEventListener('click', () => liveCommand('removeAllEnemies'));
-$('liveExport').addEventListener('click', () => { say('Making the 3D map. The game freezes for a few seconds...'); liveCommand('export'); });
+$('liveExport').addEventListener('click', async () => { say('Making the 3D map. The game freezes for a few seconds...'); await liveCommand('export'); live.hasGeo = false; });
 
 // A reload should not lose work. The map itself is not kept; it has to be opened again.
 let draftTimer = 0;

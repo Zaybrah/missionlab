@@ -35,6 +35,7 @@ namespace MissionLab
             public bool Queued;         // on its way to the spawner
             public float TurnedAt = -1f; // facing changed by hand; a live enemy is re-made shortly after
             public float RemakeAt = -1f; // its old enemy has been removed; spawn the new one at this time
+            public float FaceYaw = float.NaN; // for this one spawn: look this way instead (toward the player who reached its zone)
         }
         private sealed class Batch { public readonly List<Marker> Items = new List<Marker>(); public string Type; }
 
@@ -238,10 +239,15 @@ namespace MissionLab
                 if (_later != null) EnsureMarkers();
                 foreach (TriggerPlan z in _zones)
                 {
-                    if (Fired.Contains(z.Id) || !PlayerInside(z)) continue;
+                    if (Fired.Contains(z.Id) || !PlayerInside(z, out Vector3 who)) continue;
                     Fired.Add(z.Id);
                     var mine = new List<Marker>();
-                    foreach (Marker m in _markers) if (m.Plan.Trigger == z.Id && m.Waiting && !m.Queued) mine.Add(m);
+                    foreach (Marker m in _markers)
+                    {
+                        if (m.Plan.Trigger != z.Id || !m.Waiting || m.Queued) continue;
+                        if (z.FacePlayer) m.FaceYaw = (Mathf.Atan2(who.x - m.Plan.Pos.X, who.z - m.Plan.Pos.Z) * Mathf.Rad2Deg + 360f) % 360f;
+                        mine.Add(m);
+                    }
                     Enqueue(mine);
                     Tell("zone " + (string.IsNullOrEmpty(z.Name) ? z.Id.ToString() : "'" + z.Name + "'") + " reached: " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear"));
                 }
@@ -325,7 +331,7 @@ namespace MissionLab
             {
                 var points = new List<GameObject>();
                 int n = 0;
-                foreach (Marker m in batch.Items) points.Add(Director.BuildPoint(template, raid.transform, m.Plan, "ML gm " + (++n)));
+                foreach (Marker m in batch.Items) { points.Add(Director.BuildPoint(template, raid.transform, m.Plan, "ML gm " + (++n), m.FaceYaw)); m.FaceYaw = float.NaN; }
                 list.Clear();
                 foreach (GameObject p in points) list.Add(p);
                 gm.botAmount = points.Count;
@@ -701,8 +707,9 @@ namespace MissionLab
             }
         }
 
-        private static bool PlayerInside(TriggerPlan z)
+        private static bool PlayerInside(TriggerPlan z, out Vector3 where)
         {
+            where = Vector3.zero;
             var players = PlayerMaster.AllPlayerMasters;
             for (int i = 0; players != null && i < players.Count; i++)
             {
@@ -711,7 +718,7 @@ namespace MissionLab
                 if (body == null) continue;
                 Vector3 p = body.transform.position;
                 float dx = p.x - z.Pos.X, dz = p.z - z.Pos.Z;
-                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 4f) return true;
+                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 4f) { where = p; return true; }
             }
             return false;
         }
@@ -760,8 +767,9 @@ namespace MissionLab
         /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
         internal static string StateJson()
         {
-            if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
-            if (Time.unscaledTime - Director.HandledAt < 3f) return "{\"mission\":false,\"starting\":true}";
+            string page = ",\"page\":" + Q(LiveLink.PageStamp);
+            if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false" + page + "}";
+            if (Time.unscaledTime - Director.HandledAt < 3f) return "{\"mission\":false,\"starting\":true" + page + "}";
             EnsureMarkers(); MapBots(gm, null);
             HashSet<IntPtr> alive = Alive(gm);
             var byBot = new Dictionary<IntPtr, int>();
@@ -769,7 +777,7 @@ namespace MissionLab
             string nav = LiveNavFile();
             var sb = new System.Text.StringBuilder(8192);
             var rev = new System.Text.StringBuilder(2048);
-            sb.Append("{\"mission\":true,\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
+            sb.Append("{\"mission\":true").Append(page).Append(",\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
             sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo")) ? "true" : "false");
             sb.Append(",\"busy\":").Append(_running != null || Pending.Count > 0 ? "true" : "false");
             sb.Append(",\"message\":").Append(Q(Time.unscaledTime < Director.BannerUntil ? Director.Banner : ""));

@@ -428,10 +428,10 @@ namespace MissionLab
         /// One spawn point for one planned enemy: a copy of one of the map's own points, so it carries
         /// everything the game expects, with our position and behaviour written over it.
         /// </summary>
-        internal static GameObject BuildPoint(GameObject template, Transform parent, SpawnPlan s, string name)
+        internal static GameObject BuildPoint(GameObject template, Transform parent, SpawnPlan s, string name, float yawOverride = float.NaN)
         {
             var pos = new Vector3(s.Pos.X, s.Pos.Y + (s.Fixed ? 0f : 0.1f), s.Pos.Z);
-            GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)template, pos, Quaternion.Euler(0f, s.Yaw, 0f), parent).Cast<GameObject>();
+            GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)template, pos, Quaternion.Euler(0f, float.IsNaN(yawOverride) ? s.Yaw : yawOverride, 0f), parent).Cast<GameObject>();
             go.name = name;
             bool patrol = s.Role == SpawnRole.Patrol && s.Patrol.Count >= 2 && !s.Fixed;
 

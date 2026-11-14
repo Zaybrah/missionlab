@@ -26,6 +26,12 @@ namespace MissionLab
         internal static int Port;
         internal static bool Running;
         internal static float LastRequestAt = -100f;    // game time of the last request from the browser
+        internal static volatile string PageStamp = "";  // changes whenever the editor page on disk changes
+
+        private static string Stamp(string file)
+        {
+            try { var info = new FileInfo(file); return info.Exists ? info.Length + "-" + info.LastWriteTimeUtc.Ticks : ""; } catch { return ""; }
+        }
 
         public static void Start(int port)
         {
@@ -53,6 +59,12 @@ namespace MissionLab
             if (r.Path == "/" || r.Path == "/index.html")
             {
                 string page = Path.Combine(_webDir, "index.html");
+                if (File.Exists(page))
+                {
+                    // The page learns which copy it is, so a tab left open reloads itself after an update.
+                    string stamp = Stamp(page); PageStamp = stamp;
+                    return new HttpResponse { ContentType = "text/html; charset=utf-8", Body = System.Text.Encoding.UTF8.GetBytes(File.ReadAllText(page).Replace("__ML_PAGE_STAMP__", stamp)) };
+                }
                 return File.Exists(page) ? HttpResponse.File(page, "text/html; charset=utf-8")
                                          : new HttpResponse { ContentType = "text/plain; charset=utf-8", Body = System.Text.Encoding.UTF8.GetBytes("The editor page is missing. Copy tools/editor/index.html to BepInEx/MissionLab/web/index.html.") };
             }
@@ -76,6 +88,7 @@ namespace MissionLab
         {
             if (!Running) return;
             _navFile = GameMaster.LiveNavFile();
+            if (UnityEngine.Time.frameCount % 240 == 0) PageStamp = Stamp(Path.Combine(_webDir, "index.html"));
             for (int n = 0; n < 8 && Jobs.TryDequeue(out Job job); n++)
             {
                 LastRequestAt = UnityEngine.Time.unscaledTime;

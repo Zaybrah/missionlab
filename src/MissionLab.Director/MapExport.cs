@@ -16,8 +16,11 @@ namespace MissionLab
     /// folder, so the scenario editor can show the map in 3D. Nothing is uploaded and the
     /// file is not meant to be shared: it is derived from the game's own assets.
     ///
-    /// File: "MLGEO1\n\0", int32 vertexCount, int32 indexCount, float32 x,y,z per vertex
-    /// (world metres), uint32 per index (triangles).
+    /// File: "MLGEO2\n\0", int32 vertexCount, int32 indexCount, int32 groupCount, float32 x,y,z
+    /// per vertex (world metres), uint32 per index (triangles), then per group (one collider):
+    /// int32 indexStart, indexCount, layer, flags (1 = a visible model belongs to it, 2 = box,
+    /// 4 = mesh), then the 32 layer names (int32 byte length + UTF-8). The groups let the
+    /// editor hide whole layers, such as invisible walls.
     /// </summary>
     internal static class MapExport
     {
@@ -30,6 +33,7 @@ namespace MissionLab
             var cache = new Dictionary<IntPtr, MeshData>();
             var pos = new List<float>(1 << 20);
             var idx = new List<int>(1 << 21);
+            var groups = new List<int>(1 << 14);
             int meshColliders = 0, boxes = 0, others = 0, skipped = 0, readable = 0, gpu = 0, unreadable = 0, gpuErrors = 0;
             string firstGpuError = null;
             bool gpuAllowed = true;
@@ -48,6 +52,9 @@ namespace MissionLab
                     Vector3 extent = c.bounds.size;
                     if (extent.x > 2000f || extent.y > 2000f || extent.z > 2000f) { skipped++; continue; }   // invisible boxes around the whole world
                     Matrix4x4 m = c.transform.localToWorldMatrix;
+                    int groupStart = idx.Count, flags = 0;
+                    try { if (c.GetComponent<Renderer>() != null || c.GetComponentInChildren<Renderer>() != null || c.GetComponentInParent<Renderer>() != null) flags |= 1; } catch { }
+                    int layer = c.gameObject.layer;
 
                     MeshCollider mc = c.TryCast<MeshCollider>();
                     if (mc != null)
@@ -71,11 +78,12 @@ namespace MissionLab
                             if (data == null) unreadable++;
                             cache[mesh.Pointer] = data;
                         }
-                        if (data == null) { AddBox(pos, idx, c.bounds); continue; }           // at least show where it is
+                        if (data == null) { AddBox(pos, idx, c.bounds); Group(groups, groupStart, idx.Count, layer, flags | 2); continue; }           // at least show where it is
                         meshColliders++;
                         int at = pos.Count / 3;
                         for (int k = 0; k < data.V.Length; k++) { Vector3 w = m.MultiplyPoint3x4(data.V[k]); pos.Add(w.x); pos.Add(w.y); pos.Add(w.z); }
                         for (int k = 0; k < data.T.Length; k++) idx.Add(at + data.T[k]);
+                        Group(groups, groupStart, idx.Count, layer, flags | 4);
                         continue;
                     }
 
@@ -91,11 +99,13 @@ namespace MissionLab
                             pos.Add(w.x); pos.Add(w.y); pos.Add(w.z);
                         }
                         foreach (int q in BoxTris) idx.Add(at + q);
+                        Group(groups, groupStart, idx.Count, layer, flags | 2);
                         continue;
                     }
 
                     others++;                                                                 // capsules, spheres, wheels: their bounding box
                     AddBox(pos, idx, c.bounds);
+                    Group(groups, groupStart, idx.Count, layer, flags | 2);
                 }
                 catch (Exception) { skipped++; }
             }
@@ -104,15 +114,22 @@ namespace MissionLab
             using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
             using (var w = new BinaryWriter(fs))
             {
-                w.Write(Encoding.ASCII.GetBytes("MLGEO1\n\0"));
+                w.Write(Encoding.ASCII.GetBytes("MLGEO2\n\0"));
                 w.Write(pos.Count / 3);
                 w.Write(idx.Count);
+                w.Write(groups.Count / 4);
                 var fb = new byte[pos.Count * 4];
                 Buffer.BlockCopy(pos.ToArray(), 0, fb, 0, fb.Length);
                 w.Write(fb);
                 var ib = new byte[idx.Count * 4];
                 Buffer.BlockCopy(idx.ToArray(), 0, ib, 0, ib.Length);
                 w.Write(ib);
+                foreach (int g in groups) w.Write(g);
+                for (int layerNo = 0; layerNo < 32; layerNo++)
+                {
+                    byte[] name = Encoding.UTF8.GetBytes(LayerMask.LayerToName(layerNo) ?? "");
+                    w.Write(name.Length); w.Write(name);
+                }
             }
             sw.Stop();
             long bytes = new FileInfo(path).Length;
@@ -120,6 +137,11 @@ namespace MissionLab
                    "distinct meshes: " + readable + " readable, " + gpu + " read from the graphics card, " + unreadable + " unreadable" +
                    (firstGpuError != null ? " (" + gpuErrors + " errors, first: " + firstGpuError + ")" : "") +
                    " | " + (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB in " + sw.ElapsedMilliseconds + " ms";
+        }
+
+        private static void Group(List<int> groups, int start, int end, int layer, int flags)
+        {
+            if (end > start) { groups.Add(start); groups.Add(end - start); groups.Add(layer); groups.Add(flags); }
         }
 
         private static readonly int[] BoxTris = { 0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4, 2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5 };

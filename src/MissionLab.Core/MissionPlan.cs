@@ -15,6 +15,7 @@ namespace MissionLab.Core
         public V3 Pos;
         public float Radius = 10f;
         public string Name;
+        public bool FacePlayer = true;    // its enemies appear looking at the player who walked in
     }
 
     /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
@@ -85,7 +86,7 @@ namespace MissionLab.Core
             {
                 TriggerPlan z = zones[i];
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append((z.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
-                  .Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius)).Append('}');
+                  .Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius)).Append(",\"facePlayer\":").Append(z.FacePlayer ? "true" : "false").Append('}');
             }
             return sb.Append(']').ToString();
         }
@@ -200,7 +201,8 @@ namespace MissionLab.Core
                     {
                         if (z.ValueKind != JsonValueKind.Object || !TryVec(z, "pos", out V3 zp)) continue;
                         int id = (int)Num(z, "id", 0);
-                        if (id > 0) plan.Triggers.Add(new TriggerPlan { Id = id, Pos = zp, Radius = System.Math.Max(1f, Num(z, "radius", 10)), Name = Str(z, "name") });
+                        if (id > 0) plan.Triggers.Add(new TriggerPlan { Id = id, Pos = zp, Radius = System.Math.Max(1f, Num(z, "radius", 10)), Name = Str(z, "name"),
+                                                                   FacePlayer = !(z.TryGetProperty("facePlayer", out JsonElement fp) && fp.ValueKind == JsonValueKind.False) });
                     }
                 if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)
                     foreach (JsonElement o in items.EnumerateArray())
