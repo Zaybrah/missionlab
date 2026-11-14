@@ -100,6 +100,16 @@ int failures = 0;
 // An intel item goes by its kind: the map has several copies of each and uses one per mission.
 foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phone_2", "cell phone"), ("Cell Phone", "cell phone"), ("Sim cards 12", "sim cards"), ("AK47", "ak47"), ("  Laptop_3", "laptop"), ("_7", "_7"), ("", "") })
     if (ObjectivePlan.Kind(name) != kind) { Console.WriteLine("  FAIL: kind of '" + name + "' is '" + ObjectivePlan.Kind(name) + "', expected '" + kind + "'"); failures++; }
+// Doors: a setting that is left out stays left out, through save and load.
+{
+    var dp = MissionPlan.FromJson("{\"spawns\":[],\"doors\":[{\"name\":\"A\",\"pos\":[1,2,3],\"locked\":true},{\"pos\":[4,5,6.126],\"enemiesCanOpen\":false,\"locked\":false},{\"pos\":[7,8,9]},{\"name\":\"no place\",\"locked\":true}]}");
+    bool ok = dp.Doors.Count == 2 && dp.Doors[0].Locked == true && dp.Doors[0].EnemiesCanOpen == null && dp.Doors[1].Locked == false && dp.Doors[1].EnemiesCanOpen == false;
+    string text = MissionPlan.DoorsJson(dp.Doors);
+    var back = MissionPlan.FromJson("{\"spawns\":[],\"doors\":" + text + "}");
+    ok = ok && back.Doors.Count == 2 && MissionPlan.DoorsJson(back.Doors) == text && text.Contains("6.13") && !text.Contains("null");
+    ok = ok && MissionPlan.FromJson(dp.ToJson()).Doors.Count == 2;
+    if (!ok) { Console.WriteLine("  FAIL: doors do not survive save and load: " + text); failures++; }
+}
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {

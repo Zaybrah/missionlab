@@ -40,6 +40,19 @@ namespace MissionLab.Core
         }
     }
 
+    /// <summary>
+    /// What a scenario wants of one of the map's doors. A door is known by where its hinge is, which never moves.
+    /// Left out, a setting stays with the game, which locks some doors by chance.
+    /// </summary>
+    public sealed class DoorPlan
+    {
+        public string Name;             // for the reader only
+        public V3 Pos;
+        public bool? Locked;
+        public bool? EnemiesCanOpen;
+        public bool HasWish => Locked.HasValue || EnemiesCanOpen.HasValue;
+    }
+
     public sealed class SpawnPlan
     {
         public int Group;
@@ -74,7 +87,28 @@ namespace MissionLab.Core
         public List<SpawnPlan> Spawns = new List<SpawnPlan>();
         public List<TriggerPlan> Triggers = new List<TriggerPlan>();
         public List<ObjectivePlan> Objectives = new List<ObjectivePlan>();
+        public List<DoorPlan> Doors = new List<DoorPlan>();
         public List<string> Notes = new List<string>();
+
+        public static string DoorsJson(List<DoorPlan> doors)
+        {
+            var sb = new StringBuilder(128);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            sb.Append('[');
+            bool first = true;
+            foreach (DoorPlan d in doors)
+            {
+                if (!d.HasWish) continue;
+                sb.Append(first ? "" : ",").Append("{\"name\":\"").Append((d.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
+                  .Append(F(d.Pos.X)).Append(',').Append(F(d.Pos.Y)).Append(',').Append(F(d.Pos.Z)).Append(']');
+                if (d.Locked.HasValue) sb.Append(",\"locked\":").Append(d.Locked.Value ? "true" : "false");
+                if (d.EnemiesCanOpen.HasValue) sb.Append(",\"enemiesCanOpen\":").Append(d.EnemiesCanOpen.Value ? "true" : "false");
+                sb.Append('}');
+                first = false;
+            }
+            return sb.Append(']').ToString();
+        }
 
         public static string ObjectivesJson(List<ObjectivePlan> items)
         {
@@ -151,6 +185,7 @@ namespace MissionLab.Core
             for (int i = 0; i < Notes.Count; i++) { if (i > 0) sb.Append(','); sb.Append(S(Notes[i])); }
             sb.Append("],\"triggers\":").Append(TriggersJson(Triggers));
             sb.Append(",\"objectives\":").Append(ObjectivesJson(Objectives));
+            sb.Append(",\"doors\":").Append(DoorsJson(Doors));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
             {
@@ -227,6 +262,13 @@ namespace MissionLab.Core
                         string name = o.ValueKind == JsonValueKind.Object ? Str(o, "name") : null;
                         if (!string.IsNullOrEmpty(name) && TryVec(o, "pos", out V3 op)) plan.Objectives.Add(new ObjectivePlan { Name = name, Pos = op, Yaw = Num(o, "yaw", 0) });
                     }
+                if (root.TryGetProperty("doors", out JsonElement doors) && doors.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement d in doors.EnumerateArray())
+                    {
+                        if (d.ValueKind != JsonValueKind.Object || !TryVec(d, "pos", out V3 dp)) continue;
+                        var door = new DoorPlan { Name = Str(d, "name"), Pos = dp, Locked = Flag(d, "locked"), EnemiesCanOpen = Flag(d, "enemiesCanOpen") };
+                        if (door.HasWish) plan.Doors.Add(door);
+                    }
                 // An enemy that names a zone that does not exist is simply there from the start.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0 && !plan.Triggers.Exists(t => t.Id == s.Trigger)) s.Trigger = 0;
                 plan.RequestedEnemies = plan.Spawns.Count;
@@ -239,6 +281,10 @@ namespace MissionLab.Core
 
         private static float Num(JsonElement o, string name, float fallback) =>
             o.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number ? v.GetSingle() : fallback;
+
+        /// <summary>true, false, or nothing said.</summary>
+        private static bool? Flag(JsonElement o, string name) =>
+            !o.TryGetProperty(name, out JsonElement v) ? (bool?)null : v.ValueKind == JsonValueKind.True ? true : v.ValueKind == JsonValueKind.False ? false : (bool?)null;
 
         private static bool Bool(JsonElement o, string name) =>
             o.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.True;

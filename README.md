@@ -81,6 +81,30 @@ changing places. "Usual place" in the editor's item list puts an item back.
 Whether a friend without the mod sees a moved item in its new place is not yet
 confirmed. If they do not, leave `"objectives"` empty.
 
+### Doors
+Each of the game's doors can be locked, unlocked, or closed to enemies ("enemies cannot
+open it"). The game locks some doors by chance, different ones each mission; a door a
+scenario names is always as the scenario says. In the editor doors are thick lines on
+the map (see-through slabs in 3D): choose Select, click one, and set it. Connected to
+the game this works live, so a Game Master can lock a door behind the players.
+
+The editor learns where the doors are from the game (connected) or from a recon file
+written by Recon 0.2.2 or later. A scenario stores them as
+
+```json
+"doors": [{ "name": "Door (3)", "pos": [-12.5, 0.3, -6.0], "locked": true, "enemiesCanOpen": false }]
+```
+
+`pos` is the door's hinge; the nearest door within 0.75 m is taken. A setting that is
+left out stays with the game. Not yet tested in the game.
+
+### Enemy types on any map
+Every enemy can be given one of the game's enemy types (`"type"` in a scenario, "Enemy
+type" in the editor once it is connected to the game or a recon file is open). The list
+is the same on every map, so types that the game itself only uses on one map, such as
+the suicide bomber of the Afghan maps, can be placed anywhere. An enemy with a chosen
+type appears a few seconds after the mission starts.
+
 ### Target person
 In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
 the game spawns its own target type there at the start. A generated layout also moves the

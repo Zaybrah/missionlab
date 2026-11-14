@@ -88,6 +88,21 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   already has. Not yet confirmed in a co-op session.
 - Co-op (0.13.0, one unmodded client, Clean House): the client can join; enemies from a
   scenario, enemies spawned later through `ServerSpawnAI`, and zone spawns all appear for it.
+- Doors are `DoorV2` (a `NetworkBehaviour`; `Door` is empty and `DoorScript` is an unused asset).
+  Lock state is `CurrentlyLocked`, a SyncVar, set with `Server_SetDoorLocked(bool)`. A door rolls
+  its own state from `StartLocked` / `StartLockedChance`, and `AiCantOpen` / `AiCantOpenChance`
+  keeps enemies from opening it. `PivotTransform` is the hinge, `DoorHitBox` the leaf's box
+  collider, `LatchHealth` and two hinge healths with `ShootableDoorPart`s take the damage, and
+  `DoorOpenableNavLink` / `DoorWalkableNavLink` are the A* links through the doorway. From the
+  class listing only: when a door rolls, and the scale of the two chances, are not yet seen in game.
+- Enemy types: `GameManager.AllAITypes` is one list for the whole game (17 entries, the same on
+  Suburb, Mexico Depot and Georgia), including "BOT V2 Insurgent Afghan 1 Suicide Bomber Variant"
+  and "BOT V2 Russian Spetnaz".
+- Other systems present in the code: `InfiltrationManager.infilMethods` (per map, some flagged
+  `VehicleInfiltration` with fixed animation clips; Suburb: Alpha 1-3 on foot, Hotel 1 a ride),
+  `aiReinforcement` + `ReinforcementTrigger` (no map seen so far uses them), `VehicleAI` gun
+  vehicles (Mexico Depot: 1 type, 6 spots), `ProximityExplosive` (no map seen ships one),
+  `ExfilZone.canExtract` (SyncVar), `AlarmSystem`, `VectorTimeOfDay` (hour, rain, sandstorm).
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

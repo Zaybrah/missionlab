@@ -87,6 +87,9 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #intelList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 #intelList li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
 #intelList b { color: var(--warn); }
+#doorsBox { display: flex; flex-direction: column; gap: 8px; }
+#doorList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#doorList li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
 #layerBox { top: 64px; right: 12px; flex-direction: column; align-items: stretch; gap: 4px; max-height: 60%; overflow-y: auto; font-size: 12.5px; padding: 10px 12px; }
 #layerBox label { display: flex; gap: 8px; align-items: center; }
 #layerBox .n { margin-left: auto; font: 11px var(--mono); color: var(--ink-2); padding-left: 12px; }
@@ -188,6 +191,11 @@ body.dragging #drop { display: flex; }
       <h2>Intel items</h2>
       <ul id="intelList"></ul>
     </div>
+    <div id="doorsBox" hidden>
+      <h2>Doors <span id="doorCount"></span></h2>
+      <p class="hint">Thick lines on the map are doors. Choose Select and click one to lock or unlock it. The game locks some doors by chance, different ones each mission; a door you set is always as you set it.</p>
+      <ul id="doorList"></ul>
+    </div>
     <div id="zoneBox" hidden>
       <h2>Zones</h2>
       <ul id="zoneList"></ul>
@@ -217,6 +225,16 @@ body.dragging #drop { display: flex; }
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
       <button class="btn danger" id="del" type="button">Delete enemy</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-door" id="doorPanel" hidden>
+    <h2 id="h-door">Selected door</h2>
+    <p class="hint" id="doorNow"></p>
+    <div class="field"><label for="doorLock">Lock</label><select id="doorLock"><option value="">Leave to the game</option><option value="1">Locked</option><option value="0">Unlocked</option></select></div>
+    <div class="field"><label for="doorAi">Enemies</label><select id="doorAi"><option value="">Leave to the game</option><option value="1">Can open it</option><option value="0">Cannot open it</option></select></div>
+    <div class="row">
+      <button class="btn" id="doorClear" type="button">Leave both to the game</button>
     </div>
   </section>
 
@@ -292,6 +310,8 @@ const state = {
   zones: [],            // { id, pos:[x,y,z], radius, name }: enemies bound to a zone appear when a player walks into it
   fired: [],            // live: ids of the zones players have already reached
   objectives: [],       // the mission's own intel items: { name, label, pos:[x,y,z], yaw, obtained }
+  doors: [],            // the map's doors: { name, pos:[hinge], mid:[x,y,z], locked, enemiesCanOpen (true, false, or null = left to the game), known }
+  door: -1,             // the selected door
   mode: '2d',
 };
 const undoStack = [];
@@ -493,6 +513,7 @@ function scenarioObject() {
     notes: ['Made with the MissionLab scenario editor'],
     triggers: zonesOut(),
     objectives: objectivesOut(true),
+    doors: doorsOut(),
     spawns: state.enemies.map(spawnOf),
   };
 }
@@ -509,6 +530,41 @@ function spawnOf(e) {
 const objectivesOut = forFile => state.objectives.filter(o => !forFile || o.moved !== false).map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
 const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained,
   home: isVec(o.home) ? o.home.slice(0, 3) : null, homeYaw: num(o.homeYaw, 0), moved: o.moved !== false }));
+// Doors. A door is known by where its hinge is. Only doors somebody set are written; null means "left to the game".
+const tri = v => v === true ? true : v === false ? false : null;
+const doorSet = d => d.locked !== null || d.enemiesCanOpen !== null;
+const doorsOut = () => state.doors.filter(doorSet).map(d => {
+  const o = { name: d.name || '', pos: r3(d.pos) };
+  if (d.locked !== null) o.locked = d.locked;
+  if (d.enemiesCanOpen !== null) o.enemiesCanOpen = d.enemiesCanOpen;
+  return o;
+});
+// The map's doors as the game or a recon file lists them.
+const doorsIn = list => (Array.isArray(list) ? list : []).filter(d => d && d.active !== false && (isVec(d.hinge) || isVec(d.pos))).map(d => {
+  const pos = (isVec(d.hinge) ? d.hinge : d.pos).slice(0, 3);
+  return { name: typeof d.name === 'string' ? d.name : '', pos, mid: isVec(d.mid) ? d.mid.slice(0, 3) : pos.slice(), locked: tri(d.locked), enemiesCanOpen: tri(d.enemiesCanOpen),
+    isLocked: tri(d.isLocked), enemiesKeptOut: tri(d.enemiesKeptOut), broken: !!d.broken, known: true };
+});
+function nearDoor(pos, list) {
+  let best = -1, bd = 0.75;
+  list.forEach((d, i) => { const dist = Math.hypot(d.pos[0] - pos[0], d.pos[1] - pos[1], d.pos[2] - pos[2]); if (dist < bd) { bd = dist; best = i; } });
+  return best;
+}
+// Settings go onto the doors we know. One for a door we have not seen is kept as it is, so nothing is lost before the map's doors are known.
+function applyDoorWishes(wishes) {
+  for (const w of (Array.isArray(wishes) ? wishes : [])) {
+    if (!w || !isVec(w.pos) || (tri(w.locked) === null && tri(w.enemiesCanOpen) === null)) continue;
+    const i = nearDoor(w.pos, state.doors);
+    if (i >= 0) { state.doors[i].locked = tri(w.locked); state.doors[i].enemiesCanOpen = tri(w.enemiesCanOpen); }
+    else state.doors.push({ name: typeof w.name === 'string' ? w.name : '', pos: w.pos.slice(0, 3), mid: w.pos.slice(0, 3), locked: tri(w.locked), enemiesCanOpen: tri(w.enemiesCanOpen), isLocked: null, enemiesKeptOut: null, broken: false, known: false });
+  }
+}
+function setDoorWishes(wishes) {
+  state.doors = state.doors.filter(d => d.known);
+  for (const d of state.doors) { d.locked = null; d.enemiesCanOpen = null; }
+  applyDoorWishes(wishes); state.door = -1;
+}
+function setKnownDoors(list) { const wishes = doorsOut(); state.doors = list; applyDoorWishes(wishes); state.door = -1; }
 const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius), facePlayer: z.facePlayer !== false }));
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false }));
 function enemyOf(s, i) {
@@ -588,14 +644,14 @@ function loadScenario(obj, name) {
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
-  state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives);
+  state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives); setDoorWishes(root.doors);
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
   // A generated mission names one scene (day or night). Matching by map file covers both.
   state.scene = record ? '' : (typeof root.scene === 'string' ? root.scene : '');
   const nav = typeof root.navFile === 'string' ? root.navFile : '';
   if (nav) state.navFile = nav;
-  if (state.map && state.map.isExample) { state.map = null; state.infils = []; state.authored = []; }
+  if (state.map && state.map.isExample) { state.map = null; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; }
   state.example = false;
   return list.length + ' enemies loaded from ' + name + '.';
 }
@@ -607,7 +663,12 @@ function loadRecon(obj, name) {
   state.infils = pts;
   const spawns = (obj.raid || {}).botSpawnPoints;
   state.authored = (Array.isArray(spawns) ? spawns : []).filter(s => s && isVec(s.pos)).map(s => s.pos.slice(0, 3));
-  return pts.length + ' insertion points and ' + state.authored.length + ' of the game\'s own spawn points loaded from ' + name + (obj.scene ? ' (' + obj.scene + ').' : '.');
+  const doors = doorsIn(obj.doors);
+  if (Array.isArray(obj.doors)) setKnownDoors(doors);
+  // The game's enemy types, so one can be chosen without the game running (the suicide bomber, for one).
+  const kinds = ((obj.gameManager || {}).allAITypes || []).filter(t => typeof t === 'string' && t);
+  if (kinds.length && !live.on) live.types = kinds;
+  return pts.length + ' insertion points, ' + (doors.length ? doors.length + ' doors' : 'no door list') + ' and ' + state.authored.length + ' of the game\'s own spawn points loaded from ' + name + (obj.scene ? ' (' + obj.scene + ').' : '.');
 }
 async function openFiles(files) {
   const notes = [];
@@ -622,7 +683,7 @@ async function openFiles(files) {
         const tris = await readMapFile(buf);
         const wasExample = state.example;
         state.map = makeMap(tris, f.name, false); state.navFile = f.name; state.example = false;
-        if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; undoStack.length = 0; }
+        if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0; }
         state.ceiling = Infinity; view3d.dropMap(); fit();
         notes.push(f.name + ': ' + state.map.n.toLocaleString('en') + ' walkable triangles.');
       } else {
@@ -741,6 +802,27 @@ function draw() {
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(o.label, x + 11, y + 1); ctx.fillStyle = css.warn; ctx.fillText(o.label, x + 11, y + 1);
     ctx.globalAlpha = 1;
   }
+
+  // Doors: a thick line where the leaf is. Grey is left to the game, red is locked, blue is unlocked.
+  state.doors.forEach((d, n) => {
+    if (d.mid[1] - 1 > state.ceiling + 0.4) return;
+    const g = doorLine(d), set = doorSet(d), lockedNow = d.locked === true || (d.locked === null && d.isLocked === true);
+    const stroke = (w, c) => { ctx.beginPath(); ctx.moveTo(g[0], g[1]); ctx.lineTo(g[2], g[3]); ctx.lineWidth = w; ctx.strokeStyle = c; ctx.stroke(); };
+    ctx.lineCap = 'round'; ctx.globalAlpha = d.broken ? 0.3 : 1;
+    stroke(n === state.door ? 13 : set ? 9 : 7, n === state.door ? css.ink : css.panel);          // a casing, so the door stands out from the ground
+    if (n === state.door) stroke(9, css.panel);
+    stroke(set ? 6 : 3, d.locked === true ? css.enemy : d.locked === false ? css.friend : css.ink);
+    if (!set && lockedNow) { ctx.setLineDash([3, 4]); stroke(2, css.enemy); ctx.setLineDash([]); }      // the game locked this one itself
+    const mx = (g[0] + g[2]) / 2, my = (g[1] + g[3]) / 2;
+    if (d.locked !== null) {                       // a filled knob is locked, a hollow one unlocked: not told by colour alone
+      ctx.beginPath(); ctx.arc(mx, my, 4.5, 0, 6.2832); ctx.fillStyle = d.locked ? css.enemy : css.panel; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = d.locked ? css.panel : css.friend; ctx.stroke();
+    }
+    if (d.enemiesCanOpen === false) {              // a bar across the door: enemies do not get through
+      const dx = g[2] - g[0], dy = g[3] - g[1], l = Math.hypot(dx, dy) || 1, px = -dy / l * 8, py = dx / l * 8;
+      ctx.beginPath(); ctx.moveTo(mx - px, my - py); ctx.lineTo(mx + px, my + py); ctx.lineWidth = 2.5; ctx.strokeStyle = css.ink; ctx.stroke();
+    }
+    ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
+  });
 
   // Patrol routes.
   state.enemies.forEach((e, i) => {
@@ -967,6 +1049,15 @@ const view3d = (() => {
       const tag = label(o.label.slice(0, 6)); tag.position.set(o.pos[0], o.pos[1] + 0.9, -o.pos[2]); extraGroup.add(tag);
     });
     for (const p of state.infils) { const c = new T.Mesh(new T.ConeGeometry(0.5, 1.4, 4), new T.MeshBasicMaterial({ color: blue })); c.position.set(p[0], p[1] + 0.7, -p[2]); extraGroup.add(c); }
+    // Doors: a see-through slab over the leaf. Faint is left to the game, red is locked, blue is unlocked.
+    const grey = col('ink-2');
+    state.doors.forEach((d, n) => {
+      const dx = d.mid[0] - d.pos[0], dz = d.mid[2] - d.pos[2], half = Math.hypot(dx, dz), set = doorSet(d), lockedNow = d.locked === true || (d.locked === null && d.isLocked === true);
+      const slab = new T.Mesh(new T.BoxGeometry(half > 0.15 ? half * 2 : 0.9, 2.0, 0.2),
+        new T.MeshBasicMaterial({ color: d.locked === true || (!set && lockedNow) ? red : d.locked === false ? blue : grey, transparent: true, opacity: n === state.door ? 0.9 : set ? 0.65 : lockedNow ? 0.4 : 0.2, depthWrite: false }));
+      slab.position.set(d.mid[0], d.mid[1], -d.mid[2]); slab.rotation.y = Math.atan2(dz, dx); slab.userData.door = n; enemyGroup.add(slab);
+      if (d.enemiesCanOpen === false) { const bar = new T.Mesh(new T.BoxGeometry(0.12, 0.12, 1.1), new T.MeshBasicMaterial({ color: ink })); bar.position.copy(slab.position); bar.rotation.y = slab.rotation.y; extraGroup.add(bar); }
+    });
     invalidate3();
   }
   // Players and the enemies' real positions, redrawn at every update from the game.
@@ -999,6 +1090,9 @@ const view3d = (() => {
   function pick(ev, button) {
     const hit = ground(ev), hitEnemy = button === 2 ? null : enemyHit(ev);
     if (hitEnemy && (!hit || hitEnemy.distance <= hit.distance + 0.3)) return click3d(null, hitEnemy.object.userData.enemy, button);
+    // A door is clicked through its slab, but not through a wall in front of it.
+    const hitDoor = button === 0 && state.tool === 'select' ? cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.door) && h.point.y <= state.ceiling + 2.4) : null;
+    if (hitDoor && (!hit || hitDoor.distance <= hit.distance + 0.3)) return selectDoor(hitDoor.object.userData.door);
     click3d(hit ? [hit.point.x, hit.point.y, -hit.point.z] : null, -1, button);
   }
   function frame(t) {
@@ -1037,12 +1131,19 @@ function warningFor(e) {
 }
 
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut() })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); state.selected = Math.min(o.s, o.e.length - 1); changed();
 }
-function select(i) { state.selected = i; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
+// Brings a thing into view. In 3D the floors above it are hidden, or the roof would be all there is to see.
+function showAt(p, top) {
+  if (state.mode !== '3d') { state.view.cx = p[0]; state.view.cz = p[2]; state.view.scale = Math.max(state.view.scale, 14); invalidate(); return; }
+  if (state.ceiling > top) { state.ceiling = top; const c = $('ceiling'); c.value = Math.min(+c.max, Math.max(+c.min, top)); syncSide(); }
+  view3d.lookFrom(p);
+}
+function selectDoor(n) { state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }
+function select(i) { state.selected = i; if (i >= 0) state.door = -1; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
 function setMode(mode) {
   if (mode === '3d' && !view3d.available()) return say('The 3D view could not start. It needs an internet connection to load its 3D library, and a browser with WebGL.');
   state.mode = mode;
@@ -1065,7 +1166,25 @@ function hit(sx, sy) {
   for (let n = 0; n < state.objectives.length; n++) { const [x, y] = toScreen(state.objectives[n].pos[0], state.objectives[n].pos[2]); if (Math.hypot(x - sx, y - sy) <= 10) return { objective: n }; }
   let best = -1, bestD = 13;
   state.enemies.forEach((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]), d = Math.hypot(x - sx, y - sy); if (d < bestD) { bestD = d; best = i; } });
-  return best >= 0 ? { enemy: best } : null;
+  if (best >= 0) return { enemy: best };
+  const door = state.tool === 'select' ? doorAtScreen(sx, sy) : -1;
+  return door >= 0 ? { door } : null;
+}
+// Where a door's leaf is on screen: from the hinge through the middle, as far again.
+function doorLine(d) {
+  const [hx, hy] = toScreen(d.pos[0], d.pos[2]), [mx, my] = toScreen(d.mid[0], d.mid[2]);
+  if (Math.hypot(mx - hx, my - hy) < 2) return [mx - 6, my, mx + 6, my];          // only a place is known
+  return [hx, hy, 2 * mx - hx, 2 * my - hy];
+}
+function doorAtScreen(sx, sy) {
+  let best = -1, bd = 8;
+  state.doors.forEach((d, n) => {
+    if (d.mid[1] - 1 > state.ceiling + 0.4) return;
+    const g = doorLine(d), dx = g[2] - g[0], dy = g[3] - g[1], t = Math.max(0, Math.min(1, ((sx - g[0]) * dx + (sy - g[1]) * dy) / (dx * dx + dy * dy || 1)));
+    const dist = Math.hypot(sx - g[0] - t * dx, sy - g[1] - t * dy);
+    if (dist < bd) { bd = dist; best = n; }
+  });
+  return best;
 }
 let drag = null;
 canvas.addEventListener('pointerdown', ev => {
@@ -1073,8 +1192,9 @@ canvas.addEventListener('pointerdown', ev => {
   const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top;
   let target = ev.button === 0 ? hit(sx, sy) : null;
   if (target && 'enemy' in target && state.tool === 'route' && state.selected >= 0 && target.enemy !== state.selected) target = null;   // drawing a route past another enemy
-  drag = { sx, sy, moved: false, target, pan: !target || ev.button !== 0, cx: state.view.cx, cz: state.view.cz, saved: false, button: ev.button };
+  drag = { sx, sy, moved: false, target, pan: !target || ev.button !== 0 || 'door' in target, cx: state.view.cx, cz: state.view.cz, saved: false, button: ev.button };   // a door stays where it is
   if (target && 'enemy' in target) select(target.enemy);
+  if (target && 'door' in target) selectDoor(target.door);
 });
 canvas.addEventListener('pointermove', ev => {
   const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top, [wx, wz] = toWorld(sx, sy), y = groundAt(wx, wz);
@@ -1184,6 +1304,33 @@ function syncSide() {
     syncPos();
   }
 
+  // Doors. Choosing an enemy by any route lets go of the door.
+  if (state.selected >= 0 && state.selected !== syncSide.lastEnemy) state.door = -1;
+  syncSide.lastEnemy = state.selected;
+  const dr = state.doors[state.door];
+  $('doorPanel').hidden = !dr;
+  if (dr) {
+    setVal($('doorLock'), dr.locked === null ? '' : dr.locked ? '1' : '0'); setVal($('doorAi'), dr.enemiesCanOpen === null ? '' : dr.enemiesCanOpen ? '1' : '0');
+    $('doorNow').textContent = (dr.name || 'Door') + ' at ' + dr.mid[0].toFixed(0) + ', ' + dr.mid[2].toFixed(0) + ' · height ' + dr.mid[1].toFixed(1)
+      + (dr.broken ? ' · broken open' : dr.isLocked === true ? ' · locked right now' : dr.isLocked === false ? ' · unlocked right now' : '')
+      + (dr.enemiesKeptOut === true ? ' · enemies cannot open it right now' : '')
+      + (dr.known ? '' : ' · not in the list of this map\'s doors, so it is drawn as a short line where the file says it is');
+    $('doorClear').disabled = !doorSet(dr);
+  }
+  const setDoors = state.doors.filter(doorSet).length, knownDoors = state.doors.filter(d => d.known).length;
+  $('doorsBox').hidden = !state.doors.length;
+  $('doorCount').textContent = state.doors.length ? (knownDoors ? knownDoors + ' on this map, ' : '') + setDoors + ' set' : '';
+  const dl = $('doorList'); dl.textContent = '';
+  state.doors.forEach((d, n) => {
+    if (!doorSet(d)) return;
+    const li = document.createElement('li'), what = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button');
+    what.textContent = [d.locked === true ? 'Locked' : d.locked === false ? 'Unlocked' : '', d.enemiesCanOpen === false ? 'enemies kept out' : d.enemiesCanOpen === true ? 'enemies can open' : ''].filter(Boolean).join(', ').replace(/^e/, 'E');
+    at.textContent = d.mid[0].toFixed(0) + ', ' + d.mid[2].toFixed(0) + ' · height ' + d.mid[1].toFixed(1); at.className = 'hint';
+    show.type = 'button'; show.className = 'btn'; show.textContent = 'Show'; show.style.padding = '3px 8px';
+    show.addEventListener('click', () => { selectDoor(n); showAt(d.mid, d.mid[1] + 1.4); });
+    li.append(what, at, show); dl.appendChild(li);
+  });
+
   setVal($('title'), state.title); setVal($('scene'), state.scene);
   $('zoneBox').hidden = !state.zones.length; $('objectiveHint').hidden = !state.objectives.length;
   $('intelBox').hidden = !state.objectives.length;
@@ -1192,7 +1339,7 @@ function syncSide() {
     const li = document.createElement('li'), name = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button'), back = document.createElement('button');
     name.textContent = o.label + (o.obtained ? ' (picked up)' : o.moved !== false && o.home ? ' (moved)' : ''); at.textContent = o.pos[0].toFixed(0) + ', ' + o.pos[2].toFixed(0) + ' · height ' + o.pos[1].toFixed(1); at.className = 'hint';
     show.type = 'button'; show.className = 'btn'; show.textContent = 'Show'; show.style.padding = '3px 8px';
-    show.addEventListener('click', () => { if (state.mode === '3d') view3d.lookFrom(o.pos); else { state.view.cx = o.pos[0]; state.view.cz = o.pos[2]; state.view.scale = Math.max(state.view.scale, 14); invalidate(); } });
+    show.addEventListener('click', () => showAt(o.pos, o.pos[1] + 1.8));
     // Only while connected to the game do we know where the game itself put the item.
     back.type = 'button'; back.className = 'btn'; back.textContent = 'Usual place'; back.style.padding = '3px 8px'; back.hidden = !(o.home && o.moved !== false);
     back.title = 'Put it back where the game laid it. It is then left out of the scenario file.';
@@ -1282,6 +1429,10 @@ $('undo').addEventListener('click', undo);
 $('fit').addEventListener('click', fit);
 $('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1.4); });
 $('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
+const doorEdit = fn => { const d = state.doors[state.door]; if (!d) return; pushUndo(); fn(d); changed(); };
+$('doorLock').addEventListener('change', ev => doorEdit(d => { d.locked = ev.target.value === '' ? null : ev.target.value === '1'; }));
+$('doorAi').addEventListener('change', ev => doorEdit(d => { d.enemiesCanOpen = ev.target.value === '' ? null : ev.target.value === '1'; }));
+$('doorClear').addEventListener('click', () => doorEdit(d => { d.locked = null; d.enemiesCanOpen = null; }));
 $('ceiling').addEventListener('input', ev => { state.ceiling = +ev.target.value >= +ev.target.max ? Infinity : +ev.target.value; syncSide(); invalidate(); });
 // A click in the 3D view: the same tools as on the flat map. p = [x, y, z] in game coordinates.
 function click3d(p, enemyIndex, button) {
@@ -1371,7 +1522,7 @@ const live = { on: false, rev: null, nav: '', hasGeo: false, sending: false, pen
 const api = (path, body) => fetch(path, body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-MissionLab': '1' }, body: JSON.stringify(body) }).then(r => r.json());
 function startLive() {
   live.on = true; document.body.classList.add('live');
-  state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; undoStack.length = 0;
+  state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0;
   $('save').hidden = false; $('save').textContent = 'Save in the game';
   pollLive();
 }
@@ -1382,7 +1533,7 @@ async function pollLive() {
 }
 function clearLive() {
   if (!state.map && !state.enemies.length) return;
-  state.map = null; state.geo = null; state.enemies = []; state.selected = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
+  state.map = null; state.geo = null; state.enemies = []; state.selected = -1; state.doors = []; state.door = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
   view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
 }
 function syncChoices(s) {
@@ -1417,6 +1568,8 @@ async function applyLive(s) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
+    const doorWas = state.doors[state.door] ? state.doors[state.door].pos : null;
+    state.doors = doorsIn(s.doors); state.door = doorWas ? nearDoor(doorWas, state.doors) : -1;
     state.enemies = mine.map((m, i) => Object.assign(enemyOf(m, i), { id: m.id, live: !!m.live, waiting: !!m.waiting }));
     const again = selId ? state.enemies.findIndex(e => e.id === selId) : -1;
     state.selected = again >= 0 ? again : (selIx >= 0 && selIx < state.enemies.length && !selId ? selIx : -1);
@@ -1433,7 +1586,7 @@ function pushLive() {
   live.pending = true; clearTimeout(live.pushTimer);
   live.pushTimer = setTimeout(async () => {
     live.sending = true; live.pending = false;
-    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), objectives: objectivesOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
+    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), objectives: objectivesOut(), doors: doorsOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
     catch (e) { live.sending = false; say('The change did not reach the game. Is it still running?'); }
   }, 150);
 }
@@ -1452,7 +1605,7 @@ function restoreDraft() {
   try {
     const raw = localStorage.getItem(DRAFT_KEY); if (!raw) return false;
     const o = JSON.parse(raw); if (!o || !Array.isArray(o.spawns) || !o.spawns.length) return false;
-    state.map = null; state.infils = []; state.authored = [];
+    state.map = null; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1;
     loadScenario(o, o.name || 'draft'); state.scene = typeof o.scene === 'string' ? o.scene : ''; undoStack.length = 0;
     say('Your last scenario is back (' + o.spawns.length + ' enemies). Open ' + (state.navFile || 'its map file') + ' to see the ground.');
     return true;
@@ -1469,7 +1622,7 @@ const served = /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)
 if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d };   // for automated tests
+window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt };   // for automated tests
 })();
 </script>
 </body>

@@ -42,6 +42,7 @@ namespace MissionLab
             Section(root, "playerSpawns", PlayerSpawns);
             Section(root, "playerSlots", PlayerSlots);
             Section(root, "timeOfDay", TimeOfDay);
+            Section(root, "doors", Doors);
             Section(root, "navGraphs", NavGraphs);
             if (phase != "early") Section(root, "bots", Bots);
             if (phase == "manual") Section(root, "boards", Boards);
@@ -586,6 +587,30 @@ namespace MissionLab
                     Tf(j, sp.transform);
                     j.V("team", sp.Team);
                     j.V("canSpawnPlayer", sp.CanSpawnPlayer);
+                    j.EndObj();
+                }
+            j.EndArr();
+        }
+
+        /// <summary>Every door of the map: where its hinge and its middle are, and what the game decided for it.</summary>
+        private static void Doors(J j)
+        {
+            var found = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<DoorV2>(), true);
+            j.Arr();
+            if (found != null)
+                for (int i = 0; i < found.Length; i++)
+                {
+                    var d = found[i] == null ? null : found[i].TryCast<DoorV2>();
+                    if (d == null) continue;
+                    j.Obj();
+                    Tf(j, d.transform);
+                    try { Transform p = d.PivotTransform; if (p != null) { j.Vec("hinge", p.position); j.V("hingeYaw", p.rotation.eulerAngles.y); } } catch { }
+                    try { BoxCollider b = d.DoorHitBox; if (b != null) { j.Vec("mid", b.bounds.center); j.Vec("size", b.bounds.size); } } catch { }
+                    try { j.V("startLocked", d.StartLocked); j.V("startLockedChance", d.StartLockedChance); } catch { }
+                    try { j.V("aiCantOpen", d.AiCantOpen); j.V("aiCantOpenChance", d.AiCantOpenChance); } catch { }
+                    try { j.V("currentlyLocked", d.CurrentlyLocked); j.V("isLatched", d.IsLatched); j.V("isDead", d.isDead); } catch { }
+                    try { j.V("latchHealth", d.LatchHealth); j.V("maxRotationY", d.maxRotationY); } catch { }
+                    try { j.V("hasOpenLink", d.DoorOpenableNavLink != null); j.V("hasWalkLink", d.DoorWalkableNavLink != null); } catch { }
                     j.EndObj();
                 }
             j.EndArr();

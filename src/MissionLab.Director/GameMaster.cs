@@ -50,6 +50,10 @@ namespace MissionLab
         private sealed class Pose { public Vector3 Pos; public float Yaw; }
         private static readonly Dictionary<IntPtr, Pose> Homes = new Dictionary<IntPtr, Pose>();   // where the game itself put each item
         private static bool _resendFailed;
+        private static List<DoorPlan> _doorPlans = new List<DoorPlan>();    // what the scenario or the Game Master asked of doors
+        private static List<DoorV2> _doorList;
+        private static float _doorScanAt;
+        private static string _doorError;
         private static IntPtr _raidPtr = IntPtr.Zero;
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
@@ -88,7 +92,19 @@ namespace MissionLab
             // Intel goes to its place straight away. A friend's game is told where every item lies when it finishes
             // loading, which is normally after this moment, so they get the new place with nothing extra being sent.
             MissionPlan plan = Director.CurrentPlan;
-            if (plan == null || plan.Objectives.Count == 0) return;
+            if (plan == null) return;
+            if (plan.Doors.Count > 0)
+            {
+                // Doors too: a door may not have decided yet whether it starts locked, so both its starting
+                // settings and its present state are set, and the state is checked again a few seconds in.
+                try
+                {
+                    _doorPlans = new List<DoorPlan>(plan.Doors);
+                    DirectorPlugin.L.LogInfo("doors at the start: " + ApplyDoors(true));
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set at the start: " + e.Message); }
+            }
+            if (plan.Objectives.Count == 0) return;
             try
             {
                 RaidManager raid = RaidManager.singleton;
@@ -108,6 +124,7 @@ namespace MissionLab
             _aiming = -1; _aimOk = false; FacingChecks.Clear();
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
+            _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -164,6 +181,122 @@ namespace MissionLab
                     if (items[k] != null && items[k].gameObject.activeInHierarchy) found.Add(items[k]);
             }
             return found;
+        }
+
+        // ------------------------------------------------------------------ doors
+        /// <summary>The map's doors that still exist.</summary>
+        private static List<DoorV2> Doors()
+        {
+            float now = Time.unscaledTime;
+            if (_doorList != null && (_doorList.Count > 0 || now < _doorScanAt))
+            {
+                _doorList.RemoveAll(d => d == null);
+                return _doorList;
+            }
+            var list = new List<DoorV2>();
+            try
+            {
+                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<DoorV2>(), false);
+                for (int i = 0; found != null && i < found.Length; i++)
+                {
+                    DoorV2 d = found[i] == null ? null : found[i].TryCast<DoorV2>();
+                    if (d != null) list.Add(d);
+                }
+            }
+            catch (Exception e) { if (_doorError == null) DirectorPlugin.L.LogWarning("doors could not be listed: " + e.Message); _doorError = e.Message; }
+            _doorList = list; _doorScanAt = now + 2f;         // a map without doors is not searched again every moment
+            return list;
+        }
+
+        /// <summary>Where the door turns. This stays put while the door swings, so it tells doors apart.</summary>
+        private static Vector3 Hinge(DoorV2 d)
+        {
+            Transform p = null;
+            try { p = d.PivotTransform; } catch { }
+            return p != null ? p.position : d.transform.position;
+        }
+
+        /// <summary>The middle of the door leaf, for drawing.</summary>
+        private static Vector3 Middle(DoorV2 d)
+        {
+            try { BoxCollider b = d.DoorHitBox; if (b != null) return b.bounds.center; } catch { }
+            return Hinge(d);
+        }
+
+        private static DoorV2 DoorAt(V3 pos)
+        {
+            var want = new Vector3(pos.X, pos.Y, pos.Z);
+            DoorV2 pick = null; float best = 0.75f * 0.75f;
+            foreach (DoorV2 d in Doors())
+            {
+                float sq = (Hinge(d) - want).sqrMagnitude;
+                if (sq < best) { best = sq; pick = d; }
+            }
+            return pick;
+        }
+
+        /// <summary>Locks, unlocks and closes doors to enemies as asked. Lock state is the game's own and reaches every player.</summary>
+        private static string ApplyDoors(bool atStart)
+        {
+            int found = 0, changed = 0, failed = 0;
+            foreach (DoorPlan p in _doorPlans)
+            {
+                DoorV2 d = DoorAt(p.Pos);
+                if (d == null) continue;
+                found++;
+                try
+                {
+                    if (p.Locked.HasValue)
+                    {
+                        bool v = p.Locked.Value;
+                        // 100 is "always" whether the game counts the chance to 1 or to 100.
+                        if (atStart) { d.StartLocked = v; d.StartLockedChance = v ? 100f : 0f; }
+                        if (d.CurrentlyLocked != v) { d.Server_SetDoorLocked(v); changed++; }
+                    }
+                    if (p.EnemiesCanOpen.HasValue)
+                    {
+                        bool cant = !p.EnemiesCanOpen.Value;
+                        if (atStart) d.AiCantOpenChance = cant ? 100f : 0f;
+                        if (d.AiCantOpen != cant) { d.AiCantOpen = cant; changed++; }
+                    }
+                }
+                catch (Exception e) { failed++; _doorError = e.Message; }
+            }
+            int all = 0, locked = 0, shut = 0;
+            foreach (DoorV2 d in Doors())
+            {
+                all++;
+                try { if (d.CurrentlyLocked) locked++; if (d.AiCantOpen) shut++; } catch { }
+            }
+            return _doorPlans.Count + " asked for, " + found + " found, " + changed + " setting(s) changed" + (failed > 0 ? ", " + failed + " failed (" + _doorError + ")" : "") +
+                   "; the map has " + all + " doors, " + locked + " locked, " + shut + " that enemies cannot open";
+        }
+
+        private static string DoorsStateJson(System.Text.StringBuilder rev)
+        {
+            var wish = new Dictionary<IntPtr, DoorPlan>();
+            foreach (DoorPlan p in _doorPlans) { DoorV2 d = DoorAt(p.Pos); if (d != null) wish[d.Pointer] = p; }
+            var sb = new System.Text.StringBuilder(256);
+            sb.Append('[');
+            bool first = true;
+            foreach (DoorV2 d in Doors())
+            {
+                try
+                {
+                    Vector3 hinge = Hinge(d);
+                    bool locked = d.CurrentlyLocked, cant = d.AiCantOpen, dead = d.isDead;
+                    wish.TryGetValue(d.Pointer, out DoorPlan w);
+                    string wl = w != null && w.Locked.HasValue ? (w.Locked.Value ? "true" : "false") : "null";
+                    string we = w != null && w.EnemiesCanOpen.HasValue ? (w.EnemiesCanOpen.Value ? "true" : "false") : "null";
+                    sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(d.gameObject.name)).Append(",\"pos\":").Append(P(hinge)).Append(",\"mid\":").Append(P(Middle(d)))
+                      .Append(",\"isLocked\":").Append(locked ? "true" : "false").Append(",\"enemiesKeptOut\":").Append(cant ? "true" : "false").Append(",\"broken\":").Append(dead ? "true" : "false")
+                      .Append(",\"locked\":").Append(wl).Append(",\"enemiesCanOpen\":").Append(we).Append('}');
+                    rev.Append('D').Append(P(hinge)).Append(locked ? 'l' : 'u').Append(cant ? 'c' : 'o').Append(dead ? 'x' : '-').Append(wl[0]).Append(we[0]);
+                    first = false;
+                }
+                catch { }
+            }
+            return sb.Append(']').ToString();
         }
 
         /// <summary>Remembers where the game itself put an item, the first time the item is seen.</summary>
@@ -328,6 +461,9 @@ namespace MissionLab
                 // By now the game has chosen its objective items; put them where the scenario says.
                 _objectivesPlaced = true;
                 MissionPlan plan = Director.CurrentPlan;
+                // And every door has made up its mind. Said once per mission, asked for or not: it shows what the map has.
+                try { DirectorPlugin.L.LogInfo("doors, a few seconds in: " + ApplyDoors(false)); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be checked: " + e.Message); }
                 if (plan != null && plan.Objectives.Count > 0)
                 {
                     EnsureMarkers();
@@ -938,7 +1074,8 @@ namespace MissionLab
                 rev.Append(o.gameObject.name).Append(P(t.position)).Append(o.isObtained ? 'x' : 'o');
                 first = false;
             }
-            sb.Append("],\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
+            sb.Append("],\"doors\":").Append(DoorsStateJson(rev));
+            sb.Append(",\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
             first = true;
             foreach (int id in Fired) { sb.Append(first ? "" : ",").Append(id); first = false; }
             rev.Append(MissionPlan.TriggersJson(_zones)).Append(Fired.Count);
@@ -968,7 +1105,8 @@ namespace MissionLab
                     if (e.ValueKind == System.Text.Json.JsonValueKind.Object) ids.Add(e.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.Number ? id.GetInt32() : 0);
                 string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
                 string itemsText = root.TryGetProperty("objectives", out var os) && os.ValueKind == System.Text.Json.JsonValueKind.Array ? os.GetRawText() : MissionPlan.ObjectivesJson(_wanted);
-                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"spawns\":" + list.GetRawText() + "}");
+                string doorsText = root.TryGetProperty("doors", out var ds) && ds.ValueKind == System.Text.Json.JsonValueKind.Array ? ds.GetRawText() : MissionPlan.DoorsJson(_doorPlans);
+                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"doors\":" + doorsText + ",\"spawns\":" + list.GetRawText() + "}");
             }
             if (sent.Spawns.Count != ids.Count) return StateJson();
 
@@ -1011,6 +1149,8 @@ namespace MissionLab
             _markers = result; _aiming = -1; _current = -1;
             _zones = sent.Triggers;
             _wanted = sent.Objectives; PlaceObjectives(raid);
+            _doorPlans = sent.Doors;
+            try { ApplyDoors(false); } catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set: " + e.Message); }
             if (fresh.Count > 0) Enqueue(fresh);
             return StateJson();
         }
@@ -1039,6 +1179,7 @@ namespace MissionLab
             var plan = new MissionPlan { Seed = 0, Scene = fromFile ? (Director.CurrentScenarioScene ?? "") : "", NavFile = mapFile };
             foreach (Marker m in _markers) { plan.Spawns.Add(m.Plan); plan.Groups = Math.Max(plan.Groups, m.Plan.Group + 1); }
             plan.Triggers.AddRange(_zones);
+            plan.Doors.AddRange(_doorPlans);
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))
