@@ -70,8 +70,16 @@ At least one enemy must be there from the start.
 The mission's own intel items (for example "Cell Phone" on Clean House) show up in the
 editor as amber markers when it is connected to the game, and can be dragged anywhere; in
 3D onto a table or shelf. A scenario stores them as `"objectives"` (item name, position)
-and they are put there a few seconds after the mission starts. This moves the item on the
-host; whether other players see it there in co-op is not yet checked.
+and they are put there the moment the mission starts.
+
+A map holds a few copies of each item in different places ("Cell Phone_1",
+"Cell Phone_2") and uses one of them per mission. An entry applies to whichever copy
+is in play: `"Cell Phone_1"`, `"Cell Phone_2"` and `"Cell Phone"` all mean the phone.
+Only items somebody moved are written to a scenario; the others keep the game's own
+changing places. "Usual place" in the editor's item list puts an item back.
+
+Whether a friend without the mod sees a moved item in its new place is not yet
+confirmed. If they do not, leave `"objectives"` empty.
 
 ### Target person
 In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
@@ -88,10 +96,14 @@ in the running mission. "Save in the game" writes the scenario file. The page it
 are in the `[LiveLink]` config section.
 
 ## Status
-Director 0.2.2 is tested in game on Suburb Day (solo host): enemies spawn on the
-Tested in game, solo host, on Suburb Day and Mexico Depot Day (0.3.1): generated
-layouts, scenario files, patrol routes, and the F6 live spawn including a chosen
-enemy type. Co-op, HVT/intel/asset missions and the other maps are not tested yet. See `docs/findings.md` for what is known about the game's internals.
+Tested in game as solo host on Suburb (Clean House), Mexico Depot and Georgia:
+generated layouts, scenario files, patrol routes, Game Master mode in the game and in
+the browser, zones, the scenario picker and the empty map.
+
+Tested in co-op on Clean House (0.13.0, host with the mod, one friend without it): the
+friend could join, saw the enemies where the host saw them, and saw the zone enemies
+appear. Moved intel in co-op, target-person placement and the remaining maps are not
+confirmed yet. See `docs/findings.md` for what is known about the game's internals.
 
 ## Source layout
 - `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model (no game references)

@@ -21,9 +21,23 @@ namespace MissionLab.Core
     /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
     public sealed class ObjectivePlan
     {
-        public string Name;     // the item's object name in the map, e.g. "Cell Phone_1"
+        public string Name;     // the item's object name in the map, e.g. "Cell Phone_1", or just its kind, "Cell Phone"
         public V3 Pos;
         public float Yaw;
+
+        /// <summary>
+        /// What an item is, whichever copy of it the mission uses: "Cell Phone_2" and "cell phone" are both "cell phone".
+        /// A map holds several copies of each item in different places and keeps one of them per mission.
+        /// </summary>
+        public static string Kind(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+            int end = name.Length;
+            while (end > 0 && char.IsDigit(name[end - 1])) end--;
+            if (end < name.Length && end > 1 && (name[end - 1] == '_' || name[end - 1] == ' ')) end--;
+            else end = name.Length;                         // digits that are part of the name itself stay
+            return name.Substring(0, end).Trim().ToLowerInvariant();
+        }
     }
 
     public sealed class SpawnPlan

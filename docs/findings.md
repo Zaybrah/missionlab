@@ -75,11 +75,23 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
 - Target person (mode `PVE_HVTKILL`, seen on Georgia): `RaidManager.hvtSpawnPoints` is an array of
   six ordinary spawn points (with `BotSpawnDetails`), `hvtAI` holds the target's type, and
   `GameManager.botHVTAmount` says how many. The target spawned on one of the six and stayed there.
-- Objective items: `RaidManager.objectives` is an array of sets; each set lists candidate
-  `ObjectiveObject`s and the game leaves one active. They are plain scene objects.
+- Objective items: `RaidManager.objectives` is an array of sets (`ObjectiveSetter`, with a `name`
+  such as "Cell Phone"); each set lists candidate `ObjectiveObject`s and the game keeps one per
+  mission. The others are already gone 0.7 s after `OnStartServer`. They are plain scene objects.
+  Clean House: "Cell Phone_1" (-16.66, 1.41, 4.72) or "Cell Phone_2" (-17.89, 4.40, 8.42);
+  "Sim cards_1" or "Sim cards_2" (-17.82, 4.40, 8.55). A scenario that names one copy exactly
+  misses whenever the game picks the other, so items are matched by set (0.13.1).
+- An item has no position sync of its own. Other players get its place in the spawn message
+  (`SpawnMessage.position`), sent when their game becomes ready after loading. Moving it inside
+  the `OnStartServer` hook is therefore early enough; for a later move the host sends the spawn
+  message again (`NetworkServer.SendSpawnMessage`), which a client applies to the object it
+  already has. Not yet confirmed in a co-op session.
+- Co-op (0.13.0, one unmodded client, Clean House): the client can join; enemies from a
+  scenario, enemies spawned later through `ServerSpawnAI`, and zone spawns all appear for it.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.
 
 ## Not yet verified
-- Co-op with unmodded clients, HVT/intel/asset modes, maps other than Suburb and Mexico Depot.
+- Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
+  Suburb, Mexico Depot and Georgia.

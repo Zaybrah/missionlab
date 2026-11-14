@@ -85,7 +85,7 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 
 #zoneBox, #intelBox { display: flex; flex-direction: column; gap: 8px; }
 #intelList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#intelList li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
+#intelList li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
 #intelList b { color: var(--warn); }
 #layerBox { top: 64px; right: 12px; flex-direction: column; align-items: stretch; gap: 4px; max-height: 60%; overflow-y: auto; font-size: 12.5px; padding: 10px 12px; }
 #layerBox label { display: flex; gap: 8px; align-items: center; }
@@ -183,7 +183,7 @@ body.dragging #drop { display: flex; }
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
-    <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf.</p>
+    <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
     <div id="intelBox" hidden>
       <h2>Intel items</h2>
       <ul id="intelList"></ul>
@@ -492,7 +492,7 @@ function scenarioObject() {
     seed: 0,
     notes: ['Made with the MissionLab scenario editor'],
     triggers: zonesOut(),
-    objectives: objectivesOut(),
+    objectives: objectivesOut(true),
     spawns: state.enemies.map(spawnOf),
   };
 }
@@ -505,8 +505,10 @@ function spawnOf(e) {
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
-const objectivesOut = () => state.objectives.map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
-const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained }));
+// A file only names the items somebody moved; the game goes on choosing the place of the others itself.
+const objectivesOut = forFile => state.objectives.filter(o => !forFile || o.moved !== false).map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
+const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained,
+  home: isVec(o.home) ? o.home.slice(0, 3) : null, homeYaw: num(o.homeYaw, 0), moved: o.moved !== false }));
 const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius), facePlayer: z.facePlayer !== false }));
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false }));
 function enemyOf(s, i) {
@@ -845,7 +847,7 @@ const view3d = (() => {
         const o = state.objectives[down.item], hit = ground(ev);
         if (!o || !hit) return;
         if (!down.saved) { pushUndo(); down.saved = true; }
-        o.pos = [hit.point.x, hit.point.y + 0.02, -hit.point.z]; syncEnemies();
+        o.pos = [hit.point.x, hit.point.y + 0.02, -hit.point.z]; o.moved = true; syncEnemies();
         return;
       }
       if (down.grab >= 0) {                                // dragging an enemy across the floor
@@ -1084,7 +1086,7 @@ canvas.addEventListener('pointermove', ev => {
   if (drag.pan) { state.view.cx = drag.cx - (sx - drag.sx) / state.view.scale; state.view.cz = drag.cz + (sy - drag.sy) / state.view.scale; invalidate(); return; }
   if (y === null) return;                                 // keep the last valid spot while over a wall
   if (!drag.saved) { pushUndo(); drag.saved = true; }
-  if ('objective' in drag.target) { const o = state.objectives[drag.target.objective]; if (o) o.pos = [wx, y + 0.02, wz]; invalidate(); return; }   // on the floor; use 3D for furniture
+  if ('objective' in drag.target) { const o = state.objectives[drag.target.objective]; if (o) { o.pos = [wx, y + 0.02, wz]; o.moved = true; } invalidate(); return; }   // on the floor; use 3D for furniture
   const e = state.enemies[state.selected]; if (!e) return;
   if ('stop' in drag.target) e.patrol[drag.target.stop] = [wx, y, wz]; else e.pos = [wx, y, wz];
   invalidate(); syncPos();
@@ -1187,11 +1189,15 @@ function syncSide() {
   $('intelBox').hidden = !state.objectives.length;
   const il = $('intelList'); il.textContent = '';
   state.objectives.forEach(o => {
-    const li = document.createElement('li'), name = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button');
-    name.textContent = o.label + (o.obtained ? ' (picked up)' : ''); at.textContent = o.pos[0].toFixed(0) + ', ' + o.pos[2].toFixed(0) + ' · height ' + o.pos[1].toFixed(1); at.className = 'hint';
+    const li = document.createElement('li'), name = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button'), back = document.createElement('button');
+    name.textContent = o.label + (o.obtained ? ' (picked up)' : o.moved !== false && o.home ? ' (moved)' : ''); at.textContent = o.pos[0].toFixed(0) + ', ' + o.pos[2].toFixed(0) + ' · height ' + o.pos[1].toFixed(1); at.className = 'hint';
     show.type = 'button'; show.className = 'btn'; show.textContent = 'Show'; show.style.padding = '3px 8px';
     show.addEventListener('click', () => { if (state.mode === '3d') view3d.lookFrom(o.pos); else { state.view.cx = o.pos[0]; state.view.cz = o.pos[2]; state.view.scale = Math.max(state.view.scale, 14); invalidate(); } });
-    li.append(name, at, show); il.appendChild(li);
+    // Only while connected to the game do we know where the game itself put the item.
+    back.type = 'button'; back.className = 'btn'; back.textContent = 'Usual place'; back.style.padding = '3px 8px'; back.hidden = !(o.home && o.moved !== false);
+    back.title = 'Put it back where the game laid it. It is then left out of the scenario file.';
+    back.addEventListener('click', () => { pushUndo(); o.pos = o.home.slice(); o.yaw = o.homeYaw; o.moved = false; changed(); });
+    li.append(name, at, show, back); il.appendChild(li);
   });
   const zl = $('zoneList');
   if (!zl.contains(document.activeElement)) {

@@ -47,6 +47,9 @@ namespace MissionLab
         private static float _zoneCheckAt;
         private static bool _yawLogged, _objectivesPlaced;
         private static List<ObjectivePlan> _wanted = new List<ObjectivePlan>();
+        private sealed class Pose { public Vector3 Pos; public float Yaw; }
+        private static readonly Dictionary<IntPtr, Pose> Homes = new Dictionary<IntPtr, Pose>();   // where the game itself put each item
+        private static bool _resendFailed;
         private static IntPtr _raidPtr = IntPtr.Zero;
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
@@ -82,6 +85,18 @@ namespace MissionLab
             Reset();
             _raidPtr = raidPtr;
             _later = later != null && later.Count > 0 ? later : null;
+            // Intel goes to its place straight away. A friend's game is told where every item lies when it finishes
+            // loading, which is normally after this moment, so they get the new place with nothing extra being sent.
+            MissionPlan plan = Director.CurrentPlan;
+            if (plan == null || plan.Objectives.Count == 0) return;
+            try
+            {
+                RaidManager raid = RaidManager.singleton;
+                if (raid == null || raid.Pointer != raidPtr) return;
+                _wanted = new List<ObjectivePlan>(plan.Objectives);
+                DirectorPlugin.L.LogInfo("objectives at the start: moved " + PlaceObjectives(raid) + " item(s) for " + _wanted.Count + " named in the scenario; in the map now: " + Describe(raid));
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("objectives could not be placed at the start: " + e.Message); }
         }
 
         private static void Reset()
@@ -92,7 +107,7 @@ namespace MissionLab
             if (_active) ReleaseInput();
             _aiming = -1; _aimOk = false; FacingChecks.Clear();
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
-            _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false;
+            _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -151,22 +166,109 @@ namespace MissionLab
             return found;
         }
 
-        /// <summary>Moves objective items to where the scenario or the Game Master wants them. Host side only.</summary>
-        private static int PlaceObjectives(RaidManager raid)
+        /// <summary>Remembers where the game itself put an item, the first time the item is seen.</summary>
+        private static Pose Home(ObjectiveObject o)
         {
-            if (_wanted.Count == 0) return 0;
-            int moved = 0;
+            if (!Homes.TryGetValue(o.Pointer, out Pose h))
+            {
+                Transform t = o.transform;
+                Homes[o.Pointer] = h = new Pose { Pos = t.position, Yaw = t.eulerAngles.y };
+            }
+            return h;
+        }
+
+        private static bool Moved(ObjectiveObject o)
+        {
+            Pose h = Home(o); Transform t = o.transform;
+            return (t.position - h.Pos).sqrMagnitude > 0.0004f || Mathf.Abs(Mathf.DeltaAngle(t.eulerAngles.y, h.Yaw)) > 0.5f;
+        }
+
+        private static string Describe(RaidManager raid)
+        {
+            var sb = new System.Text.StringBuilder();
             foreach (ObjectiveObject o in Objectives(raid))
             {
-                ObjectivePlan want = _wanted.Find(w => w.Name == o.gameObject.name);
+                Vector3 p = o.transform.position;
+                sb.Append(sb.Length > 0 ? ", " : "").Append(o.gameObject.name).Append(" at ").Append(p.x.ToString("0.0", Inv)).Append('/').Append(p.y.ToString("0.0", Inv)).Append('/').Append(p.z.ToString("0.0", Inv));
+            }
+            return sb.Length > 0 ? sb.ToString() : "none";
+        }
+
+        /// <summary>
+        /// Moves objective items to where the scenario or the Game Master wants them.
+        /// A map holds several copies of each item ("Cell Phone_1", "Cell Phone_2") and keeps one per mission, so an entry
+        /// applies to whichever copy is in play: the same name first, else the same kind of item.
+        /// </summary>
+        private static int PlaceObjectives(RaidManager raid, bool tellClients = true)
+        {
+            int moved = 0;
+            var used = new HashSet<ObjectivePlan>();
+            var sets = raid.objectives;
+            for (int i = 0; sets != null && i < sets.Length; i++)
+            {
+                var items = sets[i] == null ? null : sets[i].objectives;
+                var live = new List<ObjectiveObject>();
+                for (int k = 0; items != null && k < items.Length; k++)
+                    if (items[k] != null && items[k].gameObject.activeInHierarchy) { live.Add(items[k]); Home(items[k]); }
+                if (live.Count == 0 || _wanted.Count == 0) continue;
+
+                // The copies in one set stand in for each other, so one entry is found for the set and given to every copy still there.
+                ObjectivePlan want = null;
+                foreach (ObjectiveObject o in live)
+                {
+                    string name = o.gameObject.name;
+                    want = _wanted.Find(w => !used.Contains(w) && w.Name == name);
+                    if (want != null) break;
+                }
+                if (want == null)
+                {
+                    var kinds = new HashSet<string> { ObjectivePlan.Kind(sets[i].name) };
+                    foreach (ObjectiveObject o in live) { kinds.Add(ObjectivePlan.Kind(o.gameObject.name)); kinds.Add(ObjectivePlan.Kind(o.DisplayName)); }
+                    kinds.Remove("");
+                    want = _wanted.Find(w => !used.Contains(w) && kinds.Contains(ObjectivePlan.Kind(w.Name)));
+                }
                 if (want == null) continue;
+                used.Add(want);
                 var pos = new Vector3(want.Pos.X, want.Pos.Y, want.Pos.Z);
-                Transform t = o.transform;
-                if ((t.position - pos).sqrMagnitude < 0.0004f && Mathf.Abs(Mathf.DeltaAngle(t.eulerAngles.y, want.Yaw)) < 0.5f) continue;
-                t.SetPositionAndRotation(pos, Quaternion.Euler(0f, want.Yaw, 0f));
-                moved++;
+                foreach (ObjectiveObject o in live)
+                {
+                    Transform t = o.transform;
+                    if ((t.position - pos).sqrMagnitude < 0.0004f && Mathf.Abs(Mathf.DeltaAngle(t.eulerAngles.y, want.Yaw)) < 0.5f) continue;
+                    t.SetPositionAndRotation(pos, Quaternion.Euler(0f, want.Yaw, 0f));
+                    moved++;
+                    if (tellClients) TellClients(o);
+                }
             }
             return moved;
+        }
+
+        /// <summary>
+        /// A friend's game only learns where an item lies when the item is first shown to it. After a later move the
+        /// host sends that same "here it is" message again, which their game applies to the item it already has.
+        /// </summary>
+        private static void TellClients(ObjectiveObject o)
+        {
+            if (_resendFailed) return;
+            try
+            {
+                Mirror.NetworkIdentity id = o.GetComponent<Mirror.NetworkIdentity>();
+                var all = Mirror.NetworkServer.connectionsCopy;
+                if (id == null || all == null || id.observers == null) return;
+                int sent = 0;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    Mirror.NetworkConnectionToClient c = all[i];
+                    if (c == null || c.connectionId == 0 || !id.observers.ContainsKey(c.connectionId)) continue;    // 0 is the host's own game
+                    Mirror.NetworkServer.SendSpawnMessage(id, c);
+                    sent++;
+                }
+                if (sent > 0) DirectorPlugin.L.LogInfo("objectives: told " + sent + " other player(s) where " + o.gameObject.name + " lies now");
+            }
+            catch (Exception e)
+            {
+                _resendFailed = true;
+                DirectorPlugin.L.LogWarning("objectives: other players could not be told about a moved item (" + e.Message + "); they see it in its old place");
+            }
         }
 
         private static HashSet<IntPtr> Alive(GameManager gm)
@@ -229,7 +331,11 @@ namespace MissionLab
                 if (plan != null && plan.Objectives.Count > 0)
                 {
                     EnsureMarkers();
-                    DirectorPlugin.L.LogInfo("objectives: moved " + PlaceObjectives(raid) + " of " + plan.Objectives.Count + " items named in the scenario; in play: " + Objectives(raid).Count);
+                    // A second look once the game has settled on its items; normally nothing is left to do.
+                    int late = PlaceObjectives(raid);
+                    int stay = 0;
+                    foreach (ObjectiveObject o in Objectives(raid)) if (Moved(o)) stay++;
+                    DirectorPlugin.L.LogInfo("objectives: " + stay + " of " + Objectives(raid).Count + " item(s) lie where the scenario says (" + plan.Objectives.Count + " named, " + late + " moved late); in the map: " + Describe(raid));
                 }
             }
             if (_markers != null && now >= _zoneCheckAt)
@@ -825,8 +931,10 @@ namespace MissionLab
             foreach (ObjectiveObject o in Objectives(raid))
             {
                 Transform t = o.transform;
+                Pose home = Home(o);
                 sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(o.gameObject.name)).Append(",\"label\":").Append(Q(o.DisplayName)).Append(",\"pos\":").Append(P(t.position))
-                  .Append(",\"yaw\":").Append(F(t.eulerAngles.y)).Append(",\"obtained\":").Append(o.isObtained ? "true" : "false").Append('}');
+                  .Append(",\"yaw\":").Append(F(t.eulerAngles.y)).Append(",\"home\":").Append(P(home.Pos)).Append(",\"homeYaw\":").Append(F(home.Yaw))
+                  .Append(",\"moved\":").Append(Moved(o) ? "true" : "false").Append(",\"obtained\":").Append(o.isObtained ? "true" : "false").Append('}');
                 rev.Append(o.gameObject.name).Append(P(t.position)).Append(o.isObtained ? 'x' : 'o');
                 first = false;
             }
@@ -935,6 +1043,7 @@ namespace MissionLab
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))
                 {
+                    if (!Moved(o)) continue;                 // left alone: the game keeps choosing its place itself
                     Vector3 op = o.transform.position;
                     plan.Objectives.Add(new ObjectivePlan { Name = o.gameObject.name, Pos = new V3(op.x, op.y, op.z), Yaw = o.transform.eulerAngles.y });
                 }

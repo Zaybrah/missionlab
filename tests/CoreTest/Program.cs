@@ -97,6 +97,9 @@ Directory.CreateDirectory(outDir);
 File.WriteAllText(Path.Combine(outDir, "reachable.txt"), string.Join("\n", Enumerable.Range(0, nav.Count).Select(i =>
     FormattableString.Invariant($"{(all[i] ? 1 : 0)} {nav.Ax[i]} {nav.Az[i]} {nav.Bx[i]} {nav.Bz[i]} {nav.Cx[i]} {nav.Cz[i]} {nav.Ay[i]}"))));
 int failures = 0;
+// An intel item goes by its kind: the map has several copies of each and uses one per mission.
+foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phone_2", "cell phone"), ("Cell Phone", "cell phone"), ("Sim cards 12", "sim cards"), ("AK47", "ak47"), ("  Laptop_3", "laptop"), ("_7", "_7"), ("", "") })
+    if (ObjectivePlan.Kind(name) != kind) { Console.WriteLine("  FAIL: kind of '" + name + "' is '" + ObjectivePlan.Kind(name) + "', expected '" + kind + "'"); failures++; }
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {
