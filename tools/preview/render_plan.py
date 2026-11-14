@@ -57,9 +57,9 @@ def main(nav_path, recon_path, plan_dir, out_png, title, seeds, infil_args):
                Line2D([], [], ls=(0, (4, 3)), lw=1.8, color=ORANGE, label="Patrol route"),
                Line2D([], [], ls="none", marker="o", ms=4, color=AQUA, alpha=0.7, label="Game's own spawn points"),
                Line2D([], [], ls="none", marker="^", ms=9, color=BLUE, label="Insertion point")]
-    fig.legend(handles=handles, loc="lower center", ncol=6, frameon=False, fontsize=9, labelcolor=INK)
+    fig.legend(handles=handles, loc="lower center", ncol=6 if cols > 1 else 3, frameon=False, fontsize=9, labelcolor=INK)
     fig.suptitle(title, x=0.012, ha="left", fontsize=13, weight="bold", color=INK)
-    fig.subplots_adjust(left=0.04, right=0.99, top=1 - 0.75 / (6.3 * rows + 0.9), bottom=0.7 / (6.3 * rows + 0.9), wspace=0.1, hspace=0.12)
+    fig.subplots_adjust(left=0.04, right=0.99, top=1 - 0.75 / (6.3 * rows + 0.9), bottom=(0.7 if cols > 1 else 1.0) / (6.3 * rows + 0.9), wspace=0.1, hspace=0.12)
     fig.savefig(out_png, dpi=110, facecolor=SURFACE)
 
 if __name__ == "__main__":
