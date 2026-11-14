@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.6.0";
+        public const string Version = "0.7.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -31,7 +31,7 @@ namespace MissionLab
         internal static ConfigEntry<string> Scenario;
         internal static ConfigEntry<bool> GmEnabled;
         internal static ConfigEntry<bool> GmBlockKeys;
-        internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll;
+        internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
         internal static bool InputHooked;
 
         /// <summary>
@@ -75,6 +75,7 @@ namespace MissionLab
             KeyStop = Config.Bind("GameMaster", "KeyRouteStop", KeyCode.R, "Adds a patrol stop at the crosshair for the picked enemy.");
             KeySpawn = Config.Bind("GameMaster", "KeySpawnWaiting", KeyCode.Return, "Spawns every enemy that is still waiting.");
             KeyRemove = Config.Bind("GameMaster", "KeyRemoveMarker", KeyCode.Delete, "Removes the enemy at the crosshair. With left Ctrl, twice: removes everything.");
+            KeyExport = Config.Bind("GameMaster", "KeyExportMap", KeyCode.M, "Writes this map's solid geometry to BepInEx/MissionLab/maps, for the 3D view of the scenario editor.");
             KeyRemoveAll = Config.Bind("GameMaster", "KeyRemoveAllEnemies", KeyCode.F11, "Pressed twice: removes all live enemies; their markers stay.");
             UseHook = Config.Bind("Advanced", "UseHook", true,
                 "true = act the moment the mission's spawner starts. false = slower polling fallback; try this if a mission fails to load.");
@@ -82,6 +83,7 @@ namespace MissionLab
             BaseDir = Path.Combine(Paths.BepInExRootPath, "MissionLab");
             Directory.CreateDirectory(Path.Combine(BaseDir, "missions"));
             Directory.CreateDirectory(Path.Combine(BaseDir, "scenarios"));
+            Directory.CreateDirectory(Path.Combine(BaseDir, "maps"));
 
             if (UseHook.Value)
             {

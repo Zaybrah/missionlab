@@ -47,6 +47,12 @@ place enemies, set roles, draw patrol routes, and save the scenario file into
 `BepInEx/MissionLab/missions/`, so a generated mission you liked can be edited and kept,
 and recon files, to show insertion points. No game files are included in this repo.
 
+The editor has a 3D view (button "3D"): fly through the map, cut away upper floors,
+click to place enemies. With only the game's map file it shows the walkable ground. For
+real walls, stairs and furniture, press M in Game Master mode: the mod writes the loaded
+map's solid geometry to `BepInEx/MissionLab/maps/<map>.mlgeo` on your own PC; open that
+file in the editor too. The `.mlgeo` file is derived from game assets: keep it local.
+
 ## Status
 Director 0.2.2 is tested in game on Suburb Day (solo host): enemies spawn on the
 Tested in game, solo host, on Suburb Day and Mexico Depot Day (0.3.1): generated

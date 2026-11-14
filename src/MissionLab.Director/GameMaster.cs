@@ -46,7 +46,7 @@ namespace MissionLab
         private static int _role, _stance, _type, _stay, _when, _group = -1;
         private static int _aiming = -1;                // marker whose facing follows the crosshair until the second click
         private static bool _aimOk; private static Vector3 _aim;
-        private static float _removeAllAt = -10f, _clearAllAt = -10f;
+        private static float _removeAllAt = -10f, _clearAllAt = -10f, _exportAt = -1f;
         private static bool _patchTried, _weHoldInput;
         private static int _held, _resetSeen;
         private static readonly List<KeyValuePair<Marker, float>> FacingChecks = new List<KeyValuePair<Marker, float>>();
@@ -425,6 +425,8 @@ namespace MissionLab
 
             if (Down(DirectorPlugin.KeyCam)) ToggleCam();
             if (Down(DirectorPlugin.KeySave)) Save();
+            if (Down(DirectorPlugin.KeyExport)) { _exportAt = now + 0.15f; Say("exporting the map for the 3D editor: the game may freeze for a few seconds..."); }
+            if (_exportAt > 0f && now >= _exportAt) { _exportAt = -1f; ExportMap(); }
 
             // What the next enemy will be.
             if (Input.GetKeyDown(KeyCode.Alpha1)) _role = 0;
@@ -595,6 +597,24 @@ namespace MissionLab
             Say(removed + " of " + all.Count + " enemies removed. Their markers wait: " + DirectorPlugin.KeySpawn.Value + " spawns them again.");
         }
 
+        private static void ExportMap()
+        {
+            NavMesh nav = Director.CurrentNav;
+            string name = nav != null && !string.IsNullOrEmpty(nav.SourceFile) ? Path.GetFileNameWithoutExtension(nav.SourceFile) : "map";
+            string path = Path.Combine(DirectorPlugin.BaseDir, "maps", name + ".mlgeo");
+            try
+            {
+                string result = MapExport.Run(path);
+                DirectorPlugin.L.LogInfo("map export -> " + path + " | " + result);
+                Say("map saved to MissionLab/maps/" + name + ".mlgeo. Open it in the scenario editor for the 3D view.");
+            }
+            catch (Exception e)
+            {
+                DirectorPlugin.L.LogError("map export failed: " + e);
+                Say("the map could not be exported (see log)");
+            }
+        }
+
         // ------------------------------------------------------------------ saving
         private static void Save()
         {
@@ -748,6 +768,7 @@ namespace MissionLab
                 DirectorPlugin.KeyStop.Value + "   patrol stop for the picked enemy      " + DirectorPlugin.KeyRemove.Value + "   remove the enemy at the crosshair",
                 DirectorPlugin.KeySpawn.Value + "   spawn the waiting enemies (" + waitCount + ")      " + DirectorPlugin.KeySave.Value + "   save as scenario",
                 DirectorPlugin.KeyRemoveAll.Value + " twice   remove all live enemies      Ctrl+" + DirectorPlugin.KeyRemove.Value + " twice   empty the map",
+                DirectorPlugin.KeyExport.Value + "   export this map for the 3D view of the scenario editor",
             };
             float x = 24f, y = 96f, wPanel = 730f, lh = 21f;
             Fill(new Rect(x - 10f, y - 8f, wPanel, lines.Count * lh + 16f), new Color(0f, 0f, 0f, 0.62f));
