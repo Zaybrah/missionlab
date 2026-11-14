@@ -23,7 +23,7 @@ exactly as shipped.
   `dotnet tests/CoreTest/bin/CoreTest.dll --check <scenario.json> <navmesh.bytes>`.
 - Game Master experiment: while hosting, F6 spawns one enemy about 15 m in front of you
   through the game's own spawner. Every second press asks for an enemy type the mod
-  chose (not yet verified).
+  chose.
 
 ## MissionLab.Recon.dll
 Read-only. Writes what a loaded mission contains to `BepInEx/MissionLab/recon/`
@@ -32,9 +32,9 @@ follows every enemy through the mission (`<scene>.movement.json`).
 
 ## Status
 Director 0.2.2 is tested in game on Suburb Day (solo host): enemies spawn on the
-generated positions and wanderers move. Scenario files, patrol routes and the F6
-live spawn are tested there too (0.3.0). Other maps, co-op and mission types are
-not tested yet. See `docs/findings.md` for what is known about the game's internals.
+Tested in game, solo host, on Suburb Day and Mexico Depot Day (0.3.1): generated
+layouts, scenario files, patrol routes, and the F6 live spawn including a chosen
+enemy type. Co-op, HVT/intel/asset missions and the other maps are not tested yet. See `docs/findings.md` for what is known about the game's internals.
 
 ## Source layout
 - `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model (no game references)

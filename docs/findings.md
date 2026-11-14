@@ -48,6 +48,14 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   visible but never enters `allAI` and cannot be killed.
 - `RaidManager.CanSpawn(pos, radius)` returned true for every radius tried, even
   on the host's own position.
+- The enemy type can be chosen: put one prefab from `GameManager.AllAITypes` in
+  `RaidManager.customAI` and call `ServerSpawnAI(true)`; restore the list afterwards.
+  The enemy exists within a frame or two (0.02 to 0.05 s).
+
+## Other maps
+- Mexico Depot Day: 31 enemies on 31 generated points, 4 patrols walking, 19 of 20
+  wanderers moving. The map's vehicle crews (5 enemies, no pathfinding agent) are
+  spawned separately from `botSpawnPoints` and are not affected.
 
 ## Not yet verified
-- Co-op with unmodded clients, other maps, HVT/intel modes, choosing the enemy type.
+- Co-op with unmodded clients, HVT/intel/asset modes, maps other than Suburb and Mexico Depot.
