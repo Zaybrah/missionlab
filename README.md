@@ -24,12 +24,13 @@ exactly as shipped.
   or, with no `scene`, when its `navFile` is the map file the mission uses. A position off
   the walkable surface becomes a fixed sentry. Sense values of 0 mean "the map's usual".
   Check a file: `dotnet tests/CoreTest/bin/CoreTest.dll --check <scenario.json> <navmesh.bytes>`.
-- Game Master mode (host only, F8): every enemy gets a marker drawn over the 3D view.
-  F9 switches the game's own free camera, which flies through walls. Place an enemy at the
-  crosshair or where the camera is (for spots like under a bed), choose role, stance
-  (standing or prone) and enemy type, spawn it at once or later, remove enemies, and save
-  all markers as a scenario file. Keys are listed on screen and can be changed in the
-  `[GameMaster]` section of the config.
+- Game Master mode (host only, F8): every enemy gets a marker drawn over the 3D view, and
+  the game's own key binds are switched off while it is open. F9 switches the game's free
+  camera, which flies through walls. Left click places an enemy at the crosshair; aim where
+  it should look and click again. Space places one where the camera is (for spots like
+  under a bed). 1/2/3 choose the role, Z the stance, T the enemy type. Right click picks an
+  enemy, the mouse wheel turns it, Delete removes it, F10 saves all markers as a scenario.
+  All keys are listed on screen and can be changed in the `[GameMaster]` config section.
 - Scenario files may give an enemy `"prone": true` and a `"type"` (an enemy type name).
   Typed enemies are added a few seconds after the mission's own spawn.
 

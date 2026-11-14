@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -30,7 +30,19 @@ namespace MissionLab
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
         internal static ConfigEntry<bool> GmEnabled;
-        internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyUp, KeyDown, KeyLeft, KeyRight, KeyDo, KeyPlaceAim, KeyPlaceHere, KeyStop, KeyPick, KeyRemove;
+        internal static ConfigEntry<bool> GmBlockKeys;
+        internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll;
+        internal static bool InputHooked;
+
+        /// <summary>
+        /// Hooks the one function all of the game's key binds go through. Done the first time
+        /// Game Master mode opens, so a normal session never touches it.
+        /// </summary>
+        internal static void PatchInputBlock()
+        {
+            try { new Harmony(Id + ".input").PatchAll(typeof(InputBlockPatch)); InputHooked = true; L.LogInfo("the game's key binds are hooked: they stay silent while Game Master mode is open"); }
+            catch (Exception e) { L.LogWarning("could not hook the game's key reader (" + e.Message + "); relying on the game's own input switch"); }
+        }
         internal static bool Hooked;
         internal static string BaseDir;
         internal static ConfigFile Settings;
@@ -54,16 +66,16 @@ namespace MissionLab
             KeyGm = Config.Bind("GameMaster", "KeyOpen", KeyCode.F8, "Opens and closes Game Master mode.");
             KeyCam = Config.Bind("GameMaster", "KeyFreeCamera", KeyCode.F9, "Switches the game's free camera on and off.");
             KeySave = Config.Bind("GameMaster", "KeySave", KeyCode.F10, "Saves all markers as a scenario file.");
-            KeyUp = Config.Bind("GameMaster", "KeyListUp", KeyCode.I, "Moves up in the Game Master list.");
-            KeyDown = Config.Bind("GameMaster", "KeyListDown", KeyCode.K, "Moves down in the Game Master list.");
-            KeyLeft = Config.Bind("GameMaster", "KeyValuePrevious", KeyCode.J, "Previous value of the highlighted line.");
-            KeyRight = Config.Bind("GameMaster", "KeyValueNext", KeyCode.L, "Next value of the highlighted line.");
-            KeyDo = Config.Bind("GameMaster", "KeyDoAction", KeyCode.Return, "Runs the highlighted action.");
-            KeyPlaceAim = Config.Bind("GameMaster", "KeyPlaceAtCrosshair", KeyCode.U, "Places an enemy where the crosshair points; it faces the camera.");
-            KeyPlaceHere = Config.Bind("GameMaster", "KeyPlaceAtCamera", KeyCode.O, "Places an enemy where the camera is; it faces where the camera looks.");
-            KeyStop = Config.Bind("GameMaster", "KeyPatrolStop", KeyCode.P, "Adds a patrol stop at the crosshair for the picked marker.");
-            KeyPick = Config.Bind("GameMaster", "KeyPickMarker", KeyCode.Y, "Picks the marker nearest to the crosshair.");
-            KeyRemove = Config.Bind("GameMaster", "KeyRemoveMarker", KeyCode.Delete, "Removes the marker nearest to the crosshair, and its enemy.");
+            GmBlockKeys = Config.Bind("GameMaster", "BlockGameKeys", true, "Switches the game's own key binds off while Game Master mode is open, so its keys do nothing else.");
+            KeyStance = Config.Bind("GameMaster", "KeyStance", KeyCode.Z, "Next enemy stands or lies prone.");
+            KeyType = Config.Bind("GameMaster", "KeyEnemyType", KeyCode.T, "Next enemy type (hold left Shift to go back).");
+            KeyStay = Config.Bind("GameMaster", "KeyStaysPut", KeyCode.F, "Next enemy is a fixed sentry or not.");
+            KeyWhen = Config.Bind("GameMaster", "KeyAppears", KeyCode.G, "New enemies appear at once, or wait for the spawn key.");
+            KeyPlaceHere = Config.Bind("GameMaster", "KeyPlaceHere", KeyCode.Space, "Places an enemy where the camera is; it faces where the camera looks.");
+            KeyStop = Config.Bind("GameMaster", "KeyRouteStop", KeyCode.R, "Adds a patrol stop at the crosshair for the picked enemy.");
+            KeySpawn = Config.Bind("GameMaster", "KeySpawnWaiting", KeyCode.Return, "Spawns every enemy that is still waiting.");
+            KeyRemove = Config.Bind("GameMaster", "KeyRemoveMarker", KeyCode.Delete, "Removes the enemy at the crosshair. With left Ctrl, twice: removes everything.");
+            KeyRemoveAll = Config.Bind("GameMaster", "KeyRemoveAllEnemies", KeyCode.F11, "Pressed twice: removes all live enemies; their markers stay.");
             UseHook = Config.Bind("Advanced", "UseHook", true,
                 "true = act the moment the mission's spawner starts. false = slower polling fallback; try this if a mission fails to load.");
 
@@ -94,6 +106,17 @@ namespace MissionLab
     /// It has to be "after": the game fills its spawn list during that setup, and
     /// only spawns enemies a couple of seconds later.
     /// </summary>
+    [HarmonyPatch(typeof(InputLayer), nameof(InputLayer.GetKey))]
+    internal static class InputBlockPatch
+    {
+        private static bool Prefix(ref bool __result)
+        {
+            if (!GameMaster.BlockGameKeys) return true;
+            __result = false;       // no game key is "pressed" while the Game Master is working
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(RaidManager), nameof(RaidManager.OnStartServer))]
     internal static class RaidStartPatch
     {
