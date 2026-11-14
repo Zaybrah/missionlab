@@ -679,7 +679,14 @@ namespace MissionLab
                     j.V("name", b.name);
                     j.V("myName", b.myName);
                     j.V("isHVT", b.isHVT);
-                    j.Vec("pos", b.transform.position);
+                    j.Vec("pos", b.transform.position);       // where it was created; this never changes
+                    try
+                    {
+                        AgentController ac = b.agent;         // where it really is
+                        if (ac != null && ac.entityExists) j.Vec("agentPos", ac.position);
+                        j.V("state", b.CurrentState.ToString());
+                    }
+                    catch (Exception) { }
                     j.V("yaw", b.transform.rotation.eulerAngles.y);
                     j.EndObj();
                 }

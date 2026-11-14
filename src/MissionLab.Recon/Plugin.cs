@@ -19,7 +19,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.recon";
         public const string DisplayName = "MissionLab Recon (unofficial)";
-        public const string Version = "0.2.0";
+        public const string Version = "0.2.1";
 
         internal static ManualLogSource L;
         internal static string OutDir;

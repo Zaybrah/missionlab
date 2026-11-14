@@ -28,5 +28,26 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   off and not connected to the walkable mesh.
 - Insertion points are child transforms of each `InfilMethods.infilObject`.
 
+- When the list holds exactly `botAmount` points, every point gets an enemy
+  (11 of 11 within 0.1 m of a scenario file's positions).
+
+## Enemies at run time
+- `BrainAI.transform.position` stays at the spawn position for the whole mission.
+  The real position is `BrainAI.agent.position` (`AgentController`, an A* `FollowerEntity`).
+- Patrol routes built from child transforms in `BotSpawnDetails.patrolPoints` are
+  walked (two patrols covered 40 m and 44 m in 90 s, waypoint index advancing).
+  Wanderers start moving after about 25 s. `PatrolSpeed = 0` and
+  `WanderDistance = -1` on a spawn point mean "use the default".
+- Dead enemies are removed from `GameManager.allAI`.
+
+## Spawning during a mission
+- Works through the game's own spawner: put one spawn point in `botSpawnPoints`,
+  set `botAmount = 1`, call `RaidManager.ServerSpawnAI(false)`, restore both.
+  The enemy appears on the point, is registered in `allAI`, fights and can be killed.
+- Does not work: `InstantiateBot` + `ApplyBotSpawnSettings` alone. That enemy is
+  visible but never enters `allAI` and cannot be killed.
+- `RaidManager.CanSpawn(pos, radius)` returned true for every radius tried, even
+  on the host's own position.
+
 ## Not yet verified
-- Co-op with unmodded clients, patrol behaviour, other maps, HVT/intel modes.
+- Co-op with unmodded clients, other maps, HVT/intel modes, choosing the enemy type.

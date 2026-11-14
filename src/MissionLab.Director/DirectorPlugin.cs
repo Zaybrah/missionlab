@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.3.0";
+        public const string Version = "0.3.1";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -47,7 +47,7 @@ namespace MissionLab
             Scenario = Config.Bind("General", "Scenario", "",
                 "Name of a file in BepInEx/MissionLab/scenarios to use instead of a generated layout (for the scene it was made for). Empty = generate.");
             GmTestKey = Config.Bind("GameMaster", "TestSpawnKey", true,
-                "Experiment: while hosting a mission, F6 spawns one enemy about 15 m in front of you.");
+                "Experiment: while hosting a mission, F6 spawns one enemy about 15 m in front of you (every second press: an enemy type chosen by the mod).");
             UseHook = Config.Bind("Advanced", "UseHook", true,
                 "true = act the moment the mission's spawner starts. false = slower polling fallback; try this if a mission fails to load.");
 
