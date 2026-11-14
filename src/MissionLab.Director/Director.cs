@@ -161,8 +161,13 @@ namespace MissionLab
                 // Enemies of a chosen type cannot go through the game's own start-up spawn; they follow a few seconds later.
                 bool keptOne = false;
                 foreach (SpawnPlan s in plan.Spawns)
-                    if (!string.IsNullOrEmpty(s.Type)) later.Add(s); else keptOne = true;
-                if (!keptOne) later.Remove(plan.Spawns[0]);   // the game's spawner needs at least one point of its own
+                    if (s.Trigger != 0 || !string.IsNullOrEmpty(s.Type)) later.Add(s); else keptOne = true;
+                if (!keptOne)
+                {
+                    // The game's own spawner needs at least one enemy that is simply there from the start.
+                    SpawnPlan firstOne = plan.Spawns.Find(s => s.Trigger == 0) ?? plan.Spawns[0];
+                    firstOne.Trigger = 0; later.Remove(firstOne);
+                }
                 enemies = Math.Min(100, plan.Spawns.Count - later.Count);
                 int fixedCount = 0;
                 foreach (SpawnPlan s in plan.Spawns)
@@ -217,7 +222,7 @@ namespace MissionLab
             plan.Scene = scene;
             CurrentPlan = plan; CurrentScenarioPath = fromFile ? _lastScenarioPath : null; CurrentScenarioScene = scenarioScene;
             GameMaster.BeginMission(raid.Pointer, later);
-            if (later.Count > 0) log.LogInfo(later.Count + " enemies of a chosen type will be added a few seconds after the start");
+            if (later.Count > 0) log.LogInfo(later.Count + " enemies are held back: a chosen type follows a few seconds after the start, zone enemies when a player reaches their zone");
             WriteRecord(scene, seed, via, source, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
             return true;
         }

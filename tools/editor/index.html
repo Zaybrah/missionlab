@@ -83,6 +83,10 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
 details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; }
 #saveBox details > * + * { margin-top: 8px; }
 
+#zoneBox { display: flex; flex-direction: column; gap: 8px; }
+#zoneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#zoneList li { display: grid; grid-template-columns: 62px 1fr 70px auto; gap: 6px; align-items: center; font-size: 12.5px; }
+#zoneList input { padding: 3px 6px; }
 #list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 176px; overflow-y: auto; }
 #list li button { width: 100%; display: grid; grid-template-columns: 30px 62px 1fr auto; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 6px; cursor: pointer; font-size: 12.5px; }
 #list li button:hover { border-color: var(--line); }
@@ -171,6 +175,11 @@ body.dragging #drop { display: flex; }
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
+    <div id="zoneBox" hidden>
+      <h2>Zones</h2>
+      <ul id="zoneList"></ul>
+      <p class="hint">An enemy bound to a zone is not on the map at the start. It appears when the first player walks into the zone.</p>
+    </div>
   </section>
 
   <section aria-labelledby="h-sel" id="panel" hidden>
@@ -188,6 +197,7 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="defensive" type="checkbox"><span>Holds its ground when alerted (otherwise it pushes toward you)</span></label>
     <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
     <label class="check"><input id="prone" type="checkbox"><span>Lies prone (lying down)</span></label>
+    <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
     <div class="field" id="typeRow" hidden><label for="type">Enemy type</label><select id="type"></select></div>
     <div id="pos"></div>
     <div class="row">
@@ -223,6 +233,7 @@ body.dragging #drop { display: flex; }
     <button class="btn tool" type="button" data-tool="select" title="Select and move (V). Drag empty ground to pan.">Select</button>
     <button class="btn tool" type="button" data-tool="add" title="Click walkable ground to place an enemy (A)">Add enemy</button>
     <button class="btn tool" type="button" data-tool="route" title="Click to add stops to the selected enemy's patrol route (R)">Draw route</button>
+    <button class="btn tool" type="button" data-tool="zone" title="Click to place a zone. Enemies bound to it appear when a player walks in (Z)">Add zone</button>
     <span class="sep"></span>
     <button class="btn" type="button" id="undo" title="Undo (Ctrl+Z)">Undo</button>
     <button class="btn" type="button" id="zoomOut" aria-label="Zoom out">−</button>
@@ -262,6 +273,8 @@ const state = {
   lastRole: 'Guard',
   lastGroup: 0,
   geo: null,            // solid geometry of the map exported from the game: { positions, indices, name }
+  zones: [],            // { id, pos:[x,y,z], radius, name }: enemies bound to a zone appear when a player walks into it
+  fired: [],            // live: ids of the zones players have already reached
   mode: '2d',
 };
 const undoStack = [];
@@ -439,7 +452,7 @@ function loadExample() {
 
 // ------------------------------------------------------------------ scenario data
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '',
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0,
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -454,6 +467,7 @@ function scenarioObject() {
     navFile: state.navFile,
     seed: 0,
     notes: ['Made with the MissionLab scenario editor'],
+    triggers: zonesOut(),
     spawns: state.enemies.map(spawnOf),
   };
 }
@@ -462,17 +476,19 @@ function spawnOf(e) {
     group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
     detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
-    prone: !!e.prone, type: e.type || '',
+    prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0,
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
+const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius) }));
+const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)) }));
 function enemyOf(s, i) {
   if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
   const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
   if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
   return Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
     yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
-    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '',
+    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0,
     detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
     wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
     patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -508,6 +524,7 @@ function loadScenario(obj, name) {
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
+  state.zones = zonesIn(root.triggers);
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
   // A generated mission names one scene (day or night). Matching by map file covers both.
@@ -640,6 +657,16 @@ function draw() {
   for (const p of state.authored) { const [x, y] = toScreen(p[0], p[2]); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 1;
 
+  // Zones: walk in here and the enemies bound to it appear.
+  for (const z of state.zones) {
+    const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id);
+    ctx.beginPath(); ctx.arc(x, y, z.radius * v.scale, 0, Math.PI * 2);
+    ctx.globalAlpha = done ? 0.04 : 0.1; ctx.fillStyle = css.friend; ctx.fill();
+    ctx.globalAlpha = done ? 0.4 : 0.9; ctx.setLineDash([8, 5]); ctx.lineWidth = 1.6; ctx.strokeStyle = css.friend; ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = '600 12px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = css.friend; ctx.fillText('Zone ' + z.id, x, y - z.radius * v.scale - 3);
+    ctx.globalAlpha = 1;
+  }
+
   // Patrol routes.
   state.enemies.forEach((e, i) => {
     if (e.role !== 'Patrol' || !e.patrol.length) return;
@@ -680,7 +707,8 @@ function draw() {
     if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
     if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
     ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(String(i + 1), x + r + 6, y - r - 3); ctx.fillStyle = css.ink; ctx.fillText(String(i + 1), x + r + 6, y - r - 3);
+    const tag = String(i + 1) + (e.trigger ? ' → zone ' + e.trigger : '');
+    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(tag, x + r + 6, y - r - 3); ctx.fillStyle = e.trigger ? css.friend : css.ink; ctx.fillText(tag, x + r + 6, y - r - 3);
     ctx.globalAlpha = 1;
   });
 
@@ -725,15 +753,28 @@ const view3d = (() => {
     const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(0.4, 1, 0.25); scene.add(sun);
     enemyGroup = new T.Group(); extraGroup = new T.Group(); liveGroup = new T.Group(); scene.add(enemyGroup, extraGroup, liveGroup);
     let down = null;
-    cv.addEventListener('pointerdown', ev => { cv.setPointerCapture(ev.pointerId); down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button }; });
+    cv.addEventListener('pointerdown', ev => {
+      cv.setPointerCapture(ev.pointerId);
+      down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button, grab: -1, saved: false };
+      if (ev.button === 0 && state.tool === 'select') { const h = enemyHit(ev); if (h) { down.grab = h.object.userData.enemy; select(down.grab); } }
+    });
     cv.addEventListener('pointermove', ev => {
       if (!down) return;
       const dx = ev.clientX - down.x, dy = ev.clientY - down.y;
       if (!down.moved && Math.hypot(dx, dy) < 4) return;
       down.moved = true; down.x = ev.clientX; down.y = ev.clientY;
+      if (down.grab >= 0) {                                // dragging an enemy across the floor
+        const e = state.enemies[down.grab], hit = ground(ev);
+        if (!e || !hit) return;
+        const p = [hit.point.x, hit.point.y, -hit.point.z], level = levelsAt(p[0], p[2]).filter(y => Math.abs(y - p[1]) <= 1.0).sort((a, b) => Math.abs(a - p[1]) - Math.abs(b - p[1]))[0];
+        if (level === undefined && !e.fixed) return;       // only a fixed sentry may stand where nobody can walk
+        if (!down.saved) { pushUndo(); down.saved = true; }
+        e.pos = level !== undefined ? [p[0], level, p[2]] : p; syncEnemies();
+        return;
+      }
       yaw -= dx * 0.005; pitch = Math.max(-1.55, Math.min(1.55, pitch - dy * 0.005)); invalidate3();
     });
-    cv.addEventListener('pointerup', ev => { const d = down; down = null; if (d && !d.moved && d.button === 0) pick(ev); });
+    cv.addEventListener('pointerup', ev => { const d = down; down = null; if (!d) return; if (d.saved) return changed(); if (!d.moved && (d.button === 0 || d.button === 2)) pick(ev, d.button); });
     cv.addEventListener('pointercancel', () => { down = null; });
     cv.addEventListener('contextmenu', ev => ev.preventDefault());
     cv.addEventListener('wheel', ev => { ev.preventDefault(); move(0, 0, -ev.deltaY * 0.03 * speed()); invalidate3(); }, { passive: false });
@@ -818,6 +859,12 @@ const view3d = (() => {
       }
     });
     const blue = col('friend');
+    for (const z of state.zones) {
+      const pts = []; for (let a = 0; a <= 72; a++) pts.push(new T.Vector3(z.pos[0] + Math.cos(a / 72 * 6.2832) * z.radius, z.pos[1] + 0.3, -z.pos[2] + Math.sin(a / 72 * 6.2832) * z.radius));
+      extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: blue, transparent: true, opacity: state.fired.includes(z.id) ? 0.35 : 1 })));
+      const post = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3, 6), new T.MeshBasicMaterial({ color: blue })); post.position.set(z.pos[0], z.pos[1] + 1.5, -z.pos[2]); extraGroup.add(post);
+      const tag = label('Z' + z.id); tag.position.set(z.pos[0], z.pos[1] + 3.5, -z.pos[2]); extraGroup.add(tag);
+    }
     for (const p of state.infils) { const c = new T.Mesh(new T.ConeGeometry(0.5, 1.4, 4), new T.MeshBasicMaterial({ color: blue })); c.position.set(p[0], p[1] + 0.7, -p[2]); extraGroup.add(c); }
     invalidate3();
   }
@@ -839,15 +886,19 @@ const view3d = (() => {
     }
     invalidate3();
   }
-  function pick(ev) {
+  function cast(ev) {
     const r = cv.getBoundingClientRect(), ray = new T.Raycaster();
     ray.setFromCamera(new T.Vector2((ev.clientX - r.left) / r.width * 2 - 1, -((ev.clientY - r.top) / r.height * 2 - 1)), camera);
-    const hitEnemy = ray.intersectObjects(enemyGroup.children, true)[0];
-    const solids = [geoMesh, mapMesh].filter(Boolean);
-    // Only what is drawn can be clicked: floors above the cut-off height are ignored.
-    const hit = ray.intersectObjects(solids, false).find(h => h.point.y <= state.ceiling + 0.4);
-    if (hitEnemy && (!hit || hitEnemy.distance <= hit.distance + 0.3)) return click3d(null, hitEnemy.object.userData.enemy);
-    click3d(hit ? [hit.point.x, hit.point.y, -hit.point.z] : null, -1);
+    return ray;
+  }
+  // Only what is drawn can be clicked: floors above the cut-off height are ignored.
+  const ground = ev => cast(ev).intersectObjects([geoMesh, mapMesh].filter(Boolean), false).find(h => h.point.y <= state.ceiling + 0.4);
+  const enemyHit = ev => cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.enemy));   // the body, not its selection ring
+  function screenOf(p) { const v = new T.Vector3(p[0], p[1] + 0.9, -p[2]).project(camera), r = cv.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; }
+  function pick(ev, button) {
+    const hit = ground(ev), hitEnemy = button === 2 ? null : enemyHit(ev);
+    if (hitEnemy && (!hit || hitEnemy.distance <= hit.distance + 0.3)) return click3d(null, hitEnemy.object.userData.enemy, button);
+    click3d(hit ? [hit.point.x, hit.point.y, -hit.point.z] : null, -1, button);
   }
   function frame(t) {
     raf = 0;
@@ -866,7 +917,7 @@ const view3d = (() => {
   }
   function invalidate3() { if (renderer && state.mode === '3d' && !raf) raf = requestAnimationFrame(frame); }
   return {
-    available, home, focus, syncEnemies, syncLive, invalidate: invalidate3,
+    available, home, focus, syncEnemies, syncLive, screenOf, invalidate: invalidate3,
     open() { if (!mapMesh && state.map) buildMap(); if (!geoMesh && state.geo) buildGeo(); if (!started) { started = true; home(); } syncEnemies(); },
     dropMap() { if (renderer) { buildMap(); if (state.mode === '3d') home(); } },
     dropGeo() { if (renderer) { buildGeo(); buildMap(); } },
@@ -884,10 +935,10 @@ function warningFor(e) {
 }
 
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.selected = Math.min(o.s, o.e.length - 1); changed();
 }
 function select(i) { state.selected = i; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
 function setMode(mode) {
@@ -902,9 +953,9 @@ function setMode(mode) {
 function setTool(t) {
   state.tool = t;
   document.querySelectorAll('#tools .tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-  if (state.mode === '3d') { $('hintLine').textContent = 'Drag to look, W A S D to fly, Q and E for down and up, Shift is faster, scroll moves forward. ' + { select: 'Click an enemy to select it. ', add: 'Click to place an enemy. ', route: 'Click to add route stops. ' }[t]; return; }
+  if (state.mode === '3d') { $('hintLine').textContent = 'Drag to look, W A S D to fly, Q and E for down and up, Shift is faster, scroll moves forward. ' + { select: 'Click an enemy to select it, drag it to move it. Right click: the selected enemy looks there. ', add: 'Click to place an enemy. ', route: 'Click to add route stops. ', zone: 'Click to place a zone. ' }[t]; return; }
   $('hintLine').textContent = { select: 'Click an enemy to select it, drag to move it. Drag empty ground to pan, scroll to zoom. ',
-    add: 'Click walkable ground to place an enemy. ', route: 'Click to add stops to the selected enemy\'s patrol route. ' }[t];
+    add: 'Click walkable ground to place an enemy. ', route: 'Click to add stops to the selected enemy\'s patrol route. ', zone: 'Click to place a zone that brings enemies in when players reach it. ' }[t];
 }
 function hit(sx, sy) {
   const sel = state.enemies[state.selected];
@@ -940,6 +991,7 @@ canvas.addEventListener('pointerup', ev => {
   const d = drag; drag = null;
   if (!d) return;
   if (d.moved) { if (d.saved) changed(); return; }
+  if (d.button === 2) { const [lx, lz] = toWorld(d.sx, d.sy); if (lookAt(lx, lz)) say('Enemy ' + (state.selected + 1) + ' now looks that way.'); return; }
   if (d.button !== 0) return;
   const [wx, wz] = toWorld(d.sx, d.sy), y = groundAt(wx, wz);
   if (state.tool === 'add' && !d.target) {
@@ -953,8 +1005,18 @@ canvas.addEventListener('pointerup', ev => {
     if (y === null) return say('Nobody can walk there. Route stops must be on the shaded ground.');
     pushUndo(); e.role = 'Patrol'; e.fixed = false; e.patrol.push([wx, y, wz]); changed();
     say('Stop ' + e.patrol.length + ' added' + (e.patrol.length < 2 ? '. Add at least one more.' : '.'));
+  } else if (state.tool === 'zone' && !d.target) {
+    if (y === null) return say('Place the zone on the shaded ground.');
+    addZone(wx, y, wz);
   } else if (state.tool === 'select' && !d.target) select(-1);
 });
+// The selected enemy turns to look at a point.
+function lookAt(x, z) {
+  const e = state.enemies[state.selected];
+  if (!e || Math.hypot(x - e.pos[0], z - e.pos[2]) < 0.3) return false;
+  pushUndo(); e.yaw = (Math.atan2(x - e.pos[0], z - e.pos[2]) * 180 / Math.PI + 360) % 360; changed();
+  return true;
+}
 canvas.addEventListener('pointercancel', () => { drag = null; });
 canvas.addEventListener('contextmenu', ev => ev.preventDefault());
 canvas.addEventListener('wheel', ev => { ev.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(ev.clientX - r.left, ev.clientY - r.top, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
@@ -966,7 +1028,7 @@ window.addEventListener('keydown', ev => {
   if (state.mode === '3d' && !ev.ctrlKey && !ev.metaKey && view3d.key(key, true)) { ev.preventDefault(); return; }   // flying keys
   if ((ev.ctrlKey || ev.metaKey) && key === 'z') { ev.preventDefault(); undo(); }
   else if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-  else if (key === 'v') setTool('select'); else if (key === 'a') setTool('add'); else if (key === 'r') setTool('route');
+  else if (key === 'v') setTool('select'); else if (key === 'a') setTool('add'); else if (key === 'r') setTool('route'); else if (key === 'z') setTool('zone');
   else if (key === 'escape') { setTool('select'); select(-1); }
   else if (key === 'delete') removeSelected();
   else if (key === 'pagedown') { ev.preventDefault(); stepFloor(-1); } else if (key === 'pageup') { ev.preventDefault(); stepFloor(1); }
@@ -995,7 +1057,7 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? 'zone ' + e.trigger : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -1019,6 +1081,31 @@ function syncSide() {
   }
 
   setVal($('title'), state.title); setVal($('scene'), state.scene);
+  $('zoneBox').hidden = !state.zones.length;
+  const zl = $('zoneList');
+  if (!zl.contains(document.activeElement)) {
+    zl.textContent = '';
+    state.zones.forEach((z, zi) => {
+      const li = document.createElement('li'), label = document.createElement('span'), bound = document.createElement('span'), rad = document.createElement('input'), del = document.createElement('button');
+      label.textContent = 'Zone ' + z.id; label.style.color = 'var(--friend)'; label.style.fontWeight = '600';
+      const n = state.enemies.filter(en => en.trigger === z.id).length;
+      bound.textContent = n + (n === 1 ? ' enemy' : ' enemies') + (state.fired.includes(z.id) ? ' · reached' : ''); bound.className = 'hint';
+      rad.type = 'number'; rad.min = 2; rad.max = 200; rad.step = 1; rad.value = Math.round(z.radius); rad.title = 'Radius in metres'; rad.setAttribute('aria-label', 'Radius of zone ' + z.id + ' in metres');
+      rad.addEventListener('change', () => { pushUndo(); z.radius = Math.max(2, Math.min(200, +rad.value || 10)); changed(); });
+      del.type = 'button'; del.className = 'btn danger'; del.textContent = 'Delete'; del.style.padding = '3px 8px';
+      del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); changed(); });
+      li.append(label, bound, rad, del); zl.appendChild(li);
+    });
+  }
+  $('triggerRow').hidden = !(e && state.zones.length);
+  if (e && state.zones.length) {
+    const sel = $('trigger');
+    if (document.activeElement !== sel) {
+      sel.textContent = '';
+      [[0, 'From the start'], ...state.zones.map(z => [z.id, 'When players reach zone ' + z.id])].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      sel.value = state.zones.some(z => z.id === e.trigger) ? e.trigger : 0;
+    }
+  }
   const tr = $('typeRow'); tr.hidden = !(e && live.types.length);
   if (e && live.types.length) {
     const sel = $('type'), want = ['', ...live.types];
@@ -1052,6 +1139,15 @@ $('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.tar
 $('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
 $('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.checked; }));
 $('type').addEventListener('change', ev => edit(e => { e.type = ev.target.value; }));
+$('trigger').addEventListener('change', ev => edit(e => { e.trigger = +ev.target.value || 0; }));
+function addZone(x, y, z) {
+  pushUndo();
+  const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1;
+  state.zones.push({ id, name: '', pos: [x, y, z], radius: 12 });
+  const e = state.enemies[state.selected];
+  changed();
+  say('Zone ' + id + ' placed. Select an enemy and set "Appears" to bind it to this zone.' + (e ? '' : ''));
+}
 $('clearRoute').addEventListener('click', () => edit(e => { e.patrol = []; }));
 $('del').addEventListener('click', removeSelected);
 $('title').addEventListener('input', ev => { state.title = ev.target.value; changed(); });
@@ -1066,7 +1162,9 @@ $('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, 
 $('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
 $('ceiling').addEventListener('input', ev => { state.ceiling = +ev.target.value >= +ev.target.max ? Infinity : +ev.target.value; syncSide(); invalidate(); });
 // A click in the 3D view: the same tools as on the flat map. p = [x, y, z] in game coordinates.
-function click3d(p, enemyIndex) {
+function click3d(p, enemyIndex, button) {
+  if (button === 2) { if (p && lookAt(p[0], p[2])) say('Enemy ' + (state.selected + 1) + ' now looks that way.'); return; }
+  if (state.tool === 'zone' && p && enemyIndex < 0) { addZone(p[0], p[1], p[2]); return; }
   if (enemyIndex >= 0 && !(state.tool === 'route' && state.selected >= 0 && enemyIndex !== state.selected)) { select(enemyIndex); return; }
   if (!p) { if (state.tool === 'select') select(-1); return; }
   const level = levelsAt(p[0], p[2]).filter(y => Math.abs(y - p[1]) <= 1.0).sort((a, b) => Math.abs(a - p[1]) - Math.abs(b - p[1]))[0];
@@ -1182,6 +1280,7 @@ async function applyLive(s) {
   if (s.rev !== live.rev && !live.sending && !live.pending && !drag) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
+    state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : [];
     state.enemies = mine.map((m, i) => Object.assign(enemyOf(m, i), { id: m.id, live: !!m.live, waiting: !!m.waiting }));
     const again = selId ? state.enemies.findIndex(e => e.id === selId) : -1;
     state.selected = again >= 0 ? again : (selIx >= 0 && selIx < state.enemies.length && !selId ? selIx : -1);
@@ -1198,7 +1297,7 @@ function pushLive() {
   live.pending = true; clearTimeout(live.pushTimer);
   live.pushTimer = setTimeout(async () => {
     live.sending = true; live.pending = false;
-    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
+    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
     catch (e) { live.sending = false; say('The change did not reach the game. Is it still running?'); }
   }, 150);
 }
@@ -1234,7 +1333,7 @@ const served = /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)
 if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, live, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d };   // for automated tests
+window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d };   // for automated tests
 })();
 </script>
 </body>

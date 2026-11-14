@@ -25,6 +25,7 @@ namespace MissionLab
         private static volatile string _navFile;        // map file of the mission in progress
         internal static int Port;
         internal static bool Running;
+        internal static float LastRequestAt = -100f;    // game time of the last request from the browser
 
         public static void Start(int port)
         {
@@ -77,6 +78,7 @@ namespace MissionLab
             _navFile = GameMaster.LiveNavFile();
             for (int n = 0; n < 8 && Jobs.TryDequeue(out Job job); n++)
             {
+                LastRequestAt = UnityEngine.Time.unscaledTime;
                 try { job.Res = Answer(job.Req); }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("browser request " + job.Req.Path + " failed: " + e); job.Res = HttpResponse.Error(500, e.GetType().Name + ": " + e.Message); }
                 job.Done.Set();

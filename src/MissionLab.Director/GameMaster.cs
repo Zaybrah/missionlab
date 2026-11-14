@@ -41,6 +41,10 @@ namespace MissionLab
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         private static readonly string[] Roles = { "Guard", "Wander", "Patrol" };
         private static int _nextId = 1;
+        private static List<TriggerPlan> _zones = new List<TriggerPlan>();
+        private static readonly HashSet<int> Fired = new HashSet<int>();
+        private static float _zoneCheckAt;
+        private static bool _yawLogged;
         private static IntPtr _raidPtr = IntPtr.Zero;
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
@@ -85,6 +89,7 @@ namespace MissionLab
             _weOpenedCam = false;
             if (_active) ReleaseInput();
             _aiming = -1; _aimOk = false; FacingChecks.Clear();
+            _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -109,6 +114,13 @@ namespace MissionLab
             DirectorPlugin.L.LogInfo(Director.Banner);
         }
 
+        /// <summary>On screen only while someone is acting as Game Master; a player should not be told an ambush just appeared.</summary>
+        private static void Tell(string text)
+        {
+            if (_active || Time.unscaledTime - LiveLink.LastRequestAt < 5f) Say(text);
+            else DirectorPlugin.L.LogInfo("MissionLab: " + text);
+        }
+
         // ------------------------------------------------------------------ markers
         private static void EnsureMarkers()
         {
@@ -118,6 +130,7 @@ namespace MissionLab
             if (plan == null) return;
             foreach (SpawnPlan s in plan.Spawns)
                 _markers.Add(new Marker { Plan = s, Waiting = _later != null && _later.Contains(s) });
+            _zones = new List<TriggerPlan>(plan.Triggers);
         }
 
         private static HashSet<IntPtr> Alive(GameManager gm)
@@ -168,9 +181,24 @@ namespace MissionLab
             {
                 EnsureMarkers();
                 var mine = new List<Marker>();
-                foreach (Marker m in _markers) if (_later.Contains(m.Plan)) mine.Add(m);
+                foreach (Marker m in _markers) if (_later.Contains(m.Plan) && m.Plan.Trigger == 0) mine.Add(m);
                 _later = null;
                 Enqueue(mine);
+            }
+            if (_markers != null && now >= _zoneCheckAt)
+            {
+                // Zones: the first player to walk into one brings in the enemies bound to it.
+                _zoneCheckAt = now + 0.25f;
+                if (_later != null) EnsureMarkers();
+                foreach (TriggerPlan z in _zones)
+                {
+                    if (Fired.Contains(z.Id) || !PlayerInside(z)) continue;
+                    Fired.Add(z.Id);
+                    var mine = new List<Marker>();
+                    foreach (Marker m in _markers) if (m.Plan.Trigger == z.Id && m.Waiting && !m.Queued) mine.Add(m);
+                    Enqueue(mine);
+                    Tell("zone " + (string.IsNullOrEmpty(z.Name) ? z.Id.ToString() : "'" + z.Name + "'") + " reached: " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear"));
+                }
             }
             if (_markers != null)
             {
@@ -293,7 +321,7 @@ namespace MissionLab
             int made = 0;
             foreach (Marker m in batch.Items) { m.Queued = false; if (m.Bot != IntPtr.Zero) { made++; FacingChecks.Add(new KeyValuePair<Marker, float>(m, now + 1.5f)); } }
             _running = null;
-            Say((made == batch.Items.Count ? "spawned " + made : "spawned " + made + " of " + batch.Items.Count) + (made == 1 ? " enemy" : " enemies") +
+            Tell((made == batch.Items.Count ? "spawned " + made : "spawned " + made + " of " + batch.Items.Count) + (made == 1 ? " enemy" : " enemies") +
                 (batch.Type != null ? " of type " + batch.Type : "") + " after " + (now - _runningSince).ToString("0.00", Inv) + " s | enemies alive: " + (ai != null ? ai.Count : 0));
         }
 
@@ -567,7 +595,8 @@ namespace MissionLab
         private static void SpawnWaiting()
         {
             var list = new List<Marker>();
-            for (int i = 0; i < _markers.Count; i++) if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued) list.Add(_markers[i]);
+            for (int i = 0; i < _markers.Count; i++)
+                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
             if (list.Count == 0) { Say("no waiting enemies"); return; }
             Enqueue(list);
             Say("spawning " + list.Count + " waiting enemies");
@@ -624,6 +653,44 @@ namespace MissionLab
             }
         }
 
+        private static bool PlayerInside(TriggerPlan z)
+        {
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerMaster pm = players[i];
+                PlayerNetworking body = pm == null ? null : pm.PlayerSpawnedObject;
+                if (body == null) continue;
+                Vector3 p = body.transform.position;
+                float dx = p.x - z.Pos.X, dz = p.z - z.Pos.Z;
+                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 4f) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Which way a player looks. The player object itself does not turn; the game keeps the
+        /// view direction in CharacterRotationY (sent to everyone), and the host's own camera is exact.
+        /// </summary>
+        private static float PlayerYaw(PlayerMaster pm, PlayerNetworking body)
+        {
+            float synced = body.CharacterRotationY;
+            Transform character = body.Character;
+            float model = character != null ? character.eulerAngles.y : 0f;
+            float yaw = Mathf.Abs(synced) > 0.01f ? synced : model;
+            ScreenshotFreeCamera fc = FreeCam();
+            Camera cam = MainCameraSingleton.MainCam;
+            bool own = pm.Pointer == (PlayerMaster.MyPlayerMaster != null ? PlayerMaster.MyPlayerMaster.Pointer : IntPtr.Zero);
+            if (own && cam != null && !(fc != null && fc.ToggledCam)) yaw = cam.transform.eulerAngles.y;
+            if (!_yawLogged)
+            {
+                _yawLogged = true;
+                DirectorPlugin.L.LogInfo("player facing sources: synced " + synced.ToString("0", Inv) + ", character " + model.ToString("0", Inv) + ", object " + body.transform.eulerAngles.y.ToString("0", Inv) +
+                                         ", camera " + (cam != null ? cam.transform.eulerAngles.y.ToString("0", Inv) : "none") + ", own player " + own);
+            }
+            return (yaw % 360f + 360f) % 360f;
+        }
+
         // ------------------------------------------------------------------ browser editor (called by LiveLink on the game thread)
         private static bool MissionRunning(out RaidManager raid, out GameManager gm)
         {
@@ -668,7 +735,7 @@ namespace MissionLab
                 PlayerNetworking body = pm == null ? null : pm.PlayerSpawnedObject;
                 if (body == null) continue;
                 Transform t = body.transform;
-                sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(pm.thisPlayerName)).Append(",\"pos\":").Append(P(t.position)).Append(",\"yaw\":").Append(F(t.eulerAngles.y)).Append('}');
+                sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(pm.thisPlayerName)).Append(",\"pos\":").Append(P(t.position)).Append(",\"yaw\":").Append(F(PlayerYaw(pm, body))).Append('}');
                 first = false;
             }
 
@@ -694,6 +761,10 @@ namespace MissionLab
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(m.Id).Append(",\"live\":").Append(live ? "true" : "false").Append(",\"waiting\":").Append(m.Waiting ? "true" : "false").Append(',').Append(spawn, 1, spawn.Length - 1);
                 rev.Append(m.Id).Append(live ? 'L' : m.Waiting ? 'W' : 'G').Append(spawn);
             }
+            sb.Append("],\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
+            first = true;
+            foreach (int id in Fired) { sb.Append(first ? "" : ",").Append(id); first = false; }
+            rev.Append(MissionPlan.TriggersJson(_zones)).Append(Fired.Count);
             sb.Append("],\"types\":[");
             var types = Types(gm);
             for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
@@ -718,7 +789,8 @@ namespace MissionLab
                 spawnNow = root.TryGetProperty("spawnNow", out var sn) && sn.ValueKind == System.Text.Json.JsonValueKind.True;
                 foreach (System.Text.Json.JsonElement e in list.EnumerateArray())
                     if (e.ValueKind == System.Text.Json.JsonValueKind.Object) ids.Add(e.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.Number ? id.GetInt32() : 0);
-                sent = MissionPlan.FromJson("{\"spawns\":" + list.GetRawText() + "}");
+                string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
+                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"spawns\":" + list.GetRawText() + "}");
             }
             if (sent.Spawns.Count != ids.Count) return StateJson();
 
@@ -741,7 +813,7 @@ namespace MissionLab
                     if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
                     var created = new Marker { Plan = s, Waiting = true };
                     result.Add(created);
-                    if (spawnNow) fresh.Add(created);
+                    if (spawnNow && s.Trigger == 0) fresh.Add(created);       // a zone enemy waits for its zone
                 }
             }
             foreach (Marker gone in byId.Values)
@@ -751,6 +823,7 @@ namespace MissionLab
                 if (b != null) Destroy(b);
             }
             _markers = result; _aiming = -1; _current = -1;
+            _zones = sent.Triggers;
             if (fresh.Count > 0) Enqueue(fresh);
             return StateJson();
         }
@@ -778,6 +851,7 @@ namespace MissionLab
             bool fromFile = Director.CurrentScenarioPath != null;
             var plan = new MissionPlan { Seed = 0, Scene = fromFile ? (Director.CurrentScenarioScene ?? "") : "", NavFile = mapFile };
             foreach (Marker m in _markers) { plan.Spawns.Add(m.Plan); plan.Groups = Math.Max(plan.Groups, m.Plan.Group + 1); }
+            plan.Triggers.AddRange(_zones);
             plan.RequestedEnemies = plan.Spawns.Count;
             plan.Notes.Add("Saved from Game Master mode");
             try

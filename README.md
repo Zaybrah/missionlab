@@ -53,6 +53,12 @@ real walls, stairs and furniture, press M in Game Master mode: the mod writes th
 map's solid geometry to `BepInEx/MissionLab/maps/<map>.mlgeo` on your own PC; open that
 file in the editor too. The `.mlgeo` file is derived from game assets: keep it local.
 
+### Zones
+A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
+`"trigger": <id>` is not on the map at the start; it appears when the first player walks
+into that zone. In the editor: "Add zone", then set an enemy's "Appears" to the zone.
+At least one enemy must be there from the start.
+
 ### Live in the browser
 While you host a mission, the mod serves the same editor at `http://localhost:8765` on your
 own computer (nothing on the network can reach it). There it is connected to the game: the
