@@ -28,6 +28,7 @@ namespace MissionLab
     {
         private sealed class Marker
         {
+            public int Id = _nextId++;  // stable name for the browser editor
             public SpawnPlan Plan;
             public IntPtr Bot;          // the live enemy made from this marker, if any
             public bool Waiting;        // not spawned yet
@@ -39,6 +40,7 @@ namespace MissionLab
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         private static readonly string[] Roles = { "Guard", "Wander", "Patrol" };
+        private static int _nextId = 1;
         private static IntPtr _raidPtr = IntPtr.Zero;
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
@@ -622,6 +624,151 @@ namespace MissionLab
             }
         }
 
+        // ------------------------------------------------------------------ browser editor (called by LiveLink on the game thread)
+        private static bool MissionRunning(out RaidManager raid, out GameManager gm)
+        {
+            raid = RaidManager.singleton; gm = GameManager.instance;
+            return _raidPtr != IntPtr.Zero && raid != null && gm != null && raid.Pointer == _raidPtr && Mirror.NetworkServer.active;
+        }
+
+        internal static string LiveNavFile()
+        {
+            if (_raidPtr == IntPtr.Zero) return null;
+            NavMesh nav = Director.CurrentNav;
+            return nav != null ? nav.SourceFile : null;
+        }
+
+        private static string Q(string s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ") + "\"";
+        private static string F(float f) => (float.IsNaN(f) || float.IsInfinity(f) ? 0f : (float)Math.Round(f, 2)).ToString(Inv);
+        private static string P(Vector3 v) => "[" + F(v.x) + "," + F(v.y) + "," + F(v.z) + "]";
+
+        /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
+        internal static string StateJson()
+        {
+            if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
+            if (Time.unscaledTime - Director.HandledAt < 3f) return "{\"mission\":false,\"starting\":true}";
+            EnsureMarkers(); MapBots(gm, null);
+            HashSet<IntPtr> alive = Alive(gm);
+            var byBot = new Dictionary<IntPtr, int>();
+            foreach (Marker m in _markers) if (m.Bot != IntPtr.Zero) byBot[m.Bot] = m.Id;
+            string nav = LiveNavFile();
+            var sb = new System.Text.StringBuilder(8192);
+            var rev = new System.Text.StringBuilder(2048);
+            sb.Append("{\"mission\":true,\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
+            sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo")) ? "true" : "false");
+            sb.Append(",\"busy\":").Append(_running != null || Pending.Count > 0 ? "true" : "false");
+            sb.Append(",\"message\":").Append(Q(Time.unscaledTime < Director.BannerUntil ? Director.Banner : ""));
+
+            sb.Append(",\"players\":[");
+            var players = PlayerMaster.AllPlayerMasters;
+            bool first = true;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerMaster pm = players[i];
+                PlayerNetworking body = pm == null ? null : pm.PlayerSpawnedObject;
+                if (body == null) continue;
+                Transform t = body.transform;
+                sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(pm.thisPlayerName)).Append(",\"pos\":").Append(P(t.position)).Append(",\"yaw\":").Append(F(t.eulerAngles.y)).Append('}');
+                first = false;
+            }
+
+            sb.Append("],\"enemies\":[");
+            var ai = gm.allAI; first = true;
+            for (int i = 0; ai != null && i < ai.Count; i++)
+            {
+                BrainAI b = ai[i];
+                if (b == null) continue;
+                Vector3 pos = b.transform.position; float yaw = b.transform.eulerAngles.y;
+                try { AgentController ac = b.agent; if (ac != null && ac.entityExists) { pos = ac.position; if (ac.Agent != null) yaw = ac.Agent.rotation.eulerAngles.y; } } catch { }
+                sb.Append(first ? "" : ",").Append("{\"pos\":").Append(P(pos)).Append(",\"yaw\":").Append(F(yaw)).Append(",\"state\":").Append(Q(b.CurrentState.ToString()))
+                  .Append(",\"marker\":").Append(byBot.TryGetValue(b.Pointer, out int id) ? id : -1).Append('}');
+                first = false;
+            }
+
+            sb.Append("],\"markers\":[");
+            for (int i = 0; i < _markers.Count; i++)
+            {
+                Marker m = _markers[i];
+                bool live = m.Bot != IntPtr.Zero && alive.Contains(m.Bot);
+                string spawn = MissionPlan.SpawnJson(m.Plan);
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(m.Id).Append(",\"live\":").Append(live ? "true" : "false").Append(",\"waiting\":").Append(m.Waiting ? "true" : "false").Append(',').Append(spawn, 1, spawn.Length - 1);
+                rev.Append(m.Id).Append(live ? 'L' : m.Waiting ? 'W' : 'G').Append(spawn);
+            }
+            sb.Append("],\"types\":[");
+            var types = Types(gm);
+            for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
+            // The page takes the marker list over only when this changes.
+            sb.Append("],\"rev\":").Append(Q(rev.ToString().GetHashCode().ToString("x") + "-" + _markers.Count)).Append('}');
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// The page sends its whole enemy list. New entries become markers (spawned at once if asked),
+        /// missing ones are removed with their enemy, and changed ones are updated; a live enemy whose
+        /// marker changed is taken out and made again.
+        /// </summary>
+        internal static string Reconcile(string json)
+        {
+            if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
+            EnsureMarkers();
+            var ids = new List<int>(); bool spawnNow; MissionPlan sent;
+            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
+            {
+                System.Text.Json.JsonElement root = doc.RootElement, list = root.GetProperty("markers");
+                spawnNow = root.TryGetProperty("spawnNow", out var sn) && sn.ValueKind == System.Text.Json.JsonValueKind.True;
+                foreach (System.Text.Json.JsonElement e in list.EnumerateArray())
+                    if (e.ValueKind == System.Text.Json.JsonValueKind.Object) ids.Add(e.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.Number ? id.GetInt32() : 0);
+                sent = MissionPlan.FromJson("{\"spawns\":" + list.GetRawText() + "}");
+            }
+            if (sent.Spawns.Count != ids.Count) return StateJson();
+
+            float now = Time.unscaledTime;
+            var byId = new Dictionary<int, Marker>();
+            foreach (Marker m in _markers) byId[m.Id] = m;
+            var result = new List<Marker>(); var fresh = new List<Marker>();
+            for (int i = 0; i < sent.Spawns.Count; i++)
+            {
+                SpawnPlan s = sent.Spawns[i];
+                if (s.Fixed) { s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
+                if (ids[i] > 0 && byId.TryGetValue(ids[i], out Marker m))
+                {
+                    byId.Remove(ids[i]);
+                    if (MissionPlan.SpawnJson(m.Plan) != MissionPlan.SpawnJson(s)) { m.Plan = s; if (m.Bot != IntPtr.Zero) m.TurnedAt = now; }
+                    result.Add(m);
+                }
+                else
+                {
+                    if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
+                    var created = new Marker { Plan = s, Waiting = true };
+                    result.Add(created);
+                    if (spawnNow) fresh.Add(created);
+                }
+            }
+            foreach (Marker gone in byId.Values)
+            {
+                if (gone.Queued) { result.Add(gone); continue; }          // on its way into the game: keep it for now
+                BrainAI b = gone.Bot == IntPtr.Zero ? null : Find(gm, gone.Bot);
+                if (b != null) Destroy(b);
+            }
+            _markers = result; _aiming = -1; _current = -1;
+            if (fresh.Count > 0) Enqueue(fresh);
+            return StateJson();
+        }
+
+        internal static string Command(string json)
+        {
+            if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
+            EnsureMarkers();
+            string cmd;
+            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json)) cmd = doc.RootElement.GetProperty("cmd").GetString();
+            if (cmd == "spawnWaiting") SpawnWaiting();
+            else if (cmd == "removeAllEnemies") RemoveAllEnemies(gm);
+            else if (cmd == "save") Save();
+            else if (cmd == "export") ExportMap();
+            else Say("unknown request from the browser: " + cmd);
+            return StateJson();
+        }
+
         // ------------------------------------------------------------------ saving
         private static void Save()
         {
@@ -776,6 +923,7 @@ namespace MissionLab
                 DirectorPlugin.KeySpawn.Value + "   spawn the waiting enemies (" + waitCount + ")      " + DirectorPlugin.KeySave.Value + "   save as scenario",
                 DirectorPlugin.KeyRemoveAll.Value + " twice   remove all live enemies      Ctrl+" + DirectorPlugin.KeyRemove.Value + " twice   empty the map",
                 DirectorPlugin.KeyExport.Value + "   export this map for the 3D view of the scenario editor",
+                LiveLink.Running ? "In a browser on this PC: http://localhost:" + LiveLink.Port + " (the same tools, live)" : "",
             };
             float x = 24f, y = 96f, wPanel = 730f, lh = 21f;
             Fill(new Rect(x - 10f, y - 8f, wPanel, lines.Count * lh + 16f), new Color(0f, 0f, 0f, 0.62f));

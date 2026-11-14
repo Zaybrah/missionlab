@@ -53,6 +53,15 @@ real walls, stairs and furniture, press M in Game Master mode: the mod writes th
 map's solid geometry to `BepInEx/MissionLab/maps/<map>.mlgeo` on your own PC; open that
 file in the editor too. The `.mlgeo` file is derived from game assets: keep it local.
 
+### Live in the browser
+While you host a mission, the mod serves the same editor at `http://localhost:8765` on your
+own computer (nothing on the network can reach it). There it is connected to the game: the
+map and the 3D geometry load by themselves, players and enemies are shown where they are
+right now, and every change (place, move, turn, change role or type, delete) is carried out
+in the running mission. "Save in the game" writes the scenario file. The page it serves is
+`BepInEx/MissionLab/web/index.html`, a copy of `tools/editor/index.html`. Port and on/off
+are in the `[LiveLink]` config section.
+
 ## Status
 Director 0.2.2 is tested in game on Suburb Day (solo host): enemies spawn on the
 Tested in game, solo host, on Suburb Day and Mexico Depot Day (0.3.1): generated

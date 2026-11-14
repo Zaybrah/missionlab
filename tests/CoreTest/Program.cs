@@ -4,6 +4,13 @@ using MissionLab.Core;
 
 // usage: CoreTest <navmesh.bytes> <recon.json|-> <outDir> <enemies> <seed>... [--infil x,y,z]...
 //        CoreTest --check <scenario.json> <navmesh.bytes>     validate a hand-edited scenario file
+if (args.Length == 2 && args[0] == "--http")
+{
+    // A stand-alone run of the plugin's little web server, to test it with curl.
+    using var web = new MiniHttp(int.Parse(args[1]), r => r.Path == "/echo" ? HttpResponse.Json("{\"method\":\"" + r.Method + "\",\"bytes\":" + r.Body.Length + ",\"mark\":\"" + (r.Headers.TryGetValue("X-MissionLab", out var h) ? h : "") + "\"}")
+                                                             : r.Path == "/boom" ? throw new InvalidOperationException("test") : HttpResponse.Error(404, "not found"));
+    web.Start(); Console.WriteLine("listening on " + web.Port); Thread.Sleep(Timeout.Infinite);
+}
 if (args.Length == 3 && args[0] == "--check")
 {
     MissionPlan sc;

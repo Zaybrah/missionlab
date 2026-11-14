@@ -40,12 +40,38 @@ namespace MissionLab.Core
         public List<SpawnPlan> Spawns = new List<SpawnPlan>();
         public List<string> Notes = new List<string>();
 
+        /// <summary>One enemy as a JSON object, as it appears in a mission file.</summary>
+        public static string SpawnJson(SpawnPlan s)
+        {
+            var sb = new StringBuilder(256);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            string P(V3 v) => "[" + F(v.X) + "," + F(v.Y) + "," + F(v.Z) + "]";
+            string S(string t) => t == null ? "null" : "\"" + t.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            sb.Append("{\"group\":").Append(s.Group);
+            sb.Append(",\"role\":").Append(S(s.Role.ToString()));
+            sb.Append(",\"pos\":").Append(P(s.Pos));
+            sb.Append(",\"yaw\":").Append(F(s.Yaw));
+            sb.Append(",\"indoor\":").Append(s.Indoor ? "true" : "false");
+            sb.Append(",\"defensive\":").Append(s.Defensive ? "true" : "false");
+            sb.Append(",\"detectionRange\":").Append(F(s.DetectionRange));
+            sb.Append(",\"hearingRange\":").Append(F(s.HearingRange));
+            sb.Append(",\"fov\":").Append(F(s.Fov));
+            sb.Append(",\"wanderDistance\":").Append(s.WanderDistance);
+            sb.Append(",\"patrolWaitSeconds\":").Append(F(s.PatrolWaitSeconds));
+            sb.Append(",\"fixed\":").Append(s.Fixed ? "true" : "false");
+            sb.Append(",\"prone\":").Append(s.Prone ? "true" : "false");
+            sb.Append(",\"type\":").Append(S(string.IsNullOrEmpty(s.Type) ? "" : s.Type));
+            sb.Append(",\"patrol\":[");
+            for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
+            sb.Append("]}");
+            return sb.ToString();
+        }
+
         public string ToJson()
         {
             var sb = new StringBuilder(4096);
             var inv = CultureInfo.InvariantCulture;
-            string F(float f) => System.Math.Round(f, 2).ToString(inv);
-            string P(V3 v) => "[" + F(v.X) + "," + F(v.Y) + "," + F(v.Z) + "]";
             string S(string s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
             sb.Append("{\"schema\":").Append(S(Schema));
             sb.Append(",\"seed\":").Append(Seed.ToString(inv));
@@ -58,25 +84,8 @@ namespace MissionLab.Core
             sb.Append("],\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
             {
-                var s = Spawns[i];
                 if (i > 0) sb.Append(',');
-                sb.Append("\n{\"group\":").Append(s.Group);
-                sb.Append(",\"role\":").Append(S(s.Role.ToString()));
-                sb.Append(",\"pos\":").Append(P(s.Pos));
-                sb.Append(",\"yaw\":").Append(F(s.Yaw));
-                sb.Append(",\"indoor\":").Append(s.Indoor ? "true" : "false");
-                sb.Append(",\"defensive\":").Append(s.Defensive ? "true" : "false");
-                sb.Append(",\"detectionRange\":").Append(F(s.DetectionRange));
-                sb.Append(",\"hearingRange\":").Append(F(s.HearingRange));
-                sb.Append(",\"fov\":").Append(F(s.Fov));
-                sb.Append(",\"wanderDistance\":").Append(s.WanderDistance);
-                sb.Append(",\"patrolWaitSeconds\":").Append(F(s.PatrolWaitSeconds));
-                sb.Append(",\"fixed\":").Append(s.Fixed ? "true" : "false");
-                sb.Append(",\"prone\":").Append(s.Prone ? "true" : "false");
-                sb.Append(",\"type\":").Append(S(string.IsNullOrEmpty(s.Type) ? "" : s.Type));
-                sb.Append(",\"patrol\":[");
-                for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
-                sb.Append("]}");
+                sb.Append('\n').Append(SpawnJson(Spawns[i]));
             }
             sb.Append("\n]}");
             return sb.ToString();

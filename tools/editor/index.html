@@ -66,7 +66,7 @@ h2 span { font: 500 12px var(--mono); letter-spacing: 0; text-transform: none; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .field { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; align-items: center; }
 .field > label { color: var(--ink-2); font-size: 12.5px; }
-input[type="text"], input[type="number"], textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; }
+input[type="text"], input[type="number"], textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; }
 input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 input[type="range"] { width: 100%; accent-color: var(--friend); }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
@@ -103,6 +103,10 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #stage { position: relative; min-width: 0; min-height: 0; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
 #view3d { cursor: grab; }
+#liveBox { display: none; flex-direction: column; gap: 8px; }
+body.live #liveBox { display: flex; }
+body.live .offline { display: none !important; }
+#liveStatus { font-weight: 500; }
 #tools .mode[aria-pressed="true"] { background: var(--friend); color: #fff; border-color: var(--friend); }
 .float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
 #tools { top: 12px; left: 12px; max-width: calc(100% - 24px); }
@@ -135,14 +139,24 @@ body.dragging #drop { display: flex; }
 
   <section aria-labelledby="h-map">
     <h2 id="h-map">1. Map</h2>
-    <div class="row">
+    <div id="liveBox">
+      <span class="chip info" id="liveChip">Live</span>
+      <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
+      <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
+      <div class="row">
+        <button class="btn" id="liveSpawn" type="button">Spawn waiting</button>
+        <button class="btn danger" id="liveClear" type="button">Remove all live enemies</button>
+        <button class="btn" id="liveExport" type="button" hidden>Make the 3D map</button>
+      </div>
+    </div>
+    <div class="row offline">
       <button class="btn primary" id="openBtn" type="button">Open files</button>
       <input id="fileInput" type="file" multiple accept=".bytes,.json,.mlgeo" hidden>
       <span class="chip info" id="exampleChip">Example map</span>
     </div>
     <div id="mapInfo"></div>
-    <p class="hint">Dark lines are borders nobody can cross: walls, fences, furniture. For real walls and furniture in the 3D view, also open the <code>.mlgeo</code> file that Game Master mode exports into <code>BepInEx/MissionLab/maps</code> (press M there). Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
-    <details>
+    <p class="hint offline">Dark lines are borders nobody can cross: walls, fences, furniture. For real walls and furniture in the 3D view, also open the <code>.mlgeo</code> file that Game Master mode exports into <code>BepInEx/MissionLab/maps</code> (press M there). Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
+    <details class="offline">
       <summary>Which map file belongs to which mission?</summary>
       <ul>
         <li>Clean House (Suburb): <code>suburbv2.bytes</code></li>
@@ -174,6 +188,7 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="defensive" type="checkbox"><span>Holds its ground when alerted (otherwise it pushes toward you)</span></label>
     <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
     <label class="check"><input id="prone" type="checkbox"><span>Lies prone (lying down)</span></label>
+    <div class="field" id="typeRow" hidden><label for="type">Enemy type</label><select id="type"></select></div>
     <div id="pos"></div>
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
@@ -439,14 +454,47 @@ function scenarioObject() {
     navFile: state.navFile,
     seed: 0,
     notes: ['Made with the MissionLab scenario editor'],
-    spawns: state.enemies.map(e => ({
-      group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
-      detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
-      wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
-      prone: !!e.prone, type: e.type || '',
-      patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
-    })),
+    spawns: state.enemies.map(spawnOf),
   };
+}
+function spawnOf(e) {
+  return {
+    group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
+    detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
+    wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
+    prone: !!e.prone, type: e.type || '',
+    patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
+  };
+}
+function enemyOf(s, i) {
+  if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
+  const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
+  if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
+  return Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
+    yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
+    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '',
+    detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
+    wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
+    patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
+  });
+}
+// Solid map geometry exported by the mod. Returns the number of triangles kept.
+function loadGeo(buf, name) {
+  const dv = new DataView(buf), nv = dv.getInt32(8, true), ni = dv.getInt32(12, true);
+  if (nv <= 0 || ni <= 0 || 16 + nv * 12 + ni * 4 > buf.byteLength) throw new Error('The 3D map file is cut off or damaged. Export it again.');
+  const pos = new Float32Array(buf.slice(16, 16 + nv * 12)), all = new Uint32Array(buf.slice(16 + nv * 12, 16 + nv * 12 + ni * 4));
+  // Maps are wrapped in invisible boxes many kilometres wide. Drawn, they would hide everything else.
+  const keep = new Uint32Array(all.length); let n = 0;
+  for (let t = 0; t + 2 < all.length; t += 3) {
+    const a = all[t] * 3, b = all[t + 1] * 3, c = all[t + 2] * 3;
+    if (a >= pos.length || b >= pos.length || c >= pos.length) continue;
+    const far = (p, q) => Math.abs(pos[p] - pos[q]) > 1000 || Math.abs(pos[p + 1] - pos[q + 1]) > 1000 || Math.abs(pos[p + 2] - pos[q + 2]) > 1000;
+    if (far(a, b) || far(b, c) || far(c, a)) continue;
+    keep[n++] = all[t]; keep[n++] = all[t + 1]; keep[n++] = all[t + 2];
+  }
+  state.geo = { positions: pos, indices: keep.slice(0, n), name };
+  view3d.dropGeo();
+  return n / 3;
 }
 function scenarioText() {
   const o = scenarioObject(), head = Object.assign({}, o); delete head.spawns;
@@ -458,18 +506,7 @@ function loadScenario(obj, name) {
   const record = obj && obj.plan && Array.isArray(obj.plan.spawns);
   const root = record ? obj.plan : obj;
   const list = [];
-  root.spawns.forEach((s, i) => {
-    if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
-    const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
-    if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
-    list.push(Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
-      yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
-      prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '',
-      detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
-      wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
-      patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
-    }));
-  });
+  root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
@@ -497,21 +534,8 @@ async function openFiles(files) {
     try {
       const buf = await f.arrayBuffer(), head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
       if (buf.byteLength > 16 && new TextDecoder().decode(new Uint8Array(buf, 0, 6)) === 'MLGEO1') {
-        const dv = new DataView(buf), nv = dv.getInt32(8, true), ni = dv.getInt32(12, true);
-        if (nv <= 0 || ni <= 0 || 16 + nv * 12 + ni * 4 > buf.byteLength) throw new Error('The 3D map file is cut off or damaged. Export it again.');
-        const pos = new Float32Array(buf.slice(16, 16 + nv * 12)), all = new Uint32Array(buf.slice(16 + nv * 12, 16 + nv * 12 + ni * 4));
-        // Maps are wrapped in invisible boxes many kilometres wide. Drawn, they would hide everything else.
-        const keep = new Uint32Array(all.length); let n = 0;
-        for (let t = 0; t + 2 < all.length; t += 3) {
-          const a = all[t] * 3, b = all[t + 1] * 3, c = all[t + 2] * 3;
-          if (a >= pos.length || b >= pos.length || c >= pos.length) continue;
-          const far = (p, q) => Math.abs(pos[p] - pos[q]) > 1000 || Math.abs(pos[p + 1] - pos[q + 1]) > 1000 || Math.abs(pos[p + 2] - pos[q + 2]) > 1000;
-          if (far(a, b) || far(b, c) || far(c, a)) continue;
-          keep[n++] = all[t]; keep[n++] = all[t + 1]; keep[n++] = all[t + 2];
-        }
-        state.geo = { positions: pos, indices: keep.slice(0, n), name: f.name };
-        view3d.dropGeo();
-        notes.push(f.name + ': ' + Math.round(n / 3).toLocaleString('en') + ' triangles of walls, floors and furniture for the 3D view.');
+        const n = loadGeo(buf, f.name);
+        notes.push(f.name + ': ' + Math.round(n).toLocaleString('en') + ' triangles of walls, floors and furniture for the 3D view.');
         if (state.mode !== '3d') setMode('3d');
       } else if (head[0] === 0x50 && head[1] === 0x4b) {
         const tris = await readMapFile(buf);
@@ -650,7 +674,8 @@ function draw() {
     const above = e.pos[1] > state.ceiling + 0.4;                            // stands on a floor that is hidden right now
     if (above) ctx.globalAlpha = 0.35;
     ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(yaw) * (r + 9), y - Math.cos(yaw) * (r + 9)); ctx.stroke();
-    shape(e.role, x, y, r); ctx.fillStyle = css.enemy; ctx.fill();
+    shape(e.role, x, y, r); ctx.fillStyle = live.on && !e.live ? css.panel : css.enemy; ctx.fill();      // hollow: not in the game (yet)
+    if (live.on && !e.live) { ctx.lineWidth = 2; ctx.strokeStyle = css.enemy; ctx.stroke(); }
     ctx.lineWidth = 1.5; ctx.strokeStyle = bad ? css.warn : css.panel; if (bad) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
     if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
     if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
@@ -658,6 +683,23 @@ function draw() {
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(String(i + 1), x + r + 6, y - r - 3); ctx.fillStyle = css.ink; ctx.fillText(String(i + 1), x + r + 6, y - r - 3);
     ctx.globalAlpha = 1;
   });
+
+  // Live: every enemy where it really is, and the players.
+  if (live.on) {
+    const byId = new Map(state.enemies.map(e => [e.id, e]));
+    for (const b of live.enemies) {
+      const [x, y] = toScreen(b.pos[0], b.pos[2]), home = byId.get(b.marker);
+      if (home && Math.hypot(home.pos[0] - b.pos[0], home.pos[2] - b.pos[2]) < 1.2) continue;       // still standing on its marker
+      if (home) { const [hx, hy] = toScreen(home.pos[0], home.pos[2]); ctx.strokeStyle = css.enemy; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(x, y); ctx.stroke(); ctx.globalAlpha = 1; }
+      ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fillStyle = css.panel; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = css.enemy; ctx.stroke();
+    }
+    for (const p of live.players) {
+      const [x, y] = toScreen(p.pos[0], p.pos[2]), a = p.yaw * Math.PI / 180;
+      ctx.strokeStyle = css.friend; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(a) * 16, y - Math.cos(a) * 16); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fillStyle = css.friend; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
+      ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(p.name || 'Player', x + 10, y + 12); ctx.fillStyle = css.friend; ctx.fillText(p.name || 'Player', x + 10, y + 12);
+    }
+  }
 
   // Scale bar: this is a map, so say what a length on it means.
   const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500]; let len = steps[steps.length - 1];
@@ -672,7 +714,7 @@ function draw() {
 // so everything is drawn at (x, y, -z). That keeps the map the same way round as the flat view.
 const view3d = (() => {
   const T = window.THREE, cv = $('view3d');
-  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, enemyGroup, extraGroup, raf = 0, last = 0;
+  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, enemyGroup, extraGroup, liveGroup, raf = 0, last = 0;
   let yaw = 0, pitch = -0.7, started = false;
   const keys = new Set(), fly = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift']);
   const col = name => new T.Color(css[name]);
@@ -681,7 +723,7 @@ const view3d = (() => {
     scene = new T.Scene(); camera = new T.PerspectiveCamera(62, 1, 0.1, 3000);
     scene.add(new T.HemisphereLight(0xffffff, 0x556070, 0.95));
     const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(0.4, 1, 0.25); scene.add(sun);
-    enemyGroup = new T.Group(); extraGroup = new T.Group(); scene.add(enemyGroup, extraGroup);
+    enemyGroup = new T.Group(); extraGroup = new T.Group(); liveGroup = new T.Group(); scene.add(enemyGroup, extraGroup, liveGroup);
     let down = null;
     cv.addEventListener('pointerdown', ev => { cv.setPointerCapture(ev.pointerId); down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button }; });
     cv.addEventListener('pointermove', ev => {
@@ -756,7 +798,8 @@ const view3d = (() => {
     for (const grp of [enemyGroup, extraGroup]) while (grp.children.length) { const o = grp.children.pop(); if (o.geometry) o.geometry.dispose(); }
     const red = col('enemy'), ink = col('ink');
     state.enemies.forEach((e, i) => {
-      const sel = i === state.selected, g = new T.Group(), mat = new T.MeshPhongMaterial({ color: red, emissive: sel ? red : 0x000000, emissiveIntensity: 0.45 });
+      const ghost = live.on && !e.live;                     // placed, but not in the game (yet)
+      const sel = i === state.selected, g = new T.Group(), mat = new T.MeshPhongMaterial({ color: red, emissive: sel ? red : 0x000000, emissiveIntensity: 0.45, transparent: ghost, opacity: ghost ? 0.4 : 1 });
       const body = e.prone ? new T.Mesh(new T.BoxGeometry(0.5, 0.3, 1.7), mat) : new T.Mesh(new T.CylinderGeometry(0.28, 0.28, 1.75, 12), mat);
       body.position.y = e.prone ? 0.15 : 0.875; body.userData.enemy = i;
       const nose = new T.Mesh(new T.ConeGeometry(0.2, 0.7, 10), mat); nose.rotation.x = -Math.PI / 2; nose.position.set(0, e.prone ? 0.25 : 1.5, -(e.prone ? 1.15 : 0.6)); nose.userData.enemy = i;   // points where it looks
@@ -776,6 +819,24 @@ const view3d = (() => {
     });
     const blue = col('friend');
     for (const p of state.infils) { const c = new T.Mesh(new T.ConeGeometry(0.5, 1.4, 4), new T.MeshBasicMaterial({ color: blue })); c.position.set(p[0], p[1] + 0.7, -p[2]); extraGroup.add(c); }
+    invalidate3();
+  }
+  // Players and the enemies' real positions, redrawn at every update from the game.
+  function syncLive() {
+    if (!renderer || !live.on) return;
+    while (liveGroup.children.length) { const o = liveGroup.children.pop(); o.traverse(c => { if (c.geometry) c.geometry.dispose(); }); }
+    const blue = col('friend'), red = col('enemy'), byId = new Map(state.enemies.map(e => [e.id, e]));
+    for (const p of live.players) {
+      const g = new T.Group(), mat = new T.MeshPhongMaterial({ color: blue });
+      const body = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 1.8, 12), mat); body.position.y = 0.9;
+      const nose = new T.Mesh(new T.ConeGeometry(0.22, 0.8, 10), mat); nose.rotation.x = -Math.PI / 2; nose.position.set(0, 1.55, -0.7);
+      g.add(body, nose); g.position.set(p.pos[0], p.pos[1], -p.pos[2]); g.rotation.y = -p.yaw * Math.PI / 180; liveGroup.add(g);
+    }
+    for (const b of live.enemies) {
+      const home = byId.get(b.marker);
+      if (home && Math.hypot(home.pos[0] - b.pos[0], home.pos[2] - b.pos[2]) < 1.2) continue;
+      const dot = new T.Mesh(new T.SphereGeometry(0.35, 12, 10), new T.MeshPhongMaterial({ color: red, emissive: red, emissiveIntensity: 0.3 })); dot.position.set(b.pos[0], b.pos[1] + 1.1, -b.pos[2]); liveGroup.add(dot);
+    }
     invalidate3();
   }
   function pick(ev) {
@@ -805,7 +866,7 @@ const view3d = (() => {
   }
   function invalidate3() { if (renderer && state.mode === '3d' && !raf) raf = requestAnimationFrame(frame); }
   return {
-    available, home, focus, syncEnemies, invalidate: invalidate3,
+    available, home, focus, syncEnemies, syncLive, invalidate: invalidate3,
     open() { if (!mapMesh && state.map) buildMap(); if (!geoMesh && state.geo) buildGeo(); if (!started) { started = true; home(); } syncEnemies(); },
     dropMap() { if (renderer) { buildMap(); if (state.mode === '3d') home(); } },
     dropGeo() { if (renderer) { buildGeo(); buildMap(); } },
@@ -919,7 +980,7 @@ function syncPos() { const e = state.enemies[state.selected]; if (e) $('pos').te
 function syncSide() {
   const m = state.map;
   $('exampleChip').hidden = !(m && m.isExample);
-  $('mapInfo').textContent = !m ? (state.navFile ? 'No map open. This scenario is for ' + state.navFile + '.' : 'No map open.')
+  $('mapInfo').textContent = live.on && !m ? '' : !m ? (state.navFile ? 'No map open. This scenario is for ' + state.navFile + '.' : 'No map open.')
     : m.isExample ? 'An invented compound to try the tools on. Open a real map file to start.'
     : m.name + ' · ' + Math.round(m.bounds.maxX - m.bounds.minX) + ' × ' + Math.round(m.bounds.maxZ - m.bounds.minZ) + ' m · ' + m.n.toLocaleString('en') + ' triangles'
       + (state.navFile && state.navFile.toLowerCase() !== m.name.toLowerCase() ? ' · the scenario was made for ' + state.navFile : '');
@@ -934,7 +995,7 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : '');
+    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -958,6 +1019,12 @@ function syncSide() {
   }
 
   setVal($('title'), state.title); setVal($('scene'), state.scene);
+  const tr = $('typeRow'); tr.hidden = !(e && live.types.length);
+  if (e && live.types.length) {
+    const sel = $('type'), want = ['', ...live.types];
+    if (sel.options.length !== want.length) { sel.textContent = ''; want.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t ? t.replace(/^BOT V2 ?/, '').replace(/ Variant$/, '') || 'Standard' : 'Random'; sel.appendChild(o); }); }
+    if (document.activeElement !== sel) sel.value = e.type || '';
+  }
   const usable = state.enemies.length > 0 && !state.example;
   $('save').disabled = $('copy').disabled = !usable;
   $('fileText').value = usable ? scenarioText() : '';
@@ -970,7 +1037,7 @@ function syncSide() {
   $('ceilingOut').textContent = isFinite(state.ceiling) ? 'up to ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
   $('floorDown').disabled = $('floorUp').disabled = !m;
 }
-function changed() { syncSide(); view3d.syncEnemies(); invalidate(); saveDraft(); }
+function changed() { syncSide(); view3d.syncEnemies(); invalidate(); if (live.on) { if (!live.applying) pushLive(); } else saveDraft(); }
 const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; pushUndo(); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
 
 document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => edit(e => { e.role = b.dataset.role; if (e.role === 'Patrol') { e.fixed = false; if (e.patrol.length < 2) { setTool('route'); say('Click the stops of the patrol route on the map.'); } } })));
@@ -984,6 +1051,7 @@ $('wait').addEventListener('change', ev => edit(e => { e.patrolWaitSeconds = Mat
 $('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.target.checked; }));
 $('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
 $('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.checked; }));
+$('type').addEventListener('change', ev => edit(e => { e.type = ev.target.value; }));
 $('clearRoute').addEventListener('click', () => edit(e => { e.patrol = []; }));
 $('del').addEventListener('click', removeSelected);
 $('title').addEventListener('input', ev => { state.title = ev.target.value; changed(); });
@@ -1061,6 +1129,7 @@ if (location.protocol === 'file:') saver = async (name, text) => {
 else if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { if (d) { saver = (name, text) => d.save({ filename: name, data: text }); $('save').hidden = false; } }).catch(() => {});
 $('save').hidden = !saver;
 $('save').addEventListener('click', async () => {
+  if (live.on) { await liveCommand('save'); $('saveMsg').textContent = 'Saved in BepInEx/MissionLab/scenarios. It loads the next time you host this map.'; return; }
   try { await saver(fileName(), scenarioText()); $('saveMsg').textContent = 'Saved as ' + fileName() + '.'; }
   catch (err) { $('saveMsg').textContent = err && err.code === 'declined' ? 'Not saved.' : 'Saving is not possible here. Use Copy file text and paste it into a new file named ' + fileName() + '.'; }
 });
@@ -1073,6 +1142,70 @@ $('copy').addEventListener('click', async () => {
     $('saveMsg').textContent = ok ? 'Copied. Paste it into a new text file named ' + fileName() + '.' : 'The text is selected below. Press Ctrl+C, then paste it into a new file named ' + fileName() + '.';
   }
 });
+
+// ------------------------------------------------------------------ live link to the running game
+// When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
+// players and enemies where they are right now. Every change you make here is carried out in the game.
+const live = { on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0 };
+const api = (path, body) => fetch(path, body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-MissionLab': '1' }, body: JSON.stringify(body) }).then(r => r.json());
+function startLive() {
+  live.on = true; document.body.classList.add('live');
+  state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; undoStack.length = 0;
+  $('save').hidden = false; $('save').textContent = 'Save in the game';
+  pollLive();
+}
+async function pollLive() {
+  try { await applyLive(await api('/api/state')); }
+  catch (e) { $('liveStatus').textContent = 'The game is not answering. Is it still running?'; }
+  setTimeout(pollLive, 600);
+}
+function clearLive() {
+  if (!state.map && !state.enemies.length) return;
+  state.map = null; state.geo = null; state.enemies = []; state.selected = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
+  view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
+}
+async function applyLive(s) {
+  if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
+  if (s.navFile && s.navFile !== live.nav) {                 // a new mission: fetch its map from the game folder
+    live.nav = s.navFile; live.hasGeo = false; live.rev = null;
+    const buf = await (await fetch('/api/map', { cache: 'no-store' })).arrayBuffer();
+    state.map = makeMap(await readMapFile(buf), s.navFile, false); state.navFile = s.navFile; state.geo = null; state.ceiling = Infinity;
+    view3d.dropGeo(); view3d.dropMap(); fit();
+  }
+  if (s.hasGeo && !live.hasGeo) {
+    live.hasGeo = true;
+    const r = await fetch('/api/geo', { cache: 'no-store' });
+    if (r.ok) { loadGeo(await r.arrayBuffer(), live.nav); view3d.dropMap(); }
+  }
+  live.players = s.players || []; live.enemies = s.enemies || []; live.types = s.types || [];
+  const mine = s.markers || [];
+  if (s.rev !== live.rev && !live.sending && !live.pending && !drag) {
+    live.rev = s.rev;
+    const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
+    state.enemies = mine.map((m, i) => Object.assign(enemyOf(m, i), { id: m.id, live: !!m.live, waiting: !!m.waiting }));
+    const again = selId ? state.enemies.findIndex(e => e.id === selId) : -1;
+    state.selected = again >= 0 ? again : (selIx >= 0 && selIx < state.enemies.length && !selId ? selIx : -1);
+    live.applying = true; changed(); live.applying = false;
+  }
+  const waiting = mine.filter(m => m.waiting).length;
+  $('liveStatus').textContent = (s.scene || 'Mission') + ': ' + live.players.length + (live.players.length === 1 ? ' player, ' : ' players, ') + live.enemies.length + ' enemies alive' + (waiting ? ', ' + waiting + ' waiting' : '') + (s.busy ? ' (spawning...)' : '');
+  $('liveSpawn').disabled = !waiting; $('liveExport').hidden = !!s.hasGeo;
+  if (s.message && s.message !== live.lastMessage) { live.lastMessage = s.message; say(s.message.replace(/^MissionLab( GM)?: /, '')); }
+  view3d.syncLive(); invalidate();
+}
+// Send the whole enemy list; the game works out what was added, changed or removed.
+function pushLive() {
+  live.pending = true; clearTimeout(live.pushTimer);
+  live.pushTimer = setTimeout(async () => {
+    live.sending = true; live.pending = false;
+    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
+    catch (e) { live.sending = false; say('The change did not reach the game. Is it still running?'); }
+  }, 150);
+}
+const liveCommand = cmd => api('/api/command', { cmd }).then(s => { live.rev = null; return applyLive(s); }).catch(() => say('The game did not answer.'));
+$('liveSpawn').addEventListener('click', () => liveCommand('spawnWaiting'));
+$('liveClear').addEventListener('click', () => liveCommand('removeAllEnemies'));
+$('liveExport').addEventListener('click', () => { say('Making the 3D map. The game freezes for a few seconds...'); liveCommand('export'); });
 
 // A reload should not lose work. The map itself is not kept; it has to be opened again.
 let draftTimer = 0;
@@ -1097,10 +1230,11 @@ new MutationObserver(readTokens).observe(document.documentElement, { attributes:
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTokens);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(invalidate);
 new ResizeObserver(invalidate).observe(canvas);
-if (!restoreDraft()) loadExample();
+const served = /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d };   // for automated tests
+window.missionlabEditor = { state, live, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d };   // for automated tests
 })();
 </script>
 </body>

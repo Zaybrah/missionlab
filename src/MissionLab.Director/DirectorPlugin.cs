@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.7.1";
+        public const string Version = "0.8.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -30,7 +30,8 @@ namespace MissionLab
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
         internal static ConfigEntry<bool> GmEnabled;
-        internal static ConfigEntry<bool> GmBlockKeys;
+        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled;
+        internal static ConfigEntry<int> LivePort;
         internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
         internal static bool InputHooked;
 
@@ -84,6 +85,9 @@ namespace MissionLab
             Directory.CreateDirectory(Path.Combine(BaseDir, "missions"));
             Directory.CreateDirectory(Path.Combine(BaseDir, "scenarios"));
             Directory.CreateDirectory(Path.Combine(BaseDir, "maps"));
+            LiveEnabled = Config.Bind("LiveLink", "Enabled", true, "Serves the scenario editor at http://localhost:<Port> on this computer only, connected to the mission you host.");
+            LivePort = Config.Bind("LiveLink", "Port", 8765, "Port for the browser link.");
+            if (LiveEnabled.Value) LiveLink.Start(LivePort.Value);
 
             if (UseHook.Value)
             {
@@ -142,6 +146,8 @@ namespace MissionLab
         {
             if (_errors > 10) return;
             float now = Time.unscaledTime;
+            try { LiveLink.Pump(); }
+            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("browser link failed: " + e); }
             try { GameMaster.Tick(now); }
             catch (Exception e) { _errors++; DirectorPlugin.L.LogError("Game Master failed: " + e); }
             if (now < _nextPoll) return;
