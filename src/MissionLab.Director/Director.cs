@@ -148,6 +148,18 @@ namespace MissionLab
             CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null;
             CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
 
+            // The lobby choice "Empty map": nobody spawns; you build the mission yourself and save it.
+            if (Picker.Current() == Picker.Empty)
+            {
+                if (gm != null) gm.botAmount = 0;
+                CurrentPlan = new MissionPlan { Scene = scene, NavFile = nav != null ? nav.SourceFile : null };
+                GameMaster.BeginMission(raid.Pointer, null);
+                Banner = "MissionLab: empty map. Build your own with " + DirectorPlugin.KeyGm.Value + (LiveLink.Running ? " or in a browser at http://localhost:" + LiveLink.Port : "") + ", then save.";
+                BannerUntil = Time.unscaledTime + 15f;
+                log.LogInfo(Banner + " | via " + via + " | the game's own spawn list is left alone, enemy count set to 0 | map: " + navInfo);
+                return true;
+            }
+
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
             MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
             bool fromFile = plan != null;
@@ -294,7 +306,7 @@ namespace MissionLab
         {
             var log = DirectorPlugin.L;
             name = (DirectorPlugin.Scenario.Value ?? "").Trim();
-            if (name.Length == 0) return null;
+            if (name.Length == 0 || name == Picker.Empty) return null;
             string dir = Path.Combine(DirectorPlugin.BaseDir, "scenarios");
             string mapFile = nav == null ? null : nav.SourceFile;
 

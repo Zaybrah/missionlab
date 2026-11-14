@@ -153,6 +153,7 @@ body.dragging #drop { display: flex; }
     <div id="liveBox">
       <span class="chip info" id="liveChip">Live</span>
       <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
+      <div class="field"><label for="nextMission">Next mission uses</label><select id="nextMission" title="What the next mission you host will load. In the game lobby, F8 steps through the same list."></select></div>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div class="row">
         <button class="btn" id="liveSpawn" type="button">Spawn waiting</button>
@@ -1378,7 +1379,16 @@ function clearLive() {
   state.map = null; state.geo = null; state.enemies = []; state.selected = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
   view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
 }
+function syncChoices(s) {
+  const sel = $('nextMission');
+  if (!s || !Array.isArray(s.choices) || document.activeElement === sel) return;
+  const key = JSON.stringify(s.choices);
+  if (sel.dataset.key !== key) { sel.dataset.key = key; sel.textContent = ''; s.choices.forEach(c => { const o = document.createElement('option'); o.value = c.value; o.textContent = c.label; sel.appendChild(o); }); }
+  sel.value = s.choice;
+}
+$('nextMission').addEventListener('change', ev => api('/api/choose', { value: ev.target.value }).then(s => { syncChoices(s); say('The next mission you host uses: ' + ev.target.selectedOptions[0].textContent + '.'); }).catch(() => say('The game did not answer.')));
 async function applyLive(s) {
+  syncChoices(s);
   if (s && s.page && PAGE_STAMP.indexOf('ML_PAGE_STAMP') < 0 && s.page !== PAGE_STAMP) {
     let tried = ''; try { tried = sessionStorage.getItem('ml-reloaded') || ''; } catch (e) { /* no storage */ }
     if (tried !== s.page) { try { sessionStorage.setItem('ml-reloaded', s.page); } catch (e) { /* no storage */ } location.reload(); return; }

@@ -53,6 +53,13 @@ real walls, stairs and furniture, press M in Game Master mode: the mod writes th
 map's solid geometry to `BepInEx/MissionLab/maps/<map>.mlgeo` on your own PC; open that
 file in the editor too. The `.mlgeo` file is derived from game assets: keep it local.
 
+### Choosing the scenario
+In the lobby, a line at the bottom left shows what the next mission will use; F8 opens the
+list and steps through it: any scenario made for the map, a random layout, an empty map to
+build your own, or one scenario file. The browser page has the same list ("Next mission
+uses"). The choice is the `Scenario` setting. `examples/` holds a hand-made scenario for
+Clean House that uses zones, a patrol, a prone guard, a fixed sentry and moved intel.
+
 ### Zones
 A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
 `"trigger": <id>` is not on the map at the start; it appears when the first player walks

@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.12.0";
+        public const string Version = "0.13.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -63,7 +63,7 @@ namespace MissionLab
             MoveTarget = Config.Bind("General", "MoveTarget", true,
                 "In missions with a target person, a generated layout also picks a new place for the target. false = the game's own places.");
             Scenario = Config.Bind("General", "Scenario", "*",
-                "* = use any scenario file in BepInEx/MissionLab/scenarios that was made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Empty = always generate. Read again at every mission start.");
+                "What the next mission uses. * = any scenario file in BepInEx/MissionLab/scenarios made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Nothing = always a random layout. (empty) = an empty map to build your own. In the lobby, F8 steps through these.");
             GmEnabled = Config.Bind("GameMaster", "Enabled", true,
                 "Game Master mode while you host a mission: place, spawn and remove enemies in the running mission and save the result as a scenario.");
             KeyGm = Config.Bind("GameMaster", "KeyOpen", KeyCode.F8, "Opens and closes Game Master mode.");
@@ -148,6 +148,8 @@ namespace MissionLab
         {
             if (_errors > 10) return;
             float now = Time.unscaledTime;
+            try { Picker.Tick(); }
+            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("scenario picker failed: " + e); }
             try { LiveLink.Pump(); }
             catch (Exception e) { _errors++; DirectorPlugin.L.LogError("browser link failed: " + e); }
             try { GameMaster.Tick(now); }
@@ -166,6 +168,9 @@ namespace MissionLab
 
         private void OnGUI()
         {
+            if (_gmGuiOk)
+                try { Picker.Draw(); }
+                catch (Exception e) { _gmGuiOk = false; DirectorPlugin.L.LogWarning("scenario picker overlay disabled: " + e); }
             if (_gmGuiOk)
                 try { GameMaster.Draw(); }
                 catch (Exception e) { _gmGuiOk = false; DirectorPlugin.L.LogWarning("Game Master overlay disabled: " + e); }

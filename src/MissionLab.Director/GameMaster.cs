@@ -719,7 +719,7 @@ namespace MissionLab
                 if (body == null) continue;
                 Vector3 p = body.transform.position;
                 float dx = p.x - z.Pos.X, dz = p.z - z.Pos.Z;
-                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 4f) { where = p; return true; }
+                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 2f) { where = p; return true; }      // 2 m: the floor above or below does not count
             }
             return false;
         }
@@ -768,7 +768,7 @@ namespace MissionLab
         /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
         internal static string StateJson()
         {
-            string page = ",\"page\":" + Q(LiveLink.PageStamp);
+            string page = ",\"page\":" + Q(LiveLink.PageStamp) + "," + Picker.Json();
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false" + page + "}";
             if (Time.unscaledTime - Director.HandledAt < 3f) return "{\"mission\":false,\"starting\":true" + page + "}";
             EnsureMarkers(); MapBots(gm, null);

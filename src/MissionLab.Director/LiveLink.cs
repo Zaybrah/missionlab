@@ -105,6 +105,10 @@ namespace MissionLab
                 case "/api/state": return HttpResponse.Json(GameMaster.StateJson());
                 case "/api/markers": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Reconcile(r.BodyText)) : HttpResponse.Error(400, "POST expected");
                 case "/api/command": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Command(r.BodyText)) : HttpResponse.Error(400, "POST expected");
+                case "/api/choose":
+                    if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
+                    using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(r.BodyText)) Picker.Choose(doc.RootElement.GetProperty("value").GetString());
+                    return HttpResponse.Json(GameMaster.StateJson());
                 default: return HttpResponse.Error(404, "not found");
             }
         }

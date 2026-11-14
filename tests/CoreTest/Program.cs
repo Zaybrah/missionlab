@@ -11,17 +11,33 @@ if (args.Length == 2 && args[0] == "--http")
                                                              : r.Path == "/boom" ? throw new InvalidOperationException("test") : HttpResponse.Error(404, "not found"));
     web.Start(); Console.WriteLine("listening on " + web.Port); Thread.Sleep(Timeout.Infinite);
 }
-if (args.Length == 3 && args[0] == "--check")
+if ((args.Length == 3 || args.Length == 4) && args[0] == "--check")
 {
     MissionPlan sc;
     try { sc = MissionPlan.FromJson(File.ReadAllText(args[1])); }
     catch (Exception e) { Console.WriteLine("NOT A VALID SCENARIO: " + e.Message); return 1; }
     var map = NavMesh.Load(args[2]);
+    // "The rest of the map": with a recon file, everything connected to an insertion point or to one of the
+    // game's own spawn points (doors are not in the walkable-ground data, so houses count through those).
+    bool[] mainArea = Generator.LargestComponent(map);
+    if (args.Length == 4)
+    {
+        using var rec = JsonDocument.Parse(File.ReadAllText(args[3]));
+        var seedTris = new List<int>();
+        void Seed(JsonElement p, float tol) { int t = map.TriAt(p[0].GetSingle(), p[2].GetSingle(), p[1].GetSingle(), tol, out _); if (t >= 0) seedTris.Add(t); }
+        foreach (var sp in rec.RootElement.GetProperty("raid").GetProperty("botSpawnPoints").EnumerateArray()) if (sp.ValueKind == JsonValueKind.Object) Seed(sp.GetProperty("pos"), 1.5f);
+        foreach (var m in rec.RootElement.GetProperty("infiltration").GetProperty("infilMethods").EnumerateArray())
+            if (m.TryGetProperty("children", out var kids)) foreach (var c in kids.EnumerateArray()) Seed(c.GetProperty("pos"), 2.5f);
+        if (seedTris.Count > 0) mainArea = map.Reachable(seedTris);
+        Console.WriteLine($"  reachability from {seedTris.Count} insertion and spawn points of the map");
+    }
     int off = 0, num = 0;
     foreach (var s in sc.Spawns)
     {
         num++;
         bool walkable = map.TriAt(s.Pos.X, s.Pos.Z, s.Pos.Y, 1.0f, out _) >= 0;
+        int tri = map.TriAt(s.Pos.X, s.Pos.Z, s.Pos.Y, 1.0f, out _);
+        if (tri >= 0 && !mainArea[tri]) Console.WriteLine($"  enemy {num} ({s.Role}) at {s.Pos} stands on ground that is cut off from the rest of the map");
         if (!walkable && !s.Fixed) { off++; Console.WriteLine($"  enemy {num} ({s.Role}) at {s.Pos} is off the walkable surface: it will be a fixed sentry"); }
         int w = 0;
         foreach (var wp in s.Patrol) { w++; if (map.TriAt(wp.X, wp.Z, wp.Y, 1.0f, out _) < 0) Console.WriteLine($"  enemy {num}: patrol waypoint {w} at {wp} is off the walkable surface"); }
