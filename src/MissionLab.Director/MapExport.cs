@@ -45,6 +45,8 @@ namespace MissionLab
                 {
                     if (!c.enabled || c.isTrigger || !c.gameObject.activeInHierarchy) { skipped++; continue; }
                     if (c.GetComponentInParent<Health>() != null) { skipped++; continue; }       // players and enemies
+                    Vector3 extent = c.bounds.size;
+                    if (extent.x > 2000f || extent.y > 2000f || extent.z > 2000f) { skipped++; continue; }   // invisible boxes around the whole world
                     Matrix4x4 m = c.transform.localToWorldMatrix;
 
                     MeshCollider mc = c.TryCast<MeshCollider>();

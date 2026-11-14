@@ -57,5 +57,19 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   wanderers moving. The map's vehicle crews (5 enemies, no pathfinding agent) are
   spawned separately from `botSpawnPoints` and are not affected.
 
+## Input, camera, geometry
+- Every key bind of the game goes through `InputLayer.GetKey(InputKey, bool)`. A Harmony
+  prefix that returns false there silences all of them. `InputLayer.InputDisabled` is
+  no use for this: the game sets it back every frame.
+- `MainCameraSingleton.instance.freeCamera` (`ScreenshotFreeCamera`) is a built-in
+  noclip camera; `ToggleFreeCamera()` switches it. The picture still comes from the
+  main camera ('GAME CAMERA'), so `MainCameraSingleton.MainCam` is the one to project with.
+- A spawned enemy faces the way its spawn point is rotated (agent yaw equals planned yaw).
+- `NetworkServer.Destroy(bot.gameObject)` removes an enemy cleanly. Spawning onto the
+  same spot in the same frame fails; half a second later it works.
+- Map geometry can be read at run time: of 140 distinct collider meshes on Suburb, 95
+  were readable from main memory and 45 through `Mesh.GetVertexBuffer` +
+  `GraphicsBuffer.GetData`; none failed. Two invisible boxes 20 km wide wrap the map.
+
 ## Not yet verified
 - Co-op with unmodded clients, HVT/intel/asset modes, maps other than Suburb and Mexico Depot.

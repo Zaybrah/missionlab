@@ -33,6 +33,7 @@ namespace MissionLab
             public bool Waiting;        // not spawned yet
             public bool Queued;         // on its way to the spawner
             public float TurnedAt = -1f; // facing changed by hand; a live enemy is re-made shortly after
+            public float RemakeAt = -1f; // its old enemy has been removed; spawn the new one at this time
         }
         private sealed class Batch { public readonly List<Marker> Items = new List<Marker>(); public string Type; }
 
@@ -179,8 +180,14 @@ namespace MissionLab
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
                     if (b == null) continue;                              // not alive: the new facing applies when it spawns
                     if (!Destroy(b)) continue;
-                    m.Bot = IntPtr.Zero; m.Waiting = true;
-                    Enqueue(new List<Marker> { m });
+                    // The game will not spawn onto a spot that is still occupied, and the old enemy is only gone a moment later.
+                    m.Bot = IntPtr.Zero; m.Waiting = true; m.RemakeAt = now + 0.7f;
+                }
+                foreach (Marker m in _markers)
+                {
+                    if (m.RemakeAt < 0f || now < m.RemakeAt || m.Queued) continue;
+                    m.RemakeAt = -1f;
+                    if (m.Waiting && m.TurnedAt < 0f) Enqueue(new List<Marker> { m });
                 }
                 // Does a new enemy really face the way its marker says? Written to the log once per spawn.
                 for (int i = FacingChecks.Count - 1; i >= 0; i--)
