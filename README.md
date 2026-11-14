@@ -59,6 +59,13 @@ A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
 into that zone. In the editor: "Add zone", then set an enemy's "Appears" to the zone.
 At least one enemy must be there from the start.
 
+### Objectives
+The mission's own intel items (for example "Cell Phone" on Clean House) show up in the
+editor as amber markers when it is connected to the game, and can be dragged anywhere; in
+3D onto a table or shelf. A scenario stores them as `"objectives"` (item name, position)
+and they are put there a few seconds after the mission starts. This moves the item on the
+host; whether other players see it there in co-op is not yet checked.
+
 ### Live in the browser
 While you host a mission, the mod serves the same editor at `http://localhost:8765` on your
 own computer (nothing on the network can reach it). There it is connected to the game: the

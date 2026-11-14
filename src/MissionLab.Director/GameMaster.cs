@@ -44,7 +44,8 @@ namespace MissionLab
         private static List<TriggerPlan> _zones = new List<TriggerPlan>();
         private static readonly HashSet<int> Fired = new HashSet<int>();
         private static float _zoneCheckAt;
-        private static bool _yawLogged;
+        private static bool _yawLogged, _objectivesPlaced;
+        private static List<ObjectivePlan> _wanted = new List<ObjectivePlan>();
         private static IntPtr _raidPtr = IntPtr.Zero;
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
@@ -90,6 +91,7 @@ namespace MissionLab
             if (_active) ReleaseInput();
             _aiming = -1; _aimOk = false; FacingChecks.Clear();
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
+            _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -131,6 +133,39 @@ namespace MissionLab
             foreach (SpawnPlan s in plan.Spawns)
                 _markers.Add(new Marker { Plan = s, Waiting = _later != null && _later.Contains(s) });
             _zones = new List<TriggerPlan>(plan.Triggers);
+            _wanted = new List<ObjectivePlan>(plan.Objectives);
+        }
+
+        /// <summary>The mission's objective items that are in play (the game switches the unused ones off).</summary>
+        private static List<ObjectiveObject> Objectives(RaidManager raid)
+        {
+            var found = new List<ObjectiveObject>();
+            var sets = raid.objectives;
+            for (int i = 0; sets != null && i < sets.Length; i++)
+            {
+                var items = sets[i] == null ? null : sets[i].objectives;
+                for (int k = 0; items != null && k < items.Length; k++)
+                    if (items[k] != null && items[k].gameObject.activeInHierarchy) found.Add(items[k]);
+            }
+            return found;
+        }
+
+        /// <summary>Moves objective items to where the scenario or the Game Master wants them. Host side only.</summary>
+        private static int PlaceObjectives(RaidManager raid)
+        {
+            if (_wanted.Count == 0) return 0;
+            int moved = 0;
+            foreach (ObjectiveObject o in Objectives(raid))
+            {
+                ObjectivePlan want = _wanted.Find(w => w.Name == o.gameObject.name);
+                if (want == null) continue;
+                var pos = new Vector3(want.Pos.X, want.Pos.Y, want.Pos.Z);
+                Transform t = o.transform;
+                if ((t.position - pos).sqrMagnitude < 0.0004f && Mathf.Abs(Mathf.DeltaAngle(t.eulerAngles.y, want.Yaw)) < 0.5f) continue;
+                t.SetPositionAndRotation(pos, Quaternion.Euler(0f, want.Yaw, 0f));
+                moved++;
+            }
+            return moved;
         }
 
         private static HashSet<IntPtr> Alive(GameManager gm)
@@ -185,6 +220,17 @@ namespace MissionLab
                 _later = null;
                 Enqueue(mine);
             }
+            if (!_objectivesPlaced)
+            {
+                // By now the game has chosen its objective items; put them where the scenario says.
+                _objectivesPlaced = true;
+                MissionPlan plan = Director.CurrentPlan;
+                if (plan != null && plan.Objectives.Count > 0)
+                {
+                    EnsureMarkers();
+                    DirectorPlugin.L.LogInfo("objectives: moved " + PlaceObjectives(raid) + " of " + plan.Objectives.Count + " items named in the scenario; in play: " + Objectives(raid).Count);
+                }
+            }
             if (_markers != null && now >= _zoneCheckAt)
             {
                 // Zones: the first player to walk into one brings in the enemies bound to it.
@@ -211,7 +257,9 @@ namespace MissionLab
                     if (b == null) continue;                              // not alive: the new facing applies when it spawns
                     if (!Destroy(b)) continue;
                     // The game will not spawn onto a spot that is still occupied, and the old enemy is only gone a moment later.
-                    m.Bot = IntPtr.Zero; m.Waiting = true; m.RemakeAt = now + 0.7f;
+                    m.Bot = IntPtr.Zero; m.Waiting = true;
+                    bool held = m.Plan.Trigger != 0 && !Fired.Contains(m.Plan.Trigger);      // now bound to a zone nobody has reached: it waits there
+                    m.RemakeAt = held ? -1f : now + 0.7f;
                 }
                 foreach (Marker m in _markers)
                 {
@@ -761,6 +809,16 @@ namespace MissionLab
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(m.Id).Append(",\"live\":").Append(live ? "true" : "false").Append(",\"waiting\":").Append(m.Waiting ? "true" : "false").Append(',').Append(spawn, 1, spawn.Length - 1);
                 rev.Append(m.Id).Append(live ? 'L' : m.Waiting ? 'W' : 'G').Append(spawn);
             }
+            sb.Append("],\"objectives\":[");
+            first = true;
+            foreach (ObjectiveObject o in Objectives(raid))
+            {
+                Transform t = o.transform;
+                sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(o.gameObject.name)).Append(",\"label\":").Append(Q(o.DisplayName)).Append(",\"pos\":").Append(P(t.position))
+                  .Append(",\"yaw\":").Append(F(t.eulerAngles.y)).Append(",\"obtained\":").Append(o.isObtained ? "true" : "false").Append('}');
+                rev.Append(o.gameObject.name).Append(P(t.position)).Append(o.isObtained ? 'x' : 'o');
+                first = false;
+            }
             sb.Append("],\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
             first = true;
             foreach (int id in Fired) { sb.Append(first ? "" : ",").Append(id); first = false; }
@@ -790,7 +848,8 @@ namespace MissionLab
                 foreach (System.Text.Json.JsonElement e in list.EnumerateArray())
                     if (e.ValueKind == System.Text.Json.JsonValueKind.Object) ids.Add(e.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.Number ? id.GetInt32() : 0);
                 string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
-                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"spawns\":" + list.GetRawText() + "}");
+                string itemsText = root.TryGetProperty("objectives", out var os) && os.ValueKind == System.Text.Json.JsonValueKind.Array ? os.GetRawText() : MissionPlan.ObjectivesJson(_wanted);
+                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"spawns\":" + list.GetRawText() + "}");
             }
             if (sent.Spawns.Count != ids.Count) return StateJson();
 
@@ -805,7 +864,13 @@ namespace MissionLab
                 if (ids[i] > 0 && byId.TryGetValue(ids[i], out Marker m))
                 {
                     byId.Remove(ids[i]);
-                    if (MissionPlan.SpawnJson(m.Plan) != MissionPlan.SpawnJson(s)) { m.Plan = s; if (m.Bot != IntPtr.Zero) m.TurnedAt = now; }
+                    if (MissionPlan.SpawnJson(m.Plan) != MissionPlan.SpawnJson(s))
+                    {
+                        bool released = m.Plan.Trigger != 0 && s.Trigger == 0 && m.Waiting && !m.Queued && m.Bot == IntPtr.Zero;   // unbound from its zone
+                        m.Plan = s;
+                        if (m.Bot != IntPtr.Zero) m.TurnedAt = now;
+                        else if (released && spawnNow) fresh.Add(m);
+                    }
                     result.Add(m);
                 }
                 else
@@ -824,6 +889,7 @@ namespace MissionLab
             }
             _markers = result; _aiming = -1; _current = -1;
             _zones = sent.Triggers;
+            _wanted = sent.Objectives; PlaceObjectives(raid);
             if (fresh.Count > 0) Enqueue(fresh);
             return StateJson();
         }
@@ -852,6 +918,13 @@ namespace MissionLab
             var plan = new MissionPlan { Seed = 0, Scene = fromFile ? (Director.CurrentScenarioScene ?? "") : "", NavFile = mapFile };
             foreach (Marker m in _markers) { plan.Spawns.Add(m.Plan); plan.Groups = Math.Max(plan.Groups, m.Plan.Group + 1); }
             plan.Triggers.AddRange(_zones);
+            RaidManager raidNow = RaidManager.singleton;
+            if (raidNow != null)
+                foreach (ObjectiveObject o in Objectives(raidNow))
+                {
+                    Vector3 op = o.transform.position;
+                    plan.Objectives.Add(new ObjectivePlan { Name = o.gameObject.name, Pos = new V3(op.x, op.y, op.z), Yaw = o.transform.eulerAngles.y });
+                }
             plan.RequestedEnemies = plan.Spawns.Count;
             plan.Notes.Add("Saved from Game Master mode");
             try

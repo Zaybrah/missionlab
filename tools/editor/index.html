@@ -175,6 +175,7 @@ body.dragging #drop { display: flex; }
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
+    <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf.</p>
     <div id="zoneBox" hidden>
       <h2>Zones</h2>
       <ul id="zoneList"></ul>
@@ -275,6 +276,7 @@ const state = {
   geo: null,            // solid geometry of the map exported from the game: { positions, indices, name }
   zones: [],            // { id, pos:[x,y,z], radius, name }: enemies bound to a zone appear when a player walks into it
   fired: [],            // live: ids of the zones players have already reached
+  objectives: [],       // the mission's own intel items: { name, label, pos:[x,y,z], yaw, obtained }
   mode: '2d',
 };
 const undoStack = [];
@@ -468,6 +470,7 @@ function scenarioObject() {
     seed: 0,
     notes: ['Made with the MissionLab scenario editor'],
     triggers: zonesOut(),
+    objectives: objectivesOut(),
     spawns: state.enemies.map(spawnOf),
   };
 }
@@ -480,6 +483,8 @@ function spawnOf(e) {
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
+const objectivesOut = () => state.objectives.map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
+const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained }));
 const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius) }));
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)) }));
 function enemyOf(s, i) {
@@ -524,7 +529,7 @@ function loadScenario(obj, name) {
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
-  state.zones = zonesIn(root.triggers);
+  state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives);
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
   // A generated mission names one scene (day or night). Matching by map file covers both.
@@ -667,6 +672,17 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // The mission's intel items.
+  for (const o of state.objectives) {
+    const [x, y] = toScreen(o.pos[0], o.pos[2]);
+    ctx.globalAlpha = o.obtained ? 0.35 : 1;
+    ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x + 8, y); ctx.lineTo(x, y + 8); ctx.lineTo(x - 8, y); ctx.closePath();
+    ctx.fillStyle = css.warn; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
+    ctx.font = '600 11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(o.label, x + 11, y + 1); ctx.fillStyle = css.warn; ctx.fillText(o.label, x + 11, y + 1);
+    ctx.globalAlpha = 1;
+  }
+
   // Patrol routes.
   state.enemies.forEach((e, i) => {
     if (e.role !== 'Patrol' || !e.patrol.length) return;
@@ -755,14 +771,25 @@ const view3d = (() => {
     let down = null;
     cv.addEventListener('pointerdown', ev => {
       cv.setPointerCapture(ev.pointerId);
-      down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button, grab: -1, saved: false };
-      if (ev.button === 0 && state.tool === 'select') { const h = enemyHit(ev); if (h) { down.grab = h.object.userData.enemy; select(down.grab); } }
+      down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button, grab: -1, item: -1, saved: false };
+      if (ev.button === 0 && state.tool === 'select') {
+        const item = cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.objective)), h = enemyHit(ev);
+        if (item && (!h || item.distance < h.distance)) down.item = item.object.userData.objective;
+        else if (h) { down.grab = h.object.userData.enemy; select(down.grab); }
+      }
     });
     cv.addEventListener('pointermove', ev => {
       if (!down) return;
       const dx = ev.clientX - down.x, dy = ev.clientY - down.y;
       if (!down.moved && Math.hypot(dx, dy) < 4) return;
       down.moved = true; down.x = ev.clientX; down.y = ev.clientY;
+      if (down.item >= 0) {                                // dragging an intel item: it lies exactly where the cursor touches
+        const o = state.objectives[down.item], hit = ground(ev);
+        if (!o || !hit) return;
+        if (!down.saved) { pushUndo(); down.saved = true; }
+        o.pos = [hit.point.x, hit.point.y + 0.02, -hit.point.z]; syncEnemies();
+        return;
+      }
       if (down.grab >= 0) {                                // dragging an enemy across the floor
         const e = state.enemies[down.grab], hit = ground(ev);
         if (!e || !hit) return;
@@ -865,6 +892,12 @@ const view3d = (() => {
       const post = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3, 6), new T.MeshBasicMaterial({ color: blue })); post.position.set(z.pos[0], z.pos[1] + 1.5, -z.pos[2]); extraGroup.add(post);
       const tag = label('Z' + z.id); tag.position.set(z.pos[0], z.pos[1] + 3.5, -z.pos[2]); extraGroup.add(tag);
     }
+    const amber = col('warn');
+    state.objectives.forEach((o, n) => {
+      const box = new T.Mesh(new T.BoxGeometry(0.35, 0.35, 0.35), new T.MeshPhongMaterial({ color: amber, emissive: amber, emissiveIntensity: 0.5, transparent: o.obtained, opacity: o.obtained ? 0.35 : 1 }));
+      box.position.set(o.pos[0], o.pos[1] + 0.18, -o.pos[2]); box.rotation.y = Math.PI / 4; box.userData.objective = n; enemyGroup.add(box);
+      const tag = label(o.label.slice(0, 6)); tag.position.set(o.pos[0], o.pos[1] + 0.9, -o.pos[2]); extraGroup.add(tag);
+    });
     for (const p of state.infils) { const c = new T.Mesh(new T.ConeGeometry(0.5, 1.4, 4), new T.MeshBasicMaterial({ color: blue })); c.position.set(p[0], p[1] + 0.7, -p[2]); extraGroup.add(c); }
     invalidate3();
   }
@@ -935,10 +968,10 @@ function warningFor(e) {
 }
 
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; state.selected = Math.min(o.s, o.e.length - 1); changed();
 }
 function select(i) { state.selected = i; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
 function setMode(mode) {
@@ -960,6 +993,7 @@ function setTool(t) {
 function hit(sx, sy) {
   const sel = state.enemies[state.selected];
   if (sel && sel.role === 'Patrol') for (let n = 0; n < sel.patrol.length; n++) { const [x, y] = toScreen(sel.patrol[n][0], sel.patrol[n][2]); if (Math.hypot(x - sx, y - sy) <= 10) return { stop: n }; }
+  for (let n = 0; n < state.objectives.length; n++) { const [x, y] = toScreen(state.objectives[n].pos[0], state.objectives[n].pos[2]); if (Math.hypot(x - sx, y - sy) <= 10) return { objective: n }; }
   let best = -1, bestD = 13;
   state.enemies.forEach((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]), d = Math.hypot(x - sx, y - sy); if (d < bestD) { bestD = d; best = i; } });
   return best >= 0 ? { enemy: best } : null;
@@ -983,6 +1017,7 @@ canvas.addEventListener('pointermove', ev => {
   if (drag.pan) { state.view.cx = drag.cx - (sx - drag.sx) / state.view.scale; state.view.cz = drag.cz + (sy - drag.sy) / state.view.scale; invalidate(); return; }
   if (y === null) return;                                 // keep the last valid spot while over a wall
   if (!drag.saved) { pushUndo(); drag.saved = true; }
+  if ('objective' in drag.target) { const o = state.objectives[drag.target.objective]; if (o) o.pos = [wx, y + 0.02, wz]; invalidate(); return; }   // on the floor; use 3D for furniture
   const e = state.enemies[state.selected]; if (!e) return;
   if ('stop' in drag.target) e.patrol[drag.target.stop] = [wx, y, wz]; else e.pos = [wx, y, wz];
   invalidate(); syncPos();
@@ -1081,7 +1116,7 @@ function syncSide() {
   }
 
   setVal($('title'), state.title); setVal($('scene'), state.scene);
-  $('zoneBox').hidden = !state.zones.length;
+  $('zoneBox').hidden = !state.zones.length; $('objectiveHint').hidden = !state.objectives.length;
   const zl = $('zoneList');
   if (!zl.contains(document.activeElement)) {
     zl.textContent = '';
@@ -1280,7 +1315,7 @@ async function applyLive(s) {
   if (s.rev !== live.rev && !live.sending && !live.pending && !drag) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
-    state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : [];
+    state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
     state.enemies = mine.map((m, i) => Object.assign(enemyOf(m, i), { id: m.id, live: !!m.live, waiting: !!m.waiting }));
     const again = selId ? state.enemies.findIndex(e => e.id === selId) : -1;
     state.selected = again >= 0 ? again : (selIx >= 0 && selIx < state.enemies.length && !selId ? selIx : -1);
@@ -1297,7 +1332,7 @@ function pushLive() {
   live.pending = true; clearTimeout(live.pushTimer);
   live.pushTimer = setTimeout(async () => {
     live.sending = true; live.pending = false;
-    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
+    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), objectives: objectivesOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
     catch (e) { live.sending = false; say('The change did not reach the game. Is it still running?'); }
   }, 150);
 }

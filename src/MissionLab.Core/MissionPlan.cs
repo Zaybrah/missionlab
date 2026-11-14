@@ -17,6 +17,14 @@ namespace MissionLab.Core
         public string Name;
     }
 
+    /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
+    public sealed class ObjectivePlan
+    {
+        public string Name;     // the item's object name in the map, e.g. "Cell Phone_1"
+        public V3 Pos;
+        public float Yaw;
+    }
+
     public sealed class SpawnPlan
     {
         public int Group;
@@ -49,7 +57,23 @@ namespace MissionLab.Core
         public int Groups;
         public List<SpawnPlan> Spawns = new List<SpawnPlan>();
         public List<TriggerPlan> Triggers = new List<TriggerPlan>();
+        public List<ObjectivePlan> Objectives = new List<ObjectivePlan>();
         public List<string> Notes = new List<string>();
+
+        public static string ObjectivesJson(List<ObjectivePlan> items)
+        {
+            var sb = new StringBuilder(128);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            sb.Append('[');
+            for (int i = 0; i < items.Count; i++)
+            {
+                ObjectivePlan o = items[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append((o.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
+                  .Append(F(o.Pos.X)).Append(',').Append(F(o.Pos.Y)).Append(',').Append(F(o.Pos.Z)).Append("],\"yaw\":").Append(F(o.Yaw)).Append('}');
+            }
+            return sb.Append(']').ToString();
+        }
 
         public static string TriggersJson(List<TriggerPlan> zones)
         {
@@ -109,6 +133,7 @@ namespace MissionLab.Core
             sb.Append(",\"notes\":[");
             for (int i = 0; i < Notes.Count; i++) { if (i > 0) sb.Append(','); sb.Append(S(Notes[i])); }
             sb.Append("],\"triggers\":").Append(TriggersJson(Triggers));
+            sb.Append(",\"objectives\":").Append(ObjectivesJson(Objectives));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
             {
@@ -176,6 +201,12 @@ namespace MissionLab.Core
                         if (z.ValueKind != JsonValueKind.Object || !TryVec(z, "pos", out V3 zp)) continue;
                         int id = (int)Num(z, "id", 0);
                         if (id > 0) plan.Triggers.Add(new TriggerPlan { Id = id, Pos = zp, Radius = System.Math.Max(1f, Num(z, "radius", 10)), Name = Str(z, "name") });
+                    }
+                if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement o in items.EnumerateArray())
+                    {
+                        string name = o.ValueKind == JsonValueKind.Object ? Str(o, "name") : null;
+                        if (!string.IsNullOrEmpty(name) && TryVec(o, "pos", out V3 op)) plan.Objectives.Add(new ObjectivePlan { Name = name, Pos = op, Yaw = Num(o, "yaw", 0) });
                     }
                 // An enemy that names a zone that does not exist is simply there from the start.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0 && !plan.Triggers.Exists(t => t.Id == s.Trigger)) s.Trigger = 0;
