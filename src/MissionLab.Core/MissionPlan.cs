@@ -19,6 +19,8 @@ namespace MissionLab.Core
         public float DetectionRange;
         public float HearingRange;
         public float Fov;
+        public bool Prone;                // spawns lying down
+        public string Type;               // enemy type by name; empty = one of the mission's usual types
         public int WanderDistance;        // metres; only used by Wander
         public float PatrolWaitSeconds;
         /// <summary>Stays exactly here with navigation off (a fixed sentry, e.g. on a roof or balcony).</summary>
@@ -70,6 +72,8 @@ namespace MissionLab.Core
                 sb.Append(",\"wanderDistance\":").Append(s.WanderDistance);
                 sb.Append(",\"patrolWaitSeconds\":").Append(F(s.PatrolWaitSeconds));
                 sb.Append(",\"fixed\":").Append(s.Fixed ? "true" : "false");
+                sb.Append(",\"prone\":").Append(s.Prone ? "true" : "false");
+                sb.Append(",\"type\":").Append(S(string.IsNullOrEmpty(s.Type) ? "" : s.Type));
                 sb.Append(",\"patrol\":[");
                 for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
                 sb.Append("]}");
@@ -116,6 +120,8 @@ namespace MissionLab.Core
                         WanderDistance = (int)Num(e, "wanderDistance", 0),
                         PatrolWaitSeconds = Num(e, "patrolWaitSeconds", 4),
                         Fixed = Bool(e, "fixed"),
+                        Prone = Bool(e, "prone"),
+                        Type = Str(e, "type"),
                     };
                     string role = Str(e, "role") ?? "Guard";
                     if (!System.Enum.TryParse(role, true, out s.Role)) throw new System.FormatException("spawn " + index + ": unknown role \"" + role + "\" (Guard, Wander or Patrol)");

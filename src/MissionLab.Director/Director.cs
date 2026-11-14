@@ -30,6 +30,10 @@ namespace MissionLab
         internal static NavMesh CurrentNav;
         internal static float CurrentDetect, CurrentHear, CurrentFov;
         internal static float HandledAt;
+        internal static MissionPlan CurrentPlan;            // the layout this mission started with
+        internal static string CurrentScenarioPath;         // the file it came from, or null for a generated layout
+        internal static string CurrentScenarioScene;        // that file's own "scene" value
+        private static string _lastScenarioPath;
 
         private static IntPtr _configReadFor = IntPtr.Zero;
         private static IntPtr _waitingPtr = IntPtr.Zero;
@@ -141,17 +145,25 @@ namespace MissionLab
 
             // Remember this mission for the Game Master tools, whatever happens next.
             CurrentRaidPtr = raid.Pointer; CurrentTemplate = template; CurrentNav = nav;
+            CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null;
             CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
 
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
             MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
             bool fromFile = plan != null;
             long seed; int enemies; string source;
+            var later = new HashSet<SpawnPlan>();
+            string scenarioScene = fromFile ? plan.Scene : "";
             if (fromFile)
             {
                 seed = plan.Seed;
-                enemies = Math.Min(100, plan.Spawns.Count);
                 source = "scenario '" + scenarioName + "'";
+                // Enemies of a chosen type cannot go through the game's own start-up spawn; they follow a few seconds later.
+                bool keptOne = false;
+                foreach (SpawnPlan s in plan.Spawns)
+                    if (!string.IsNullOrEmpty(s.Type)) later.Add(s); else keptOne = true;
+                if (!keptOne) later.Remove(plan.Spawns[0]);   // the game's spawner needs at least one point of its own
+                enemies = Math.Min(100, plan.Spawns.Count - later.Count);
                 int fixedCount = 0;
                 foreach (SpawnPlan s in plan.Spawns)
                 {
@@ -192,7 +204,7 @@ namespace MissionLab
 
             // 4. Build everything, then swap.
             int generated, toppedUp;
-            Apply(raid, plan, template, fromFile ? null : originals, enemies, new Rng(seed ^ 0x5EED), out generated, out toppedUp);
+            Apply(raid, plan, template, fromFile ? null : originals, enemies, new Rng(seed ^ 0x5EED), later, out generated, out toppedUp);
             string senses = "usual senses " + tDetect + "/" + tHear + "/" + tFov + ", template '" + template.name + "'";
             if (gm != null && (fromFile || DirectorPlugin.EnemyCount.Value > 0)) gm.botAmount = enemies;
             sw.Stop();
@@ -203,6 +215,9 @@ namespace MissionLab
             log.LogInfo(Banner + " | via " + via + " | " + generated + " planned + " + toppedUp + " original spawn points | insertion: " + infilInfo +
                         " | map: " + navInfo + " | " + senses + " | " + sw.ElapsedMilliseconds + " ms");
             plan.Scene = scene;
+            CurrentPlan = plan; CurrentScenarioPath = fromFile ? _lastScenarioPath : null; CurrentScenarioScene = scenarioScene;
+            GameMaster.BeginMission(raid.Pointer, later);
+            if (later.Count > 0) log.LogInfo(later.Count + " enemies of a chosen type will be added a few seconds after the start");
             WriteRecord(scene, seed, via, source, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
             return true;
         }
@@ -250,22 +265,23 @@ namespace MissionLab
                 if (!File.Exists(path)) { log.LogWarning("scenario '" + name + "' not found in " + dir + "; generating instead"); return null; }
                 MissionPlan plan = ReadScenario(path, scene, mapFile, true, out string why);
                 if (plan == null) log.LogInfo("scenario '" + name + "' " + why + "; generating instead");
+                _lastScenarioPath = path;
                 return plan;
             }
 
             // Every file in the folder that is made for this map. Subfolders are ignored,
             // so moving a file into one switches it off.
-            var fits = new List<MissionPlan>(); var names = new List<string>();
+            var fits = new List<MissionPlan>(); var names = new List<string>(); var paths = new List<string>();
             if (Directory.Exists(dir))
                 foreach (string path in Directory.GetFiles(dir, "*.json"))
                 {
                     MissionPlan plan = ReadScenario(path, scene, mapFile, false, out string why);
-                    if (plan != null) { fits.Add(plan); names.Add(Path.GetFileNameWithoutExtension(path)); }
+                    if (plan != null) { fits.Add(plan); names.Add(Path.GetFileNameWithoutExtension(path)); paths.Add(path); }
                     else log.LogInfo("scenario '" + Path.GetFileNameWithoutExtension(path) + "' " + why);
                 }
             if (fits.Count == 0) return null;
             int pick = fits.Count == 1 ? 0 : new System.Random().Next(fits.Count);
-            name = names[pick];
+            name = names[pick]; _lastScenarioPath = paths[pick];
             if (fits.Count > 1) log.LogInfo(fits.Count + " scenarios fit this map (" + string.Join(", ", names) + "); picked '" + name + "'");
             return fits[pick];
         }
@@ -403,8 +419,52 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("could not read extraction zones: " + e.Message); }
         }
 
+        /// <summary>
+        /// One spawn point for one planned enemy: a copy of one of the map's own points, so it carries
+        /// everything the game expects, with our position and behaviour written over it.
+        /// </summary>
+        internal static GameObject BuildPoint(GameObject template, Transform parent, SpawnPlan s, string name)
+        {
+            var pos = new Vector3(s.Pos.X, s.Pos.Y + (s.Fixed ? 0f : 0.1f), s.Pos.Z);
+            GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)template, pos, Quaternion.Euler(0f, s.Yaw, 0f), parent).Cast<GameObject>();
+            go.name = name;
+            bool patrol = s.Role == SpawnRole.Patrol && s.Patrol.Count >= 2 && !s.Fixed;
+
+            var d = go.GetComponent<BotSpawnDetails>();
+            d.idleState = s.Fixed || s.Role == SpawnRole.Guard ? BrainAI.IdleStates.Idle
+                        : patrol ? BrainAI.IdleStates.Patrol
+                        : BrainAI.IdleStates.Wander;
+            d.reactType = s.Defensive ? BrainAI.ReactType.Defensive : BrainAI.ReactType.Offensive;
+            // 0 means "the map's usual value".
+            if (s.DetectionRange > 0) d.DetectionRange = s.DetectionRange; else if (CurrentDetect > 0) d.DetectionRange = CurrentDetect;
+            if (s.HearingRange > 0) d.HearingRange = s.HearingRange; else if (CurrentHear > 0) d.HearingRange = CurrentHear;
+            if (s.Fov > 0) d.FOV = s.Fov; else if (CurrentFov > 0) d.FOV = CurrentFov;
+            if (s.Role == SpawnRole.Wander && s.WanderDistance > 0) d.WanderDistance = s.WanderDistance;
+            d.isProne = s.Prone;
+            d.isSpawnGroup = false;
+            d.disableNavmesh = s.Fixed;     // everyone else must be able to walk: wander, patrol, react
+            d.hvtLinkedSpawnGroup = null;
+
+            var pts = d.patrolPoints;
+            if (pts == null) { pts = new Il2Generic.List<Transform>(); d.patrolPoints = pts; }
+            pts.Clear();
+            if (patrol)
+            {
+                for (int k = 0; k < s.Patrol.Count; k++)
+                {
+                    var wp = new GameObject(name + " stop " + k);
+                    wp.transform.SetParent(parent);
+                    wp.transform.position = new Vector3(s.Patrol[k].X, s.Patrol[k].Y + 0.1f, s.Patrol[k].Z);
+                    pts.Add(wp.transform);
+                }
+                d.PatrolLooping = true;
+                d.patrolWaitTime = s.PatrolWaitSeconds;
+            }
+            return go;
+        }
+
         private static void Apply(RaidManager raid, MissionPlan plan, GameObject template, List<GameObject> originals, int enemies,
-                                  Rng rng, out int generated, out int toppedUp)
+                                  Rng rng, HashSet<SpawnPlan> later, out int generated, out int toppedUp)
         {
             var root = new GameObject("MissionLab Spawns");
             var created = new List<GameObject>();
@@ -413,43 +473,8 @@ namespace MissionLab
                 root.transform.SetParent(raid.transform);
                 foreach (SpawnPlan s in plan.Spawns)
                 {
-                    var pos = new Vector3(s.Pos.X, s.Pos.Y + (s.Fixed ? 0f : 0.1f), s.Pos.Z);
-                    Quaternion rot = Quaternion.Euler(0f, s.Yaw, 0f);
-                    // A copy of one of the map's own spawn points, so it carries everything the game expects.
-                    UnityEngine.Object copy = UnityEngine.Object.Instantiate((UnityEngine.Object)template, pos, rot, root.transform);
-                    GameObject go = copy.Cast<GameObject>();
-                    go.name = "ML g" + s.Group + " " + s.Role + " " + created.Count;
-
-                    var d = go.GetComponent<BotSpawnDetails>();
-                    d.idleState = s.Role == SpawnRole.Guard ? BrainAI.IdleStates.Idle
-                                : s.Role == SpawnRole.Wander ? BrainAI.IdleStates.Wander
-                                : BrainAI.IdleStates.Patrol;
-                    d.reactType = s.Defensive ? BrainAI.ReactType.Defensive : BrainAI.ReactType.Offensive;
-                    d.DetectionRange = s.DetectionRange;
-                    d.HearingRange = s.HearingRange;
-                    d.FOV = s.Fov;
-                    if (s.Role == SpawnRole.Wander && s.WanderDistance > 0) d.WanderDistance = s.WanderDistance;
-                    d.isProne = false;
-                    d.isSpawnGroup = false;
-                    d.disableNavmesh = s.Fixed;     // everyone else must be able to walk: wander, patrol, react
-                    d.hvtLinkedSpawnGroup = null;
-
-                    var pts = d.patrolPoints;
-                    if (pts == null) { pts = new Il2Generic.List<Transform>(); d.patrolPoints = pts; }
-                    pts.Clear();
-                    if (s.Role == SpawnRole.Patrol)
-                    {
-                        for (int k = 0; k < s.Patrol.Count; k++)
-                        {
-                            var wp = new GameObject("ML wp " + created.Count + "." + k);
-                            wp.transform.SetParent(root.transform);
-                            wp.transform.position = new Vector3(s.Patrol[k].X, s.Patrol[k].Y + 0.1f, s.Patrol[k].Z);
-                            pts.Add(wp.transform);
-                        }
-                        d.PatrolLooping = true;
-                        d.patrolWaitTime = s.PatrolWaitSeconds;
-                    }
-                    created.Add(go);
+                    if (later.Contains(s)) continue;    // enemies of a chosen type are added right after the game's own spawn
+                    created.Add(BuildPoint(template, root.transform, s, "ML g" + s.Group + " " + s.Role + " " + created.Count));
                 }
             }
             catch

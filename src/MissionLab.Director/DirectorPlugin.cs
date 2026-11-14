@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.4.0";
+        public const string Version = "0.5.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -29,7 +29,8 @@ namespace MissionLab
         internal static ConfigEntry<int> EnemyCount;
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
-        internal static ConfigEntry<bool> GmTestKey;
+        internal static ConfigEntry<bool> GmEnabled;
+        internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyUp, KeyDown, KeyLeft, KeyRight, KeyDo, KeyPlaceAim, KeyPlaceHere, KeyStop, KeyPick, KeyRemove;
         internal static bool Hooked;
         internal static string BaseDir;
         internal static ConfigFile Settings;
@@ -48,8 +49,21 @@ namespace MissionLab
                 "Comma-separated scene names where the director is active. * = every PvE mission.");
             Scenario = Config.Bind("General", "Scenario", "*",
                 "* = use any scenario file in BepInEx/MissionLab/scenarios that was made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Empty = always generate. Read again at every mission start.");
-            GmTestKey = Config.Bind("GameMaster", "TestSpawnKey", true,
-                "Experiment: while hosting a mission, F6 spawns one enemy about 15 m in front of you (every second press: an enemy type chosen by the mod).");
+            GmEnabled = Config.Bind("GameMaster", "Enabled", true,
+                "Game Master mode while you host a mission: place, spawn and remove enemies in the running mission and save the result as a scenario.");
+            KeyGm = Config.Bind("GameMaster", "KeyOpen", KeyCode.F8, "Opens and closes Game Master mode.");
+            KeyCam = Config.Bind("GameMaster", "KeyFreeCamera", KeyCode.F9, "Switches the game's free camera on and off.");
+            KeySave = Config.Bind("GameMaster", "KeySave", KeyCode.F10, "Saves all markers as a scenario file.");
+            KeyUp = Config.Bind("GameMaster", "KeyListUp", KeyCode.I, "Moves up in the Game Master list.");
+            KeyDown = Config.Bind("GameMaster", "KeyListDown", KeyCode.K, "Moves down in the Game Master list.");
+            KeyLeft = Config.Bind("GameMaster", "KeyValuePrevious", KeyCode.J, "Previous value of the highlighted line.");
+            KeyRight = Config.Bind("GameMaster", "KeyValueNext", KeyCode.L, "Next value of the highlighted line.");
+            KeyDo = Config.Bind("GameMaster", "KeyDoAction", KeyCode.Return, "Runs the highlighted action.");
+            KeyPlaceAim = Config.Bind("GameMaster", "KeyPlaceAtCrosshair", KeyCode.U, "Places an enemy where the crosshair points; it faces the camera.");
+            KeyPlaceHere = Config.Bind("GameMaster", "KeyPlaceAtCamera", KeyCode.O, "Places an enemy where the camera is; it faces where the camera looks.");
+            KeyStop = Config.Bind("GameMaster", "KeyPatrolStop", KeyCode.P, "Adds a patrol stop at the crosshair for the picked marker.");
+            KeyPick = Config.Bind("GameMaster", "KeyPickMarker", KeyCode.Y, "Picks the marker nearest to the crosshair.");
+            KeyRemove = Config.Bind("GameMaster", "KeyRemoveMarker", KeyCode.Delete, "Removes the marker nearest to the crosshair, and its enemy.");
             UseHook = Config.Bind("Advanced", "UseHook", true,
                 "true = act the moment the mission's spawner starts. false = slower polling fallback; try this if a mission fails to load.");
 
@@ -96,14 +110,15 @@ namespace MissionLab
 
         private float _nextPoll;
         private bool _guiOk = true;
+        private bool _gmGuiOk = true;
         private int _errors;
 
         private void Update()
         {
             if (_errors > 10) return;
             float now = Time.unscaledTime;
-            try { GmTest.Tick(now); }
-            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("GM test failed: " + e); }
+            try { GameMaster.Tick(now); }
+            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("Game Master failed: " + e); }
             if (now < _nextPoll) return;
             try
             {
@@ -118,6 +133,9 @@ namespace MissionLab
 
         private void OnGUI()
         {
+            if (_gmGuiOk)
+                try { GameMaster.Draw(); }
+                catch (Exception e) { _gmGuiOk = false; DirectorPlugin.L.LogWarning("Game Master overlay disabled: " + e); }
             if (!_guiOk || Director.Banner == null || Time.unscaledTime > Director.BannerUntil) return;
             try { GUI.Label(new Rect(24f, 56f, 1400f, 32f), Director.Banner); }
             catch (Exception e) { _guiOk = false; DirectorPlugin.L.LogWarning("on-screen banner disabled: " + e.Message); }

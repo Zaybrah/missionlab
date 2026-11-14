@@ -138,7 +138,7 @@ body.dragging #drop { display: flex; }
       <span class="chip info" id="exampleChip">Example map</span>
     </div>
     <div id="mapInfo"></div>
-    <p class="hint">Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
+    <p class="hint">Dark lines are borders nobody can cross: walls, fences, furniture. Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
     <details>
       <summary>Which map file belongs to which mission?</summary>
       <ul>
@@ -166,10 +166,11 @@ body.dragging #drop { display: flex; }
     <p class="hint" id="roleHint"></p>
     <div class="field"><label for="group">Group</label><input id="group" type="number" min="1" max="99" step="1"></div>
     <div class="field"><label for="yaw">Facing</label><input id="yaw" type="range" min="0" max="359" step="1"></div>
-    <div class="field" id="wanderRow"><label for="wander">Wander radius (m)</label><input id="wander" type="number" min="0" max="200" step="1" title="0 = the game's usual radius"></div>
+    <div class="field" id="wanderRow"><label for="wander">Wander radius (m)</label><input id="wander" type="number" min="0" max="200" step="1" title="0 = the game's usual radius (no circle is drawn)"></div>
     <div class="field" id="waitRow"><label for="wait">Pause at stops (s)</label><input id="wait" type="number" min="0" max="120" step="1"></div>
     <label class="check"><input id="defensive" type="checkbox"><span>Holds its ground when alerted (otherwise it pushes toward you)</span></label>
     <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
+    <label class="check"><input id="prone" type="checkbox"><span>Lies prone (lying down)</span></label>
     <div id="pos"></div>
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
@@ -206,7 +207,9 @@ body.dragging #drop { display: flex; }
     <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
     <button class="btn" type="button" id="fit">Fit</button>
     <span class="sep"></span>
-    <label id="floor" title="Hide upper floors to place enemies on the floors below"><span>Show up to</span><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10"><output id="ceilingOut" for="ceiling">all floors</output></label>
+    <button class="btn" type="button" id="floorDown" title="Hide the top floor to see the one below (PageDown)">Floor ▼</button>
+    <button class="btn" type="button" id="floorUp" title="Show the next floor up (PageUp)">Floor ▲</button>
+    <label id="floor" title="Hide everything above this height"><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10" aria-label="Show up to height"><output id="ceilingOut" for="ceiling">all floors</output></label>
   </div>
   <div class="float" id="banner" hidden></div>
   <div class="float" id="status"><span id="hintLine"></span><span id="coords"></span></div>
@@ -327,11 +330,37 @@ function makeMap(tris, name, isExample) {
     const z0 = Math.floor((Math.min(tris[o + 2], tris[o + 5], tris[o + 8]) - b.minZ) / cell), z1 = Math.floor((Math.max(tris[o + 2], tris[o + 5], tris[o + 8]) - b.minZ) / cell);
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) (cells[z * gw + x] || (cells[z * gw + x] = [])).push(i);
   }
-  return { tris, n, minY, avgY, order, bounds: b, cell, gw, gh, cells, name, isExample: !!isExample };
+  const m = { tris, n, minY, avgY, order, bounds: b, cell, gw, gh, cells, name, isExample: !!isExample };
+  m.borders = findBorders(m);
+  return m;
+}
+// Edges with walkable ground on one side only: walls, fences, furniture, ledges. Nobody gets past these.
+function findBorders(m) {
+  const t = m.tris, seen = new Map(), q = v => Math.round(v * 1000);
+  for (let i = 0; i < m.n; i++) for (let e = 0; e < 3; e++) {
+    const a = i * 9 + e * 3, b = i * 9 + ((e + 1) % 3) * 3;
+    const ka = q(t[a]) + ',' + q(t[a + 1]) + ',' + q(t[a + 2]), kb = q(t[b]) + ',' + q(t[b + 1]) + ',' + q(t[b + 2]);
+    const key = ka < kb ? ka + '|' + kb : kb + '|' + ka, hit = seen.get(key);
+    if (hit) hit.n++; else seen.set(key, { n: 1, a, b, c: i * 9 + ((e + 2) % 3) * 3 });
+  }
+  const out = [];
+  for (const e of seen.values()) {
+    if (e.n !== 1) continue;
+    const ax = t[e.a], az = t[e.a + 2], bx = t[e.b], bz = t[e.b + 2], y = (t[e.a + 1] + t[e.b + 1]) / 2;
+    let nx = bz - az, nz = ax - bx; const len = Math.hypot(nx, nz);
+    if (len < 0.02) continue;
+    nx /= len; nz /= len;
+    if (nx * (t[e.c] - ax) + nz * (t[e.c + 2] - az) > 0) { nx = -nx; nz = -nz; }      // point away from the triangle
+    // The mesh is stored in square tiles; where two tiles meet, the ground simply continues.
+    if (levelsIn(m, (ax + bx) / 2 + nx * 0.06, (az + bz) / 2 + nz * 0.06).some(v => Math.abs(v - y) < 0.6)) continue;
+    out.push(ax, az, bx, bz, Math.min(t[e.a + 1], t[e.b + 1]));
+  }
+  return new Float32Array(out);
 }
 // Heights of every walkable level at (x, z).
-function levelsAt(x, z) {
-  const m = state.map, out = [];
+const levelsAt = (x, z) => levelsIn(state.map, x, z);
+function levelsIn(m, x, z) {
+  const out = [];
   if (!m) return out;
   const cx = Math.floor((x - m.bounds.minX) / m.cell), cz = Math.floor((z - m.bounds.minZ) / m.cell);
   if (cx < 0 || cz < 0 || cx >= m.gw || cz >= m.gh) return out;
@@ -386,7 +415,7 @@ function loadExample() {
 
 // ------------------------------------------------------------------ scenario data
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false,
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '',
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -405,6 +434,7 @@ function scenarioObject() {
       group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
       detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
       wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
+      prone: !!e.prone, type: e.type || '',
       patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
     })),
   };
@@ -425,6 +455,7 @@ function loadScenario(obj, name) {
     if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
     list.push(Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
       yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
+      prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '',
       detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
       wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
       patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -521,7 +552,9 @@ function groundPaths(m) {
     const o = i * 9, p = paths[Math.min(9, Math.floor((m.avgY[i] - m.bounds.minY) / span * 10))];
     p.moveTo(t[o], -t[o + 2]); p.lineTo(t[o + 3], -t[o + 5]); p.lineTo(t[o + 6], -t[o + 8]); p.closePath();
   }
-  m.paths = paths; m.pathsCeiling = state.ceiling;
+  const border = new Path2D(), e = m.borders;
+  for (let i = 0; i < e.length; i += 5) { if (e[i + 4] > state.ceiling + 0.4) continue; border.moveTo(e[i], -e[i + 1]); border.lineTo(e[i + 2], -e[i + 3]); }
+  m.paths = paths; m.borderPath = border; m.pathsCeiling = state.ceiling;
   return paths;
 }
 function shape(role, x, y, r) {
@@ -546,7 +579,7 @@ function draw() {
     ctx.setTransform(k * v.scale, 0, 0, k * v.scale, k * ox, k * oz);
     ctx.lineJoin = 'round';
     paths.forEach((p, i) => { ctx.fillStyle = ctx.strokeStyle = shades[i]; ctx.lineWidth = 0.8 / v.scale; ctx.fill(p); ctx.stroke(p); });
-    if (v.scale >= 5) { ctx.globalAlpha = 0.3; ctx.strokeStyle = css.line; ctx.lineWidth = 0.5 / v.scale; paths.forEach(p => ctx.stroke(p)); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = css.ink; ctx.globalAlpha = 0.8; ctx.lineWidth = Math.min(1.5, Math.max(0.6, v.scale * 0.22)) / v.scale; ctx.stroke(m.borderPath); ctx.globalAlpha = 1;
     ctx.restore();
   }
 
@@ -581,6 +614,13 @@ function draw() {
   state.enemies.forEach((e, i) => {
     const [x, y] = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected, r = 6.5, bad = warningFor(e);
     const yaw = e.yaw * Math.PI / 180;
+    if (e.role === 'Wander' && !e.fixed && e.wanderDistance > 0) {            // how far it may roam
+      ctx.beginPath(); ctx.arc(x, y, e.wanderDistance * v.scale, 0, Math.PI * 2);
+      ctx.globalAlpha = sel ? 0.12 : 0.06; ctx.fillStyle = css.enemy; ctx.fill();
+      ctx.globalAlpha = sel ? 0.9 : 0.5; ctx.setLineDash([5, 4]); ctx.lineWidth = sel ? 1.8 : 1.2; ctx.strokeStyle = css.enemy; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    const above = e.pos[1] > state.ceiling + 0.4;                            // stands on a floor that is hidden right now
+    if (above) ctx.globalAlpha = 0.35;
     ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(yaw) * (r + 9), y - Math.cos(yaw) * (r + 9)); ctx.stroke();
     shape(e.role, x, y, r); ctx.fillStyle = css.enemy; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = bad ? css.warn : css.panel; if (bad) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
@@ -588,6 +628,7 @@ function draw() {
     if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
     ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(String(i + 1), x + r + 6, y - r - 3); ctx.fillStyle = css.ink; ctx.fillText(String(i + 1), x + r + 6, y - r - 3);
+    ctx.globalAlpha = 1;
   });
 
   // Scale bar: this is a map, so say what a length on it means.
@@ -637,7 +678,8 @@ canvas.addEventListener('pointerdown', ev => {
 });
 canvas.addEventListener('pointermove', ev => {
   const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top, [wx, wz] = toWorld(sx, sy), y = groundAt(wx, wz);
-  $('coords').textContent = 'x ' + wx.toFixed(1) + '  z ' + wz.toFixed(1) + (y === null ? '  no ground' : '  height ' + y.toFixed(1));
+  const floorsHere = levelsAt(wx, wz).length;
+  $('coords').textContent = 'x ' + wx.toFixed(1) + '  z ' + wz.toFixed(1) + (y === null ? '  no ground' : '  height ' + y.toFixed(1)) + (floorsHere > 1 ? '  (' + floorsHere + ' floors here)' : '');
   if (!drag) { canvas.style.cursor = hit(sx, sy) ? 'grab' : (state.tool === 'select' ? 'default' : 'crosshair'); return; }
   if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) < 4) return;
   drag.moved = true;
@@ -680,6 +722,7 @@ window.addEventListener('keydown', ev => {
   else if (key === 'v') setTool('select'); else if (key === 'a') setTool('add'); else if (key === 'r') setTool('route');
   else if (key === 'escape') { setTool('select'); select(-1); }
   else if (key === 'delete') removeSelected();
+  else if (key === 'pagedown') { ev.preventDefault(); stepFloor(-1); } else if (key === 'pageup') { ev.preventDefault(); stepFloor(1); }
   else if (key === 'backspace' && state.tool === 'route') { const e = state.enemies[state.selected]; if (e && e.patrol.length) { ev.preventDefault(); pushUndo(); e.patrol.pop(); changed(); } }
 });
 
@@ -705,7 +748,7 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.fixed ? 'Sentry' : e.role); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : '');
+    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -722,7 +765,7 @@ function syncSide() {
       : e.role === 'Wander' ? 'Roams around its position.'
       : 'Walks its ' + e.patrol.length + ' route stops in a loop. Choose Draw route to add stops, drag a stop to move it, Backspace removes the last one.';
     setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
-    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed;
+    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone;
     $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
     $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
     syncPos();
@@ -738,7 +781,8 @@ function syncSide() {
   const c = $('ceiling');
   if (m) { c.min = Math.floor(m.bounds.minY * 2) / 2; c.max = Math.ceil(m.bounds.maxY * 2) / 2; c.disabled = false; if (!isFinite(state.ceiling)) c.value = c.max; }
   else c.disabled = true;
-  $('ceilingOut').textContent = isFinite(state.ceiling) ? 'height ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
+  $('ceilingOut').textContent = isFinite(state.ceiling) ? 'up to ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
+  $('floorDown').disabled = $('floorUp').disabled = !m;
 }
 function changed() { syncSide(); invalidate(); saveDraft(); }
 const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; pushUndo(); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
@@ -748,10 +792,12 @@ $('group').addEventListener('change', ev => edit(e => { e.group = Math.max(0, Ma
 let yawUndo = false;
 $('yaw').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (!e) return; if (!yawUndo) { pushUndo(); yawUndo = true; } e.yaw = +ev.target.value; invalidate(); });
 $('yaw').addEventListener('change', () => { yawUndo = false; changed(); });
+$('wander').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (e) { e.wanderDistance = Math.max(0, Math.min(200, Math.round(+ev.target.value || 0))); invalidate(); } });
 $('wander').addEventListener('change', ev => edit(e => { e.wanderDistance = Math.max(0, Math.min(200, Math.round(+ev.target.value || 0))); }));
 $('wait').addEventListener('change', ev => edit(e => { e.patrolWaitSeconds = Math.max(0, Math.min(120, +ev.target.value || 0)); }));
 $('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.target.checked; }));
 $('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
+$('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.checked; }));
 $('clearRoute').addEventListener('click', () => edit(e => { e.patrol = []; }));
 $('del').addEventListener('click', removeSelected);
 $('title').addEventListener('input', ev => { state.title = ev.target.value; changed(); });
@@ -762,6 +808,32 @@ $('fit').addEventListener('click', fit);
 $('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1.4); });
 $('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
 $('ceiling').addEventListener('input', ev => { state.ceiling = +ev.target.value >= +ev.target.max ? Infinity : +ev.target.value; syncSide(); invalidate(); });
+// Floors of the buildings in view: heights found where ground is stacked above other ground.
+function floorsInView() {
+  const { w, h } = size(), ys = [];
+  for (let gx = 0; gx < 40; gx++) for (let gy = 0; gy < 26; gy++) {
+    const [x, z] = toWorld(w * (gx + 0.5) / 40, h * (gy + 0.5) / 26), l = levelsAt(x, z);
+    if (l.length > 1) ys.push(...l);
+  }
+  ys.sort((p, q) => p - q);
+  const floors = [];
+  for (const y of ys) { const last = floors[floors.length - 1]; if (last && y - last.hi < 1.2) last.hi = y; else floors.push({ lo: y, hi: y }); }
+  return floors;
+}
+// Each step down hides the top visible floor; each step up brings one back.
+function stepFloor(dir) {
+  if (!state.map) return;
+  const floors = floorsInView();
+  if (floors.length < 2) return say('No building with several floors is in view. Zoom in on one first.');
+  const shown = floors.filter(f => f.lo <= state.ceiling + 0.4), hidden = floors.filter(f => f.lo > state.ceiling + 0.4);
+  if (dir < 0) { if (shown.length < 2) return say('This is the lowest floor here.'); state.ceiling = (shown[shown.length - 2].hi + shown[shown.length - 1].lo) / 2; }
+  else state.ceiling = hidden.length > 1 ? (hidden[0].hi + hidden[1].lo) / 2 : Infinity;
+  const c = $('ceiling'); c.value = isFinite(state.ceiling) ? state.ceiling : c.max;
+  syncSide(); invalidate();
+  say(isFinite(state.ceiling) ? 'Showing the ground up to ' + state.ceiling.toFixed(1) + ' m. New enemies land on the highest floor you can see.' : 'Showing all floors.');
+}
+$('floorDown').addEventListener('click', () => stepFloor(-1));
+$('floorUp').addEventListener('click', () => stepFloor(1));
 
 // ------------------------------------------------------------------ files in, file out
 $('openBtn').addEventListener('click', () => $('fileInput').click());

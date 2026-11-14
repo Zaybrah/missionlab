@@ -24,9 +24,14 @@ exactly as shipped.
   or, with no `scene`, when its `navFile` is the map file the mission uses. A position off
   the walkable surface becomes a fixed sentry. Sense values of 0 mean "the map's usual".
   Check a file: `dotnet tests/CoreTest/bin/CoreTest.dll --check <scenario.json> <navmesh.bytes>`.
-- Game Master experiment: while hosting, F6 spawns one enemy about 15 m in front of you
-  through the game's own spawner. Every second press asks for an enemy type the mod
-  chose.
+- Game Master mode (host only, F8): every enemy gets a marker drawn over the 3D view.
+  F9 switches the game's own free camera, which flies through walls. Place an enemy at the
+  crosshair or where the camera is (for spots like under a bed), choose role, stance
+  (standing or prone) and enemy type, spawn it at once or later, remove enemies, and save
+  all markers as a scenario file. Keys are listed on screen and can be changed in the
+  `[GameMaster]` section of the config.
+- Scenario files may give an enemy `"prone": true` and a `"type"` (an enemy type name).
+  Typed enemies are added a few seconds after the mission's own spawn.
 
 ## MissionLab.Recon.dll
 Read-only. Writes what a loaded mission contains to `BepInEx/MissionLab/recon/`
