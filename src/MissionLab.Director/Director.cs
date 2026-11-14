@@ -215,8 +215,21 @@ namespace MissionLab
             if (targetMission && targets.Count == 0 && !fromFile && DirectorPlugin.MoveTarget.Value)
             {
                 // A generated layout also moves the target: to a guard post indoors, in the strongest group if possible.
-                SpawnPlan pick = plan.Spawns.Find(s => s.Indoor && s.Role == SpawnRole.Guard && s.Group == 0) ?? plan.Spawns.Find(s => s.Indoor && s.Role == SpawnRole.Guard) ?? plan.Spawns.Find(s => s.Role == SpawnRole.Guard);
+                // It stays in the part of the map the mission was built around: within 60 m of the game's own target spots.
+                Vector3 centre = Vector3.zero; int counted = 0;
+                for (int i = 0; i < hvtPoints.Length; i++) if (hvtPoints[i] != null) { centre += hvtPoints[i].transform.position; counted++; }
+                if (counted > 0) centre /= counted;
+                SpawnPlan pick = null; float best = float.MaxValue;
+                foreach (SpawnPlan s in plan.Spawns)
+                {
+                    if (s.Role != SpawnRole.Guard || s.Trigger != 0) continue;
+                    float dx = s.Pos.X - centre.x, dz = s.Pos.Z - centre.z, d = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (d > 60f || Mathf.Abs(s.Pos.Y - centre.y) > 8f) continue;
+                    float score = d + (s.Indoor ? 0f : 30f);
+                    if (score < best) { best = score; pick = s; }
+                }
                 if (pick != null && plan.Spawns.Count > enemies) { pick.Hvt = true; targets.Add(pick); }
+                else log.LogInfo("no generated guard post near the mission's own target spots; the target keeps the game's place");
             }
             foreach (SpawnPlan s in targets) { later.Add(s); s.Type = null; }
             if (plan.Spawns.Count - later.Count == 0)
