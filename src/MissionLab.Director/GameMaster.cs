@@ -244,7 +244,7 @@ namespace MissionLab
                     var mine = new List<Marker>();
                     foreach (Marker m in _markers)
                     {
-                        if (m.Plan.Trigger != z.Id || !m.Waiting || m.Queued) continue;
+                        if (m.Plan.Trigger != z.Id || !m.Waiting || m.Queued || m.Plan.Hvt) continue;
                         if (z.FacePlayer) m.FaceYaw = (Mathf.Atan2(who.x - m.Plan.Pos.X, who.z - m.Plan.Pos.Z) * Mathf.Rad2Deg + 360f) % 360f;
                         mine.Add(m);
                     }
@@ -259,6 +259,7 @@ namespace MissionLab
                 {
                     if (m.TurnedAt < 0f || now - m.TurnedAt < 0.6f || m.Queued) continue;
                     m.TurnedAt = -1f;
+                    if (m.Plan.Hvt) continue;                                 // the target person is never re-made: it would come back as an ordinary enemy
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
                     if (b == null) continue;                              // not alive: the new facing applies when it spawns
                     if (!Destroy(b)) continue;
@@ -650,7 +651,7 @@ namespace MissionLab
         {
             var list = new List<Marker>();
             for (int i = 0; i < _markers.Count; i++)
-                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
+                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && !_markers[i].Plan.Hvt && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
             if (list.Count == 0) { Say("no waiting enemies"); return; }
             Enqueue(list);
             Say("spawning " + list.Count + " waiting enemies");
@@ -779,6 +780,8 @@ namespace MissionLab
             var rev = new System.Text.StringBuilder(2048);
             sb.Append("{\"mission\":true").Append(page).Append(",\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
             sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo")) ? "true" : "false");
+            var hvtPoints = raid.hvtSpawnPoints;
+            sb.Append(",\"targetMission\":").Append(hvtPoints != null && hvtPoints.Length > 0 && gm.botHVTAmount > 0 ? "true" : "false");
             sb.Append(",\"busy\":").Append(_running != null || Pending.Count > 0 ? "true" : "false");
             sb.Append(",\"message\":").Append(Q(Time.unscaledTime < Director.BannerUntil ? Director.Banner : ""));
 
@@ -804,7 +807,7 @@ namespace MissionLab
                 Vector3 pos = b.transform.position; float yaw = b.transform.eulerAngles.y;
                 try { AgentController ac = b.agent; if (ac != null && ac.entityExists) { pos = ac.position; if (ac.Agent != null) yaw = ac.Agent.rotation.eulerAngles.y; } } catch { }
                 sb.Append(first ? "" : ",").Append("{\"pos\":").Append(P(pos)).Append(",\"yaw\":").Append(F(yaw)).Append(",\"state\":").Append(Q(b.CurrentState.ToString()))
-                  .Append(",\"marker\":").Append(byBot.TryGetValue(b.Pointer, out int id) ? id : -1).Append('}');
+                  .Append(",\"hvt\":").Append(b.isHVT ? "true" : "false").Append(",\"marker\":").Append(byBot.TryGetValue(b.Pointer, out int id) ? id : -1).Append('}');
                 first = false;
             }
 
@@ -875,8 +878,10 @@ namespace MissionLab
                     if (MissionPlan.SpawnJson(m.Plan) != MissionPlan.SpawnJson(s))
                     {
                         bool released = m.Plan.Trigger != 0 && s.Trigger == 0 && m.Waiting && !m.Queued && m.Bot == IntPtr.Zero;   // unbound from its zone
+                        bool target = s.Hvt || m.Plan.Hvt;           // the target person is spawned by the game at the start only
                         m.Plan = s;
-                        if (m.Bot != IntPtr.Zero) m.TurnedAt = now;
+                        if (target) { }
+                        else if (m.Bot != IntPtr.Zero) m.TurnedAt = now;
                         else if (released && spawnNow) fresh.Add(m);
                     }
                     result.Add(m);
@@ -886,7 +891,7 @@ namespace MissionLab
                     if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
                     var created = new Marker { Plan = s, Waiting = true };
                     result.Add(created);
-                    if (spawnNow && s.Trigger == 0) fresh.Add(created);       // a zone enemy waits for its zone
+                    if (spawnNow && s.Trigger == 0 && !s.Hvt) fresh.Add(created);       // a zone enemy waits for its zone; a target for the next start
                 }
             }
             foreach (Marker gone in byId.Values)

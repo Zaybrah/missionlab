@@ -207,10 +207,32 @@ namespace MissionLab
                 }
             }
 
+            // Missions with a target person: the plan may say where that person stands.
+            var hvtPoints = raid.hvtSpawnPoints; var hvtTypes = raid.hvtAI;
+            bool targetMission = hvtPoints != null && hvtPoints.Length > 0 && hvtTypes != null && hvtTypes.Length > 0 && gm != null && gm.botHVTAmount > 0;
+            var targets = new List<SpawnPlan>();
+            foreach (SpawnPlan s in plan.Spawns) { if (s.Hvt && targetMission && s.Trigger == 0) targets.Add(s); else s.Hvt = false; }
+            if (targetMission && targets.Count == 0 && !fromFile && DirectorPlugin.MoveTarget.Value)
+            {
+                // A generated layout also moves the target: to a guard post indoors, in the strongest group if possible.
+                SpawnPlan pick = plan.Spawns.Find(s => s.Indoor && s.Role == SpawnRole.Guard && s.Group == 0) ?? plan.Spawns.Find(s => s.Indoor && s.Role == SpawnRole.Guard) ?? plan.Spawns.Find(s => s.Role == SpawnRole.Guard);
+                if (pick != null && plan.Spawns.Count > enemies) { pick.Hvt = true; targets.Add(pick); }
+            }
+            foreach (SpawnPlan s in targets) { later.Add(s); s.Type = null; }
+            if (plan.Spawns.Count - later.Count == 0)
+            {
+                // Nothing ordinary is left for the game's own spawner: one held-back enemy is there from the start after all.
+                SpawnPlan free = plan.Spawns.Find(s => !s.Hvt);
+                if (free != null) { free.Trigger = 0; free.Type = null; later.Remove(free); }
+            }
+            if (fromFile) enemies = Math.Max(1, Math.Min(100, plan.Spawns.Count - later.Count));
+
             // 4. Build everything, then swap.
             int generated, toppedUp;
             Apply(raid, plan, template, fromFile ? null : originals, enemies, new Rng(seed ^ 0x5EED), later, out generated, out toppedUp);
-            string senses = "usual senses " + tDetect + "/" + tHear + "/" + tFov + ", template '" + template.name + "'";
+            int movedTargets = targets.Count > 0 ? PlaceTargets(raid, targets, gm.botHVTAmount) : 0;
+            foreach (SpawnPlan s in targets) later.Remove(s);           // the game itself spawns the target; nothing to add later
+            string senses = (movedTargets > 0 ? movedTargets + " target position(s) set | " : "") + "usual senses " + tDetect + "/" + tHear + "/" + tFov + ", template '" + template.name + "'";
             if (gm != null && (fromFile || DirectorPlugin.EnemyCount.Value > 0)) gm.botAmount = enemies;
             sw.Stop();
 
@@ -422,6 +444,26 @@ namespace MissionLab
                 }
             }
             catch (Exception e) { DirectorPlugin.L.LogWarning("could not read extraction zones: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Replaces the mission's target-person spawn points with the planned ones. The game spawns
+        /// the target on one of these about two seconds after the start, the same way it does enemies.
+        /// </summary>
+        private static int PlaceTargets(RaidManager raid, List<SpawnPlan> targets, int wanted)
+        {
+            var old = raid.hvtSpawnPoints;
+            GameObject template = null;
+            for (int i = 0; i < old.Length && template == null; i++)
+                if (old[i] != null && old[i].GetComponent<BotSpawnDetails>() != null) template = old[i];
+            if (template == null) return 0;
+            var points = new List<GameObject>();
+            foreach (SpawnPlan s in targets) points.Add(BuildPoint(template, raid.transform, s, "ML target " + points.Count));
+            for (int i = 0; i < old.Length && points.Count < wanted; i++) if (old[i] != null) points.Add(old[i]);     // more targets than planned spots
+            var arr = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject>(points.Count);
+            for (int i = 0; i < points.Count; i++) arr[i] = points[i];
+            raid.hvtSpawnPoints = arr;
+            return targets.Count;
         }
 
         /// <summary>

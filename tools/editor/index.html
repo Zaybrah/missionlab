@@ -209,6 +209,7 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="defensive" type="checkbox"><span>Holds its ground when alerted (otherwise it pushes toward you)</span></label>
     <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
     <label class="check"><input id="prone" type="checkbox"><span>Lies prone (lying down)</span></label>
+    <label class="check"><input id="hvt" type="checkbox"><span>This is the target person (in missions that have one). Takes effect at the next mission start.</span></label>
     <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
     <div class="field" id="typeRow" hidden><label for="type">Enemy type</label><select id="type"></select></div>
     <div id="pos"></div>
@@ -474,7 +475,7 @@ function facePlayers(e) {
   return e;
 }
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0,
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false,
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -499,7 +500,7 @@ function spawnOf(e) {
     group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
     detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
-    prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0,
+    prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt,
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
@@ -513,7 +514,7 @@ function enemyOf(s, i) {
   if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
   return Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
     yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
-    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0,
+    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt,
     detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
     wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
     patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -544,13 +545,14 @@ function loadGeo(buf, name) {
   return good;
 }
 // Which layers of the 3D map are switched off (remembered between visits).
-const hidden = { layers: new Set(), unmodelled: false };
+const hidden = { layers: new Set(['AI_VisionBlock']), unmodelled: false };        // only the AI "sees" those shapes; the game never draws them
+const GHOST = new Set(['PlayerBlock']);                                            // invisible walls players cannot pass: drawn see-through
 try { const h = JSON.parse(localStorage.getItem('missionlab-hidden-layers') || 'null'); if (h) { hidden.layers = new Set(h.layers || []); hidden.unmodelled = !!h.unmodelled; } } catch (e) { /* no storage */ }
 const layerName = g => g.layer < 0 ? 'Everything' : (state.geo.layers[g.layer] || 'Layer ' + g.layer);
-function geoIndices() {
+function geoIndices(ghost) {
   const geo = state.geo, out = new Uint32Array(geo.all.length); let n = 0;
   for (const g of geo.groups) {
-    if (hidden.layers.has(layerName(g)) || (hidden.unmodelled && !(g.flags & 1))) continue;
+    if (hidden.layers.has(layerName(g)) || (hidden.unmodelled && !(g.flags & 1)) || GHOST.has(layerName(g)) !== !!ghost) continue;
     for (let t = g.start; t + 2 < g.start + g.count; t += 3) { if (geo.bad[t / 3 | 0]) continue; out[n++] = geo.all[t]; out[n++] = geo.all[t + 1]; out[n++] = geo.all[t + 2]; }
   }
   return out.slice(0, n);
@@ -568,7 +570,7 @@ function syncLayers() {
     t.textContent = text; k.className = 'n'; k.textContent = Math.round(n).toLocaleString('en'); l.append(c, t, k); box.appendChild(l);
   };
   const title = document.createElement('b'); title.textContent = 'Show in 3D (triangles)'; box.appendChild(title);
-  [...sums.entries()].sort((p, q) => q[1] - p[1]).forEach(([name, n]) => row(name, n, !hidden.layers.has(name), on => { if (on) hidden.layers.delete(name); else hidden.layers.add(name); }));
+  [...sums.entries()].sort((p, q) => q[1] - p[1]).forEach(([name, n]) => row(name === 'PlayerBlock' ? 'PlayerBlock (invisible walls, shown see-through red)' : name === 'AI_VisionBlock' ? 'AI_VisionBlock (blocks only what enemies see)' : name, n, !hidden.layers.has(name), on => { if (on) hidden.layers.delete(name); else hidden.layers.add(name); }));
   row('Shapes without a visible model (often invisible walls)', bare, !hidden.unmodelled, on => { hidden.unmodelled = !on; });
 }
 function scenarioText() {
@@ -777,8 +779,9 @@ function draw() {
     if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
     if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
     ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const tag = String(i + 1) + (e.trigger ? ' → zone ' + e.trigger : '');
-    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(tag, x + r + 6, y - r - 3); ctx.fillStyle = e.trigger ? css.friend : css.ink; ctx.fillText(tag, x + r + 6, y - r - 3);
+    if (e.hvt) { ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = css.warn; ctx.stroke(); }
+    const tag = String(i + 1) + (e.hvt ? ' TARGET' : e.trigger ? ' → zone ' + e.trigger : '');
+    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(tag, x + r + 6, y - r - 3); ctx.fillStyle = e.hvt ? css.warn : e.trigger ? css.friend : css.ink; ctx.fillText(tag, x + r + 6, y - r - 3);
     ctx.globalAlpha = 1;
   });
 
@@ -812,7 +815,7 @@ function draw() {
 // so everything is drawn at (x, y, -z). That keeps the map the same way round as the flat view.
 const view3d = (() => {
   const T = window.THREE, cv = $('view3d');
-  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, enemyGroup, extraGroup, liveGroup, raf = 0, last = 0;
+  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, ghostMesh = null, enemyGroup, extraGroup, liveGroup, raf = 0, last = 0;
   let yaw = 0, pitch = -0.7, started = false;
   const keys = new Set(), fly = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift']);
   const col = name => new T.Color(css[name]);
@@ -903,12 +906,19 @@ const view3d = (() => {
   }
   function buildGeo() {
     if (geoMesh) { scene.remove(geoMesh); geoMesh.geometry.dispose(); geoMesh = null; }
+    if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh = null; }
     const geo = state.geo; if (!geo) return;
     const p = new Float32Array(geo.positions.length);
     for (let i = 0; i < p.length; i += 3) { p[i] = geo.positions[i]; p[i + 1] = geo.positions[i + 1]; p[i + 2] = -geo.positions[i + 2]; }
     const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(p, 3)); g.setIndex(new T.BufferAttribute(geoIndices(), 1));
     geoMesh = new T.Mesh(g, new T.MeshPhongMaterial({ color: col('ground-lo').lerp(col('ground-hi'), 0.4), flatShading: true, shininess: 0, side: T.DoubleSide }));
     scene.add(geoMesh);
+    const walls = geoIndices(true);
+    if (walls.length) {                                    // walls you cannot see in the game but cannot walk through either
+      const wg = new T.BufferGeometry(); wg.setAttribute('position', g.getAttribute('position')); wg.setIndex(new T.BufferAttribute(walls, 1));
+      ghostMesh = new T.Mesh(wg, new T.MeshBasicMaterial({ color: col('enemy'), transparent: true, opacity: 0.16, side: T.DoubleSide, depthWrite: false }));
+      scene.add(ghostMesh);
+    }
   }
   function label(text) {
     const c = document.createElement('canvas'); c.width = 96; c.height = 48; const x = c.getContext('2d');
@@ -928,7 +938,8 @@ const view3d = (() => {
       g.add(body, nose); g.position.set(e.pos[0], e.pos[1], -e.pos[2]); g.rotation.y = -e.yaw * Math.PI / 180;
       if (sel) { const ring = new T.Mesh(new T.RingGeometry(0.55, 0.7, 28), new T.MeshBasicMaterial({ color: ink, side: T.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; g.add(ring); }
       enemyGroup.add(g);
-      const tag = label(String(i + 1)); tag.position.set(e.pos[0], e.pos[1] + (e.prone ? 0.9 : 2.3), -e.pos[2]); extraGroup.add(tag);
+      const tag = label(e.hvt ? 'T' + (i + 1) : String(i + 1)); tag.position.set(e.pos[0], e.pos[1] + (e.prone ? 0.9 : 2.3), -e.pos[2]); extraGroup.add(tag);
+      if (e.hvt) { const halo = new T.Mesh(new T.TorusGeometry(0.75, 0.07, 8, 28), new T.MeshBasicMaterial({ color: col('warn') })); halo.rotation.x = Math.PI / 2; halo.position.set(e.pos[0], e.pos[1] + 2.0, -e.pos[2]); extraGroup.add(halo); }
       if (e.role === 'Patrol' && !e.fixed && e.patrol.length) {
         const pts = [e.pos, ...e.patrol, ...(e.patrol.length > 2 ? [e.patrol[0]] : [])].map(p => new T.Vector3(p[0], p[1] + 0.25, -p[2]));
         extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: red, linewidth: 2 })));
@@ -1147,7 +1158,7 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? 'zone ' + e.trigger : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? 'zone ' + e.trigger : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -1164,7 +1175,7 @@ function syncSide() {
       : e.role === 'Wander' ? 'Roams around its position.'
       : 'Walks its ' + e.patrol.length + ' route stops in a loop. Choose Draw route to add stops, drag a stop to move it, Backspace removes the last one.';
     setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
-    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone;
+    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone; $('hvt').checked = !!e.hvt;
     $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
     $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
     syncPos();
@@ -1241,6 +1252,7 @@ $('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.tar
 $('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
 $('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.checked; }));
 $('type').addEventListener('change', ev => edit(e => { e.type = ev.target.value; }));
+$('hvt').addEventListener('change', ev => edit(e => { e.hvt = ev.target.checked; if (e.hvt) { e.trigger = 0; e.type = ''; } }));
 $('trigger').addEventListener('change', ev => edit(e => { e.trigger = +ev.target.value || 0; }));
 function addZone(x, y, z) {
   pushUndo();

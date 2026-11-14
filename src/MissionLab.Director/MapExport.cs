@@ -50,7 +50,7 @@ namespace MissionLab
                     if (!c.enabled || c.isTrigger || !c.gameObject.activeInHierarchy) { skipped++; continue; }
                     if (c.GetComponentInParent<Health>() != null) { skipped++; continue; }       // players and enemies
                     Vector3 extent = c.bounds.size;
-                    if (extent.x > 2000f || extent.y > 2000f || extent.z > 2000f) { skipped++; continue; }   // invisible boxes around the whole world
+                    if (extent.x >= 1000f || extent.y >= 1000f || extent.z >= 1000f) { skipped++; continue; }   // invisible boxes around the whole world
                     Matrix4x4 m = c.transform.localToWorldMatrix;
                     int groupStart = idx.Count, flags = 0;
                     try { if (c.GetComponent<Renderer>() != null || c.GetComponentInChildren<Renderer>() != null || c.GetComponentInParent<Renderer>() != null) flags |= 1; } catch { }

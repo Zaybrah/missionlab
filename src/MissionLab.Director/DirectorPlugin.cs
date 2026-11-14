@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.11.0";
+        public const string Version = "0.12.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -30,7 +30,7 @@ namespace MissionLab
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
         internal static ConfigEntry<bool> GmEnabled;
-        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled;
+        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget;
         internal static ConfigEntry<int> LivePort;
         internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
         internal static bool InputHooked;
@@ -60,6 +60,8 @@ namespace MissionLab
                 "0 = use the enemy count chosen on the mission laptop. Otherwise force this many enemies (1-60).");
             Scenes = Config.Bind("General", "Scenes", "*",
                 "Comma-separated scene names where the director is active. * = every PvE mission.");
+            MoveTarget = Config.Bind("General", "MoveTarget", true,
+                "In missions with a target person, a generated layout also picks a new place for the target. false = the game's own places.");
             Scenario = Config.Bind("General", "Scenario", "*",
                 "* = use any scenario file in BepInEx/MissionLab/scenarios that was made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Empty = always generate. Read again at every mission start.");
             GmEnabled = Config.Bind("GameMaster", "Enabled", true,

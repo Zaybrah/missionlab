@@ -66,6 +66,11 @@ editor as amber markers when it is connected to the game, and can be dragged any
 and they are put there a few seconds after the mission starts. This moves the item on the
 host; whether other players see it there in co-op is not yet checked.
 
+### Target person
+In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
+the game spawns its own target type there at the start. A generated layout also moves the
+target, to an indoor guard post (`MoveTarget` in the config switches that off).
+
 ### Live in the browser
 While you host a mission, the mod serves the same editor at `http://localhost:8765` on your
 own computer (nothing on the network can reach it). There it is connected to the game: the

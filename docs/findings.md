@@ -71,5 +71,15 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   were readable from main memory and 45 through `Mesh.GetVertexBuffer` +
   `GraphicsBuffer.GetData`; none failed. Two invisible boxes 20 km wide wrap the map.
 
+## Targets, objectives, layers
+- Target person (mode `PVE_HVTKILL`, seen on Georgia): `RaidManager.hvtSpawnPoints` is an array of
+  six ordinary spawn points (with `BotSpawnDetails`), `hvtAI` holds the target's type, and
+  `GameManager.botHVTAmount` says how many. The target spawned on one of the six and stayed there.
+- Objective items: `RaidManager.objectives` is an array of sets; each set lists candidate
+  `ObjectiveObject`s and the game leaves one active. They are plain scene objects.
+- Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
+  IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
+  does not tell visible from invisible shapes.
+
 ## Not yet verified
 - Co-op with unmodded clients, HVT/intel/asset modes, maps other than Suburb and Mexico Depot.

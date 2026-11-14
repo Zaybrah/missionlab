@@ -38,6 +38,7 @@ namespace MissionLab.Core
         public float HearingRange;
         public float Fov;
         public int Trigger;               // 0 = there from the start; otherwise the id of the zone that brings it in
+        public bool Hvt;                  // the mission's target person stands here (missions that have one)
         public bool Prone;                // spawns lying down
         public string Type;               // enemy type by name; empty = one of the mission's usual types
         public int WanderDistance;        // metres; only used by Wander
@@ -114,6 +115,7 @@ namespace MissionLab.Core
             sb.Append(",\"prone\":").Append(s.Prone ? "true" : "false");
             sb.Append(",\"type\":").Append(S(string.IsNullOrEmpty(s.Type) ? "" : s.Type));
             sb.Append(",\"trigger\":").Append(s.Trigger);
+            sb.Append(",\"hvt\":").Append(s.Hvt ? "true" : "false");
             sb.Append(",\"patrol\":[");
             for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
             sb.Append("]}");
@@ -186,6 +188,7 @@ namespace MissionLab.Core
                         Prone = Bool(e, "prone"),
                         Type = Str(e, "type"),
                         Trigger = (int)Num(e, "trigger", 0),
+                        Hvt = Bool(e, "hvt"),
                     };
                     string role = Str(e, "role") ?? "Guard";
                     if (!System.Enum.TryParse(role, true, out s.Role)) throw new System.FormatException("spawn " + index + ": unknown role \"" + role + "\" (Guard, Wander or Patrol)");
