@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MissionLab Scenario Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: one column of controls on the left, the map takes everything else.
+     One screen; the page itself never scrolls, only the control column does. */
+  --paper: #e8ecef;      /* page and empty map */
+  --panel: #f8fafb;      /* control column, floating map controls */
+  --ink: #17222c;        /* text, selection */
+  --ink-2: #566370;      /* secondary text */
+  --line: #c9d1d8;       /* borders */
+  --ground-lo: #c7d0d7;  /* lowest walkable ground */
+  --ground-hi: #7d8f9d;  /* highest walkable ground */
+  --enemy: #c5402a;      /* enemies and their routes */
+  --friend: #1c6dcc;     /* insertion points, primary action */
+  --warn: #a4660f;       /* something to check */
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
+    --ground-lo: #27323c; --ground-hi: #64747f;
+    --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
+  --ground-lo: #27323c; --ground-hi: #64747f;
+  --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--body); display: grid; grid-template-columns: 340px minmax(0, 1fr); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--friend); outline-offset: 2px; }
+
+/* ---------- control column ---------- */
+#side { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+#side header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+h1 { font: 600 26px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; margin: 0; text-wrap: balance; }
+#side header p { margin: 6px 0 0; color: var(--ink-2); font-size: 12.5px; }
+section { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+h2 { font: 600 15px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--ink-2); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+h2 span { font: 500 12px var(--mono); letter-spacing: 0; text-transform: none; }
+.hint { color: var(--ink-2); font-size: 12.5px; margin: 0; }
+.hint code, .path { font: 12px var(--mono); overflow-wrap: anywhere; }
+.btn { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-weight: 500; }
+.btn:hover:not(:disabled) { border-color: var(--ink-2); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--friend); border-color: var(--friend); color: #fff; }
+.btn.danger { color: var(--enemy); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.field { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; align-items: center; }
+.field > label { color: var(--ink-2); font-size: 12.5px; }
+input[type="text"], input[type="number"], textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; }
+input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--friend); }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.check input { margin-top: 3px; accent-color: var(--friend); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 4px; cursor: pointer; border-left: 1px solid var(--line); font-weight: 500; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.info { border-color: var(--friend); color: var(--friend); }
+#mapInfo { font: 12px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
+details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; }
+#saveBox details > * + * { margin-top: 8px; }
+
+#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 176px; overflow-y: auto; }
+#list li button { width: 100%; display: grid; grid-template-columns: 30px 62px 1fr auto; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 6px; cursor: pointer; font-size: 12.5px; }
+#list li button:hover { border-color: var(--line); }
+#list li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
+#list .n, #list .xy { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+#list .xy { color: var(--ink-2); }
+#list li button[aria-current="true"] .xy { color: inherit; opacity: .75; }
+#list .flag { color: var(--warn); font-weight: 600; }
+#empty { color: var(--ink-2); font-size: 12.5px; margin: 0; }
+#panel[hidden] { display: none; }
+#pos { font: 12px var(--mono); color: var(--ink-2); }
+#fileText { height: 130px; font: 11.5px/1.4 var(--mono); resize: vertical; }
+#saveMsg:empty { display: none; }
+#saveBox { margin-top: auto; border-bottom: 0; border-top: 1px solid var(--line); background: var(--panel); }
+@media (min-height: 680px) { #saveBox { position: sticky; bottom: 0; box-shadow: 0 -6px 12px -10px rgb(0 0 0 / .35); } }
+
+/* ---------- map ---------- */
+#stage { position: relative; min-width: 0; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
+#tools { top: 12px; left: 12px; max-width: calc(100% - 24px); }
+#tools .tool[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+#tools .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+#floor { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 12.5px; color: var(--ink-2); }
+#floor input { width: 120px; }
+#floor output { font: 12px var(--mono); min-width: 74px; }
+#status { left: 12px; bottom: 12px; max-width: calc(100% - 24px); font-size: 12.5px; padding: 6px 10px; }
+#coords { font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+#banner { top: 64px; left: 12px; max-width: min(520px, calc(100% - 24px)); font-size: 13px; padding: 8px 12px; }
+#banner[hidden] { display: none; }
+#drop { position: absolute; inset: 12px; border: 2px dashed var(--friend); border-radius: 12px; display: none; align-items: center; justify-content: center; font: 600 22px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--friend); background: color-mix(in srgb, var(--panel) 80%, transparent); pointer-events: none; }
+body.dragging #drop { display: flex; }
+
+@media (max-width: 760px) {
+  body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 44%) minmax(0, 56%); }
+  #side { border-right: 0; border-bottom: 1px solid var(--line); }
+  #stage { grid-row: 2; }
+}
+@media (prefers-reduced-motion: no-preference) { .btn, .seg button { transition: border-color .12s, background-color .12s; } }
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <h1>MissionLab Scenario Editor</h1>
+    <p>Place enemies on a map and save the layout as a scenario file. Unofficial tool for the game OPERATOR.</p>
+  </header>
+
+  <section aria-labelledby="h-map">
+    <h2 id="h-map">1. Map</h2>
+    <div class="row">
+      <button class="btn primary" id="openBtn" type="button">Open files</button>
+      <input id="fileInput" type="file" multiple accept=".bytes,.json" hidden>
+      <span class="chip info" id="exampleChip">Example map</span>
+    </div>
+    <div id="mapInfo"></div>
+    <p class="hint">Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
+    <details>
+      <summary>Which map file belongs to which mission?</summary>
+      <ul>
+        <li>Clean House (Suburb): <code>suburbv2.bytes</code></li>
+        <li>Depot Mexico: <code>depotraid1.bytes</code></li>
+        <li>Any other mission: host it once with MissionLab installed. The banner at the top left of the game names the file, and so does <code>missions/last.json</code>.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="h-enemies">
+    <h2 id="h-enemies">2. Enemies <span id="count"></span></h2>
+    <ul id="list"></ul>
+    <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
+    <div id="warnings" class="row"></div>
+  </section>
+
+  <section aria-labelledby="h-sel" id="panel" hidden>
+    <h2 id="h-sel">Selected enemy <span id="selNo"></span></h2>
+    <div class="seg" role="group" aria-label="Role">
+      <button type="button" data-role="Guard" title="Stays where it is placed">Guard</button>
+      <button type="button" data-role="Wander" title="Roams around its position">Wander</button>
+      <button type="button" data-role="Patrol" title="Walks the route you draw">Patrol</button>
+    </div>
+    <p class="hint" id="roleHint"></p>
+    <div class="field"><label for="group">Group</label><input id="group" type="number" min="1" max="99" step="1"></div>
+    <div class="field"><label for="yaw">Facing</label><input id="yaw" type="range" min="0" max="359" step="1"></div>
+    <div class="field" id="wanderRow"><label for="wander">Wander radius (m)</label><input id="wander" type="number" min="0" max="200" step="1" title="0 = the game's usual radius"></div>
+    <div class="field" id="waitRow"><label for="wait">Pause at stops (s)</label><input id="wait" type="number" min="0" max="120" step="1"></div>
+    <label class="check"><input id="defensive" type="checkbox"><span>Holds its ground when alerted (otherwise it pushes toward you)</span></label>
+    <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
+    <div id="pos"></div>
+    <div class="row">
+      <button class="btn" id="clearRoute" type="button">Clear route</button>
+      <button class="btn danger" id="del" type="button">Delete enemy</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-save" id="saveBox">
+    <h2 id="h-save">3. Save</h2>
+    <div class="field"><label for="title">File name</label><input id="title" type="text" maxlength="60" spellcheck="false"></div>
+    <div class="row">
+      <button class="btn primary" id="save" type="button" hidden>Save file</button>
+      <button class="btn" id="copy" type="button">Copy file text</button>
+    </div>
+    <p class="hint" id="saveMsg" role="status"></p>
+    <details>
+      <summary>Where the file goes, and options</summary>
+      <p class="hint">Put the file in <code>OPERATOR/BepInEx/MissionLab/scenarios</code>. MissionLab uses it the next time you host a mission on this map. Move it into a subfolder to switch it off.</p>
+      <div class="field"><label for="scene">Only in scenes</label><input id="scene" type="text" placeholder="every mission on this map" spellcheck="false" title="Optional. Scene names separated by commas, for example: Suburb Day, Suburb Night"></div>
+      <textarea id="fileText" readonly spellcheck="false" aria-label="Scenario file text"></textarea>
+    </details>
+  </section>
+</aside>
+
+<main id="stage">
+  <canvas id="map" aria-label="Map. Click to place or select enemies."></canvas>
+  <div class="float" id="tools" role="toolbar" aria-label="Map tools">
+    <button class="btn tool" type="button" data-tool="select" title="Select and move (V). Drag empty ground to pan.">Select</button>
+    <button class="btn tool" type="button" data-tool="add" title="Click walkable ground to place an enemy (A)">Add enemy</button>
+    <button class="btn tool" type="button" data-tool="route" title="Click to add stops to the selected enemy's patrol route (R)">Draw route</button>
+    <span class="sep"></span>
+    <button class="btn" type="button" id="undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button class="btn" type="button" id="zoomOut" aria-label="Zoom out">−</button>
+    <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
+    <button class="btn" type="button" id="fit">Fit</button>
+    <span class="sep"></span>
+    <label id="floor" title="Hide upper floors to place enemies on the floors below"><span>Show up to</span><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10"><output id="ceilingOut" for="ceiling">all floors</output></label>
+  </div>
+  <div class="float" id="banner" hidden></div>
+  <div class="float" id="status"><span id="hintLine"></span><span id="coords"></span></div>
+  <div id="drop">Drop map, scenario or recon files</div>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('map'), ctx = canvas.getContext('2d');
+const ROLES = ['Guard', 'Wander', 'Patrol'];
+const DRAFT_KEY = 'missionlab-editor-draft-1';
+
+const state = {
+  map: null,            // walkable surface, see makeMap()
+  navFile: '',          // map file the scenario is meant for (kept even while that map is not open)
+  enemies: [],          // {group, role, pos:[x,y,z], yaw, defensive, fixed, wanderDistance, patrolWaitSeconds, patrol:[[x,y,z]], ...}
+  selected: -1,
+  infils: [],           // insertion points from a recon file
+  authored: [],         // the game's own spawn points from a recon file
+  title: 'my_scenario',
+  scene: '',
+  tool: 'select',
+  ceiling: Infinity,
+  view: { cx: 0, cz: 0, scale: 4 },
+  example: true,
+  lastRole: 'Guard',
+  lastGroup: 0,
+};
+const undoStack = [];
+
+// ------------------------------------------------------------------ map files
+// The game ships each map's walkable surface as a zip (A* Pathfinding Project cache).
+async function inflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function unzip(buffer) {
+  const u8 = new Uint8Array(buffer), dv = new DataView(buffer), out = new Map();
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('This is not a map file from NavMeshData.');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true);
+    const local = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+    const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    const data = u8.subarray(start, start + csize);
+    out.set(name, method === 0 ? data.slice() : await inflateRaw(data));
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+// graph0_extra.binary, per tile: x, z, width, depth, tris[], verts[] (mm), verts in graph space,
+// one flag byte (if set: a pre-cut copy to skip), then 20 bytes per triangle node.
+function parseTiles(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let off = 0;
+  const i32 = () => { const v = dv.getInt32(off, true); off += 4; return v; };
+  const tilesX = i32(), tilesZ = i32();
+  if (tilesX <= 0 || tilesZ <= 0 || tilesX > 4096 || tilesZ > 4096) throw new Error('This map file has no walkable surface in it.');
+  const parts = []; let total = 0;
+  for (let z = 0; z < tilesZ; z++) for (let x = 0; x < tilesX; x++) {
+    const tx = i32(), tz = i32();
+    if (tx !== x || tz !== z) continue;                  // slot belongs to a larger tile already read
+    off += 8;
+    const nIdx = i32(), idxAt = off; off += 4 * nIdx;
+    const nVerts = i32(), vertAt = off; off += 12 * nVerts;
+    const skip = size => { const count = i32(); off += size * count; };   // read the count first, then jump
+    skip(12);
+    const cut = dv.getUint8(off); off += 1;
+    if (cut) { skip(4); skip(12); skip(4); }
+    skip(20);
+    const t = new Float32Array(nIdx * 3);
+    for (let k = 0; k < nIdx; k++) {
+      const v = vertAt + 12 * dv.getInt32(idxAt + 4 * k, true);
+      t[k * 3] = dv.getInt32(v, true) / 1000; t[k * 3 + 1] = dv.getInt32(v + 4, true) / 1000; t[k * 3 + 2] = dv.getInt32(v + 8, true) / 1000;
+    }
+    parts.push(t); total += t.length;
+  }
+  if (off !== bytes.byteLength) throw new Error('This map file has a layout this editor does not know (game update?).');
+  const tris = new Float32Array(total); let at = 0;
+  for (const t of parts) { tris.set(t, at); at += t.length; }
+  return tris;
+}
+async function readMapFile(buffer) {
+  const files = await unzip(buffer);
+  const extra = files.get('graph0_extra.binary');
+  if (!extra) throw new Error('This zip has no walkable surface in it (graph0_extra.binary is missing).');
+  return parseTiles(extra);
+}
+
+// tris: 9 floats per triangle (x, y, z of each corner), world metres.
+function makeMap(tris, name, isExample) {
+  const n = tris.length / 9, minY = new Float32Array(n), avgY = new Float32Array(n);
+  const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (let i = 0; i < n; i++) {
+    const o = i * 9, y0 = tris[o + 1], y1 = tris[o + 4], y2 = tris[o + 7];
+    minY[i] = Math.min(y0, y1, y2); avgY[i] = (y0 + y1 + y2) / 3;
+    for (let k = 0; k < 9; k += 3) {
+      b.minX = Math.min(b.minX, tris[o + k]); b.maxX = Math.max(b.maxX, tris[o + k]);
+      b.minZ = Math.min(b.minZ, tris[o + k + 2]); b.maxZ = Math.max(b.maxZ, tris[o + k + 2]);
+    }
+    b.minY = Math.min(b.minY, minY[i]); b.maxY = Math.max(b.maxY, y0, y1, y2);
+  }
+  const order = Array.from({ length: n }, (_, i) => i).sort((p, q) => avgY[p] - avgY[q]);
+  const cell = Math.max(4, Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 220);
+  const gw = Math.floor((b.maxX - b.minX) / cell) + 1, gh = Math.floor((b.maxZ - b.minZ) / cell) + 1;
+  const cells = new Array(gw * gh);
+  for (let i = 0; i < n; i++) {
+    const o = i * 9;
+    const x0 = Math.floor((Math.min(tris[o], tris[o + 3], tris[o + 6]) - b.minX) / cell), x1 = Math.floor((Math.max(tris[o], tris[o + 3], tris[o + 6]) - b.minX) / cell);
+    const z0 = Math.floor((Math.min(tris[o + 2], tris[o + 5], tris[o + 8]) - b.minZ) / cell), z1 = Math.floor((Math.max(tris[o + 2], tris[o + 5], tris[o + 8]) - b.minZ) / cell);
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) (cells[z * gw + x] || (cells[z * gw + x] = [])).push(i);
+  }
+  return { tris, n, minY, avgY, order, bounds: b, cell, gw, gh, cells, name, isExample: !!isExample };
+}
+// Heights of every walkable level at (x, z).
+function levelsAt(x, z) {
+  const m = state.map, out = [];
+  if (!m) return out;
+  const cx = Math.floor((x - m.bounds.minX) / m.cell), cz = Math.floor((z - m.bounds.minZ) / m.cell);
+  if (cx < 0 || cz < 0 || cx >= m.gw || cz >= m.gh) return out;
+  const list = m.cells[cz * m.gw + cx], t = m.tris;
+  if (!list) return out;
+  for (const i of list) {
+    const o = i * 9, x0 = t[o], z0 = t[o + 2], x1 = t[o + 3], z1 = t[o + 5], x2 = t[o + 6], z2 = t[o + 8];
+    const d = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
+    if (Math.abs(d) < 1e-9) continue;
+    const a = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / d, b = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / d, c = 1 - a - b;
+    if (a < -1e-4 || b < -1e-4 || c < -1e-4) continue;
+    out.push(a * t[o + 1] + b * t[o + 4] + c * t[o + 7]);
+  }
+  return out;
+}
+// The highest visible floor under the cursor, or null where nobody can walk.
+function groundAt(x, z) {
+  let best = null;
+  for (const y of levelsAt(x, z)) if (y <= state.ceiling + 0.4 && (best === null || y > best)) best = y;
+  return best;
+}
+const onGround = p => !state.map || levelsAt(p[0], p[2]).some(y => Math.abs(y - p[1]) <= 1.0);
+
+// A small invented compound so the editor can be tried before opening a real map.
+function exampleMap() {
+  const t = [];
+  const plate = (x0, z0, x1, z1, y) => {
+    const nx = Math.max(1, Math.round((x1 - x0) / 8)), nz = Math.max(1, Math.round((z1 - z0) / 8));
+    for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
+      const a = x0 + (x1 - x0) * i / nx, b = x0 + (x1 - x0) * (i + 1) / nx, c = z0 + (z1 - z0) * k / nz, d = z0 + (z1 - z0) * (k + 1) / nz;
+      t.push(a, y, c, b, y, c, b, y, d, a, y, c, b, y, d, a, y, d);
+    }
+  };
+  plate(-64, -5, 64, 5, 0); plate(-5, -46, 5, 46, 0);             // two roads
+  plate(-54, 9, -9, 42, 0); plate(-46, 15, -20, 35, 0.3); plate(-46, 15, -20, 35, 3.6);   // yard, house, upper floor
+  plate(9, -42, 56, -9, 0); plate(20, -36, 46, -17, 0.3);         // walled compound and its building
+  plate(9, 9, 40, 30, 0); plate(-40, -30, -9, -9, 0);             // two open lots
+  return new Float32Array(t);
+}
+function loadExample() {
+  state.map = makeMap(exampleMap(), 'example', true);
+  state.example = true; state.navFile = ''; state.title = 'my_scenario'; state.scene = '';
+  state.infils = [[-60, 0, 0], [0, 0, -44]]; state.authored = [];
+  const e = (group, role, x, y, z, yaw, extra) => Object.assign(newEnemy([x, y, z], role, group), { yaw }, extra || {});
+  state.enemies = [
+    e(0, 'Guard', -40, 3.6, 30, 135, { defensive: true }), e(0, 'Guard', -26, 0.3, 19, 200, { defensive: true }), e(0, 'Wander', -15, 0, 38, 90),
+    e(1, 'Guard', 30, 0.3, -30, 300, { defensive: true }), e(1, 'Wander', 50, 0, -14, 0),
+    e(2, 'Patrol', 20, 0, 2, 270, { patrol: [[-30, 0, 2], [-30, 0, -2], [50, 0, -2], [50, 0, 2]] }),
+  ];
+  state.selected = 5;
+}
+
+// ------------------------------------------------------------------ scenario data
+function newEnemy(pos, role, group) {
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false,
+           detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
+}
+const r2 = v => Math.round(v * 100) / 100;
+const r3 = p => [r2(p[0]), r2(p[1]), r2(p[2])];
+const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+function fileName() { return (state.title.trim().toLowerCase().replace(/\.json$/, '').replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'scenario') + '.json'; }
+function scenarioObject() {
+  return {
+    schema: 'missionlab-plan/1',
+    name: state.title.trim(),
+    scene: state.scene.trim(),
+    navFile: state.navFile,
+    seed: 0,
+    notes: ['Made with the MissionLab scenario editor'],
+    spawns: state.enemies.map(e => ({
+      group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
+      detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
+      wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
+      patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
+    })),
+  };
+}
+function scenarioText() {
+  const o = scenarioObject(), head = Object.assign({}, o); delete head.spawns;
+  return JSON.stringify(head, null, 1).replace(/\n}$/, ',\n "spawns": [\n' + o.spawns.map(s => '  ' + JSON.stringify(s)).join(',\n') + '\n ]\n}\n');
+}
+const isVec = p => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every(v => typeof v === 'number' && isFinite(v));
+// Accepts a scenario, or a mission record written by the Director (the plan sits under "plan").
+function loadScenario(obj, name) {
+  const record = obj && obj.plan && Array.isArray(obj.plan.spawns);
+  const root = record ? obj.plan : obj;
+  const list = [];
+  root.spawns.forEach((s, i) => {
+    if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
+    const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
+    if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
+    list.push(Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
+      yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
+      detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
+      wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
+      patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
+    }));
+  });
+  pushUndo();
+  state.enemies = list; state.selected = list.length ? 0 : -1;
+  state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
+  // A generated mission names one scene (day or night). Matching by map file covers both.
+  state.scene = record ? '' : (typeof root.scene === 'string' ? root.scene : '');
+  const nav = typeof root.navFile === 'string' ? root.navFile : '';
+  if (nav) state.navFile = nav;
+  if (state.map && state.map.isExample) { state.map = null; state.infils = []; state.authored = []; }
+  state.example = false;
+  return list.length + ' enemies loaded from ' + name + '.';
+}
+// A recon file from the MissionLab Recon plugin: insertion points and the game's own spawn points.
+function loadRecon(obj, name) {
+  const pts = [], add = p => { if (isVec(p) && Math.abs(p[0]) + Math.abs(p[2]) > 0.01 && !pts.some(q => Math.hypot(q[0] - p[0], q[2] - p[2]) < 1)) pts.push(p.slice(0, 3)); };
+  const walk = node => { if (!node || typeof node !== 'object') return; if (node.pos) add(node.pos); (node.children || []).forEach(walk); };
+  ((obj.infiltration || {}).infilMethods || []).forEach(m => { if (!m) return; walk(m.infilObject); (m.children || []).forEach(walk); });
+  state.infils = pts;
+  const spawns = (obj.raid || {}).botSpawnPoints;
+  state.authored = (Array.isArray(spawns) ? spawns : []).filter(s => s && isVec(s.pos)).map(s => s.pos.slice(0, 3));
+  return pts.length + ' insertion points and ' + state.authored.length + ' of the game\'s own spawn points loaded from ' + name + (obj.scene ? ' (' + obj.scene + ').' : '.');
+}
+async function openFiles(files) {
+  const notes = [];
+  for (const f of files) {
+    try {
+      const buf = await f.arrayBuffer(), head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+      if (head[0] === 0x50 && head[1] === 0x4b) {
+        const tris = await readMapFile(buf);
+        const wasExample = state.example;
+        state.map = makeMap(tris, f.name, false); state.navFile = f.name; state.example = false;
+        if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; undoStack.length = 0; }
+        state.ceiling = Infinity; fit();
+        notes.push(f.name + ': ' + state.map.n.toLocaleString('en') + ' walkable triangles.');
+      } else {
+        const obj = JSON.parse(new TextDecoder().decode(buf));
+        if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)))) { notes.push(loadScenario(obj, f.name)); if (!state.map) fit(); }
+        else if (obj && (obj.infiltration || obj.raid)) notes.push(loadRecon(obj, f.name));
+        else throw new Error('It is not a scenario, a mission record or a recon file.');
+      }
+    } catch (err) { notes.push(f.name + ' could not be opened. ' + (err && err.message ? err.message : err)); }
+  }
+  say(notes.join(' '));
+  changed();
+}
+
+// ------------------------------------------------------------------ view
+const dpr = () => window.devicePixelRatio || 1;
+const size = () => ({ w: canvas.clientWidth, h: canvas.clientHeight });
+const toScreen = (x, z) => { const { w, h } = size(), v = state.view; return [w / 2 + (x - v.cx) * v.scale, h / 2 - (z - v.cz) * v.scale]; };
+const toWorld = (sx, sy) => { const { w, h } = size(), v = state.view; return [v.cx + (sx - w / 2) / v.scale, v.cz - (sy - h / 2) / v.scale]; };
+function fit() {
+  let b = null;
+  if (state.map) b = state.map.bounds;
+  else if (state.enemies.length) {
+    b = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    for (const e of state.enemies) for (const p of [e.pos, ...e.patrol]) { b.minX = Math.min(b.minX, p[0] - 15); b.maxX = Math.max(b.maxX, p[0] + 15); b.minZ = Math.min(b.minZ, p[2] - 15); b.maxZ = Math.max(b.maxZ, p[2] + 15); }
+  }
+  if (!b) return;
+  const { w, h } = size();
+  state.view.cx = (b.minX + b.maxX) / 2; state.view.cz = (b.minZ + b.maxZ) / 2;
+  state.view.scale = Math.max(0.15, Math.min(80, Math.min((w - 48) / Math.max(1, b.maxX - b.minX), (h - 130) / Math.max(1, b.maxZ - b.minZ))));
+  invalidate();
+}
+function zoomAt(sx, sy, factor) {
+  const [wx, wz] = toWorld(sx, sy), v = state.view;
+  v.scale = Math.max(0.15, Math.min(80, v.scale * factor));
+  const { w, h } = size();
+  v.cx = wx - (sx - w / 2) / v.scale; v.cz = wz + (sy - h / 2) / v.scale;
+  invalidate();
+}
+
+// ------------------------------------------------------------------ drawing
+const css = {}; let shades = [];
+function readTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'enemy', 'friend', 'warn']) css[k] = cs.getPropertyValue('--' + k).trim();
+  const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const a = rgb(css['ground-lo']), b = rgb(css['ground-hi']);
+  shades = Array.from({ length: 10 }, (_, i) => 'rgb(' + a.map((v, k) => Math.round(v + (b[k] - v) * i / 9)).join(',') + ')');
+  invalidate();
+}
+let dirty = false;
+function invalidate() { if (!dirty) { dirty = true; requestAnimationFrame(draw); } }
+function groundPaths(m) {
+  if (m.paths && m.pathsCeiling === state.ceiling) return m.paths;
+  const paths = shades.map(() => new Path2D()), t = m.tris, span = (m.bounds.maxY - m.bounds.minY) || 1;
+  for (const i of m.order) {                              // low to high, so upper floors cover lower ones
+    if (m.minY[i] > state.ceiling) continue;
+    const o = i * 9, p = paths[Math.min(9, Math.floor((m.avgY[i] - m.bounds.minY) / span * 10))];
+    p.moveTo(t[o], -t[o + 2]); p.lineTo(t[o + 3], -t[o + 5]); p.lineTo(t[o + 6], -t[o + 8]); p.closePath();
+  }
+  m.paths = paths; m.pathsCeiling = state.ceiling;
+  return paths;
+}
+function shape(role, x, y, r) {
+  ctx.beginPath();
+  if (role === 'Guard') ctx.rect(x - r, y - r, 2 * r, 2 * r);
+  else if (role === 'Wander') ctx.arc(x, y, r * 1.12, 0, Math.PI * 2);
+  else { ctx.moveTo(x, y - r * 1.35); ctx.lineTo(x + r * 1.35, y); ctx.lineTo(x, y + r * 1.35); ctx.lineTo(x - r * 1.35, y); ctx.closePath(); }
+}
+function draw() {
+  dirty = false;
+  const { w, h } = size(), k = dpr();
+  if (canvas.width !== Math.round(w * k) || canvas.height !== Math.round(h * k)) { canvas.width = Math.round(w * k); canvas.height = Math.round(h * k); }
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.fillStyle = css.paper; ctx.fillRect(0, 0, w, h);
+  const v = state.view, ox = w / 2 - v.cx * v.scale, oz = h / 2 + v.cz * v.scale;
+
+  const m = state.map;
+  if (m) {
+    // The ground is drawn from paths kept in world coordinates, so panning and zooming only change the transform.
+    const paths = groundPaths(m);
+    ctx.save();
+    ctx.setTransform(k * v.scale, 0, 0, k * v.scale, k * ox, k * oz);
+    ctx.lineJoin = 'round';
+    paths.forEach((p, i) => { ctx.fillStyle = ctx.strokeStyle = shades[i]; ctx.lineWidth = 0.8 / v.scale; ctx.fill(p); ctx.stroke(p); });
+    if (v.scale >= 5) { ctx.globalAlpha = 0.3; ctx.strokeStyle = css.line; ctx.lineWidth = 0.5 / v.scale; paths.forEach(p => ctx.stroke(p)); ctx.globalAlpha = 1; }
+    ctx.restore();
+  }
+
+  // The game's own spawn points, faint, for orientation.
+  ctx.fillStyle = css['ink-2']; ctx.globalAlpha = 0.35;
+  for (const p of state.authored) { const [x, y] = toScreen(p[0], p[2]); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+
+  // Patrol routes.
+  state.enemies.forEach((e, i) => {
+    if (e.role !== 'Patrol' || !e.patrol.length) return;
+    const pts = e.patrol.map(p => toScreen(p[0], p[2])), start = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected;
+    ctx.strokeStyle = css.enemy; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); pts.forEach((p, n) => n ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); if (pts.length > 2) ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = 0.55; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(start[0], start[1]); ctx.lineTo(pts[0][0], pts[0][1]); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+    if (sel) pts.forEach((p, n) => {
+      ctx.beginPath(); ctx.arc(p[0], p[1], 7, 0, Math.PI * 2); ctx.fillStyle = css.panel; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = css.enemy; ctx.stroke();
+      ctx.fillStyle = css.ink; ctx.font = '500 10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(n + 1), p[0], p[1] + 0.5);
+    });
+  });
+
+  // Insertion points.
+  for (const p of state.infils) {
+    const [x, y] = toScreen(p[0], p[2]);
+    ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 6, y + 4.5); ctx.lineTo(x - 6, y + 4.5); ctx.closePath();
+    ctx.fillStyle = css.friend; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = css.panel; ctx.stroke();
+  }
+
+  // Enemies.
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  state.enemies.forEach((e, i) => {
+    const [x, y] = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected, r = 6.5, bad = warningFor(e);
+    const yaw = e.yaw * Math.PI / 180;
+    ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(yaw) * (r + 9), y - Math.cos(yaw) * (r + 9)); ctx.stroke();
+    shape(e.role, x, y, r); ctx.fillStyle = css.enemy; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = bad ? css.warn : css.panel; if (bad) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
+    if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
+    if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
+    ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(String(i + 1), x + r + 6, y - r - 3); ctx.fillStyle = css.ink; ctx.fillText(String(i + 1), x + r + 6, y - r - 3);
+  });
+
+  // Scale bar: this is a map, so say what a length on it means.
+  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500]; let len = steps[steps.length - 1];
+  for (const s of steps) if (s * v.scale >= 60) { len = s; break; }
+  const bx = w - 20 - len * v.scale, by = h - 22;
+  ctx.strokeStyle = css.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(bx, by - 5); ctx.lineTo(bx, by); ctx.lineTo(bx + len * v.scale, by); ctx.lineTo(bx + len * v.scale, by - 5); ctx.stroke();
+  ctx.fillStyle = css.ink; ctx.font = '500 11px ' + mono; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(len + ' m', w - 20, by - 7);
+}
+
+// ------------------------------------------------------------------ checks
+function warningFor(e) {
+  if (state.map && !e.fixed && !onGround(e.pos)) return 'not on walkable ground; the game will treat it as a fixed sentry';
+  if (e.role === 'Patrol' && !e.fixed && e.patrol.length < 2) return 'needs at least 2 route stops, otherwise it wanders';
+  if (state.infils.some(p => Math.hypot(p[0] - e.pos[0], p[2] - e.pos[2]) < 20)) return 'within 20 m of an insertion point';
+  return '';
+}
+
+// ------------------------------------------------------------------ editing
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected })); if (undoStack.length > 80) undoStack.shift(); }
+function undo() {
+  const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
+  const o = JSON.parse(snap); state.enemies = o.e; state.selected = Math.min(o.s, o.e.length - 1); changed();
+}
+function select(i) { state.selected = i; if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('#tools .tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+  $('hintLine').textContent = { select: 'Click an enemy to select it, drag to move it. Drag empty ground to pan, scroll to zoom. ',
+    add: 'Click walkable ground to place an enemy. ', route: 'Click to add stops to the selected enemy\'s patrol route. ' }[t];
+}
+function hit(sx, sy) {
+  const sel = state.enemies[state.selected];
+  if (sel && sel.role === 'Patrol') for (let n = 0; n < sel.patrol.length; n++) { const [x, y] = toScreen(sel.patrol[n][0], sel.patrol[n][2]); if (Math.hypot(x - sx, y - sy) <= 10) return { stop: n }; }
+  let best = -1, bestD = 13;
+  state.enemies.forEach((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]), d = Math.hypot(x - sx, y - sy); if (d < bestD) { bestD = d; best = i; } });
+  return best >= 0 ? { enemy: best } : null;
+}
+let drag = null;
+canvas.addEventListener('pointerdown', ev => {
+  canvas.setPointerCapture(ev.pointerId);
+  const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+  let target = ev.button === 0 ? hit(sx, sy) : null;
+  if (target && 'enemy' in target && state.tool === 'route' && state.selected >= 0 && target.enemy !== state.selected) target = null;   // drawing a route past another enemy
+  drag = { sx, sy, moved: false, target, pan: !target || ev.button !== 0, cx: state.view.cx, cz: state.view.cz, saved: false, button: ev.button };
+  if (target && 'enemy' in target) select(target.enemy);
+});
+canvas.addEventListener('pointermove', ev => {
+  const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top, [wx, wz] = toWorld(sx, sy), y = groundAt(wx, wz);
+  $('coords').textContent = 'x ' + wx.toFixed(1) + '  z ' + wz.toFixed(1) + (y === null ? '  no ground' : '  height ' + y.toFixed(1));
+  if (!drag) { canvas.style.cursor = hit(sx, sy) ? 'grab' : (state.tool === 'select' ? 'default' : 'crosshair'); return; }
+  if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) < 4) return;
+  drag.moved = true;
+  if (drag.pan) { state.view.cx = drag.cx - (sx - drag.sx) / state.view.scale; state.view.cz = drag.cz + (sy - drag.sy) / state.view.scale; invalidate(); return; }
+  if (y === null) return;                                 // keep the last valid spot while over a wall
+  if (!drag.saved) { pushUndo(); drag.saved = true; }
+  const e = state.enemies[state.selected]; if (!e) return;
+  if ('stop' in drag.target) e.patrol[drag.target.stop] = [wx, y, wz]; else e.pos = [wx, y, wz];
+  invalidate(); syncPos();
+});
+canvas.addEventListener('pointerup', ev => {
+  const d = drag; drag = null;
+  if (!d) return;
+  if (d.moved) { if (d.saved) changed(); return; }
+  if (d.button !== 0) return;
+  const [wx, wz] = toWorld(d.sx, d.sy), y = groundAt(wx, wz);
+  if (state.tool === 'add' && !d.target) {
+    if (y === null) return say('Nobody can walk there. Click on the shaded ground' + (isFinite(state.ceiling) ? ', or raise "Show up to" to reach higher floors.' : '.'));
+    pushUndo();
+    state.enemies.push(newEnemy([wx, y, wz], state.lastRole === 'Patrol' ? 'Guard' : state.lastRole, state.lastGroup));
+    state.selected = state.enemies.length - 1; changed(); say('Enemy ' + state.enemies.length + ' placed.');
+  } else if (state.tool === 'route' && !d.target) {
+    const e = state.enemies[state.selected];
+    if (!e) return say('Select an enemy first, then click the stops of its route.');
+    if (y === null) return say('Nobody can walk there. Route stops must be on the shaded ground.');
+    pushUndo(); e.role = 'Patrol'; e.fixed = false; e.patrol.push([wx, y, wz]); changed();
+    say('Stop ' + e.patrol.length + ' added' + (e.patrol.length < 2 ? '. Add at least one more.' : '.'));
+  } else if (state.tool === 'select' && !d.target) select(-1);
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+canvas.addEventListener('contextmenu', ev => ev.preventDefault());
+canvas.addEventListener('wheel', ev => { ev.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(ev.clientX - r.left, ev.clientY - r.top, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
+
+function removeSelected() { if (state.selected < 0) return; pushUndo(); state.enemies.splice(state.selected, 1); state.selected = Math.min(state.selected, state.enemies.length - 1); changed(); }
+window.addEventListener('keydown', ev => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) && ev.target.type !== 'range' && ev.target.type !== 'checkbox') return;
+  const key = ev.key.toLowerCase();
+  if ((ev.ctrlKey || ev.metaKey) && key === 'z') { ev.preventDefault(); undo(); }
+  else if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  else if (key === 'v') setTool('select'); else if (key === 'a') setTool('add'); else if (key === 'r') setTool('route');
+  else if (key === 'escape') { setTool('select'); select(-1); }
+  else if (key === 'delete') removeSelected();
+  else if (key === 'backspace' && state.tool === 'route') { const e = state.enemies[state.selected]; if (e && e.patrol.length) { ev.preventDefault(); pushUndo(); e.patrol.pop(); changed(); } }
+});
+
+// ------------------------------------------------------------------ control column
+function say(text) { $('banner').textContent = text; $('banner').hidden = !text; clearTimeout(say.t); if (text) say.t = setTimeout(() => { $('banner').hidden = true; }, 9000); }
+const setVal = (el, v) => { if (document.activeElement !== el) el.value = v; };
+function syncPos() { const e = state.enemies[state.selected]; if (e) $('pos').textContent = 'x ' + e.pos[0].toFixed(1) + '   z ' + e.pos[2].toFixed(1) + '   height ' + e.pos[1].toFixed(1); }
+function syncSide() {
+  const m = state.map;
+  $('exampleChip').hidden = !(m && m.isExample);
+  $('mapInfo').textContent = !m ? (state.navFile ? 'No map open. This scenario is for ' + state.navFile + '.' : 'No map open.')
+    : m.isExample ? 'An invented compound to try the tools on. Open a real map file to start.'
+    : m.name + ' · ' + Math.round(m.bounds.maxX - m.bounds.minX) + ' × ' + Math.round(m.bounds.maxZ - m.bounds.minZ) + ' m · ' + m.n.toLocaleString('en') + ' triangles'
+      + (state.navFile && state.navFile.toLowerCase() !== m.name.toLowerCase() ? ' · the scenario was made for ' + state.navFile : '');
+
+  const groups = new Set(state.enemies.map(e => e.group));
+  $('count').textContent = state.enemies.length ? state.enemies.length + ' in ' + groups.size + (groups.size === 1 ? ' group' : ' groups') : '';
+  $('empty').hidden = state.enemies.length > 0;
+  const list = $('list'); list.textContent = '';
+  let warn = 0;
+  state.enemies.forEach((e, i) => {
+    const w = warningFor(e); if (w) warn++;
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
+    const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
+    cell('n', '#' + (i + 1)); cell('', e.fixed ? 'Sentry' : e.role); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : '');
+    b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
+    li.appendChild(b); list.appendChild(li);
+  });
+  const wbox = $('warnings'); wbox.textContent = '';
+  if (warn) { const c = document.createElement('span'); c.className = 'chip warn'; c.textContent = warn + (warn === 1 ? ' enemy to check' : ' enemies to check') + ' (hover a row for the reason)'; wbox.appendChild(c); }
+
+  const e = state.enemies[state.selected];
+  $('panel').hidden = !e;
+  if (e) {
+    $('selNo').textContent = '#' + (state.selected + 1);
+    document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.role === e.role)));
+    $('roleHint').textContent = warningFor(e) ? 'To check: ' + warningFor(e) + '.'
+      : e.role === 'Guard' ? 'Stays where it is placed until it notices you.'
+      : e.role === 'Wander' ? 'Roams around its position.'
+      : 'Walks its ' + e.patrol.length + ' route stops in a loop. Choose Draw route to add stops, drag a stop to move it, Backspace removes the last one.';
+    setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
+    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed;
+    $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
+    $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
+    syncPos();
+  }
+
+  setVal($('title'), state.title); setVal($('scene'), state.scene);
+  const usable = state.enemies.length > 0 && !state.example;
+  $('save').disabled = $('copy').disabled = !usable;
+  $('fileText').value = usable ? scenarioText() : '';
+  if (!usable) $('saveMsg').textContent = state.example ? 'Open a real map file first: the example cannot be saved.' : 'Place at least one enemy to save.';
+  else if (/first|least/.test($('saveMsg').textContent)) $('saveMsg').textContent = '';
+
+  const c = $('ceiling');
+  if (m) { c.min = Math.floor(m.bounds.minY * 2) / 2; c.max = Math.ceil(m.bounds.maxY * 2) / 2; c.disabled = false; if (!isFinite(state.ceiling)) c.value = c.max; }
+  else c.disabled = true;
+  $('ceilingOut').textContent = isFinite(state.ceiling) ? 'height ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
+}
+function changed() { syncSide(); invalidate(); saveDraft(); }
+const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; pushUndo(); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
+
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => edit(e => { e.role = b.dataset.role; if (e.role === 'Patrol') { e.fixed = false; if (e.patrol.length < 2) { setTool('route'); say('Click the stops of the patrol route on the map.'); } } })));
+$('group').addEventListener('change', ev => edit(e => { e.group = Math.max(0, Math.min(98, (parseInt(ev.target.value, 10) || 1) - 1)); }));
+let yawUndo = false;
+$('yaw').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (!e) return; if (!yawUndo) { pushUndo(); yawUndo = true; } e.yaw = +ev.target.value; invalidate(); });
+$('yaw').addEventListener('change', () => { yawUndo = false; changed(); });
+$('wander').addEventListener('change', ev => edit(e => { e.wanderDistance = Math.max(0, Math.min(200, Math.round(+ev.target.value || 0))); }));
+$('wait').addEventListener('change', ev => edit(e => { e.patrolWaitSeconds = Math.max(0, Math.min(120, +ev.target.value || 0)); }));
+$('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.target.checked; }));
+$('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
+$('clearRoute').addEventListener('click', () => edit(e => { e.patrol = []; }));
+$('del').addEventListener('click', removeSelected);
+$('title').addEventListener('input', ev => { state.title = ev.target.value; changed(); });
+$('scene').addEventListener('input', ev => { state.scene = ev.target.value; changed(); });
+document.querySelectorAll('#tools .tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+$('undo').addEventListener('click', undo);
+$('fit').addEventListener('click', fit);
+$('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1.4); });
+$('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
+$('ceiling').addEventListener('input', ev => { state.ceiling = +ev.target.value >= +ev.target.max ? Infinity : +ev.target.value; syncSide(); invalidate(); });
+
+// ------------------------------------------------------------------ files in, file out
+$('openBtn').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', ev => { openFiles([...ev.target.files]); ev.target.value = ''; });
+let dragDepth = 0;
+window.addEventListener('dragenter', ev => { ev.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('dragover', ev => ev.preventDefault());
+window.addEventListener('drop', ev => { ev.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if (ev.dataTransfer && ev.dataTransfer.files.length) openFiles([...ev.dataTransfer.files]); });
+
+let saver = null;      // (name, text) => Promise; set when this view can hand a file to the viewer
+if (location.protocol === 'file:') saver = async (name, text) => {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+};
+else if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { if (d) { saver = (name, text) => d.save({ filename: name, data: text }); $('save').hidden = false; } }).catch(() => {});
+$('save').hidden = !saver;
+$('save').addEventListener('click', async () => {
+  try { await saver(fileName(), scenarioText()); $('saveMsg').textContent = 'Saved as ' + fileName() + '.'; }
+  catch (err) { $('saveMsg').textContent = err && err.code === 'declined' ? 'Not saved.' : 'Saving is not possible here. Use Copy file text and paste it into a new file named ' + fileName() + '.'; }
+});
+$('copy').addEventListener('click', async () => {
+  const text = scenarioText();
+  try { await navigator.clipboard.writeText(text); $('saveMsg').textContent = 'Copied. Paste it into a new text file named ' + fileName() + '.'; }
+  catch (err) {
+    const box = $('fileText'); box.closest('details').open = true; box.focus(); box.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* not allowed here */ }
+    $('saveMsg').textContent = ok ? 'Copied. Paste it into a new text file named ' + fileName() + '.' : 'The text is selected below. Press Ctrl+C, then paste it into a new file named ' + fileName() + '.';
+  }
+});
+
+// A reload should not lose work. The map itself is not kept; it has to be opened again.
+let draftTimer = 0;
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => { try { if (state.example) localStorage.removeItem(DRAFT_KEY); else localStorage.setItem(DRAFT_KEY, JSON.stringify(Object.assign(scenarioObject(), { name: state.title }))); } catch (e) { /* storage unavailable */ } }, 400);
+}
+function restoreDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY); if (!raw) return false;
+    const o = JSON.parse(raw); if (!o || !Array.isArray(o.spawns) || !o.spawns.length) return false;
+    state.map = null; state.infils = []; state.authored = [];
+    loadScenario(o, o.name || 'draft'); state.scene = typeof o.scene === 'string' ? o.scene : ''; undoStack.length = 0;
+    say('Your last scenario is back (' + o.spawns.length + ' enemies). Open ' + (state.navFile || 'its map file') + ' to see the ground.');
+    return true;
+  } catch (e) { return false; }
+}
+
+// ------------------------------------------------------------------ start
+readTokens();
+new MutationObserver(readTokens).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTokens);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(invalidate);
+new ResizeObserver(invalidate).observe(canvas);
+if (!restoreDraft()) loadExample();
+setTool('select'); syncSide();
+requestAnimationFrame(fit);
+window.missionlabEditor = { state, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit };   // for automated tests
+})();
+</script>
+</body>
+</html>

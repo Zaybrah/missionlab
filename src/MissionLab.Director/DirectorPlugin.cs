@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.3.1";
+        public const string Version = "0.4.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -32,10 +32,12 @@ namespace MissionLab
         internal static ConfigEntry<bool> GmTestKey;
         internal static bool Hooked;
         internal static string BaseDir;
+        internal static ConfigFile Settings;
 
         public override void Load()
         {
             L = Log;
+            Settings = Config;
             Enabled = Config.Bind("General", "Enabled", true,
                 "Replace the enemy layout when you host a mission. false = unmodified game.");
             Seed = Config.Bind("General", "Seed", 0,
@@ -44,8 +46,8 @@ namespace MissionLab
                 "0 = use the enemy count chosen on the mission laptop. Otherwise force this many enemies (1-60).");
             Scenes = Config.Bind("General", "Scenes", "*",
                 "Comma-separated scene names where the director is active. * = every PvE mission.");
-            Scenario = Config.Bind("General", "Scenario", "",
-                "Name of a file in BepInEx/MissionLab/scenarios to use instead of a generated layout (for the scene it was made for). Empty = generate.");
+            Scenario = Config.Bind("General", "Scenario", "*",
+                "* = use any scenario file in BepInEx/MissionLab/scenarios that was made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Empty = always generate. Read again at every mission start.");
             GmTestKey = Config.Bind("GameMaster", "TestSpawnKey", true,
                 "Experiment: while hosting a mission, F6 spawns one enemy about 15 m in front of you (every second press: an enemy type chosen by the mod).");
             UseHook = Config.Bind("Advanced", "UseHook", true,

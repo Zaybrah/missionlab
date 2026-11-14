@@ -31,6 +31,7 @@ namespace MissionLab
         internal static float CurrentDetect, CurrentHear, CurrentFov;
         internal static float HandledAt;
 
+        private static IntPtr _configReadFor = IntPtr.Zero;
         private static IntPtr _waitingPtr = IntPtr.Zero;
         private static float _waitingSince;
         private const float WaitForSpawnListSeconds = 8f;
@@ -44,6 +45,13 @@ namespace MissionLab
         {
             if (raid == null || raid.Pointer == HandledRaidPtr) return;
             IntPtr ptr = raid.Pointer;
+            if (_configReadFor != ptr)
+            {
+                // Read the settings file again for every mission, so edits apply without restarting the game.
+                _configReadFor = ptr;
+                try { DirectorPlugin.Settings.Reload(); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("settings file could not be re-read (" + e.Message + "); keeping the previous settings"); }
+            }
             bool done;
             try { done = TryApply(raid, via); }
             catch { HandledRaidPtr = ptr; throw; }       // never retry after a failure
@@ -136,7 +144,7 @@ namespace MissionLab
             CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
 
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
-            MissionPlan plan = TryLoadScenario(scene, out string scenarioName);
+            MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
             bool fromFile = plan != null;
             long seed; int enemies; string source;
             if (fromFile)
@@ -222,39 +230,76 @@ namespace MissionLab
         }
 
         /// <summary>
-        /// Loads BepInEx/MissionLab/scenarios/&lt;General.Scenario&gt;.json if it is set and meant for this scene.
+        /// Picks the scenario file for this mission from BepInEx/MissionLab/scenarios.
+        /// General.Scenario = a file name: that file, if it fits this map.
+        /// General.Scenario = *: any file in the folder that fits this map (a random one if several do).
         /// Any problem is logged and the mission falls back to a generated layout.
         /// </summary>
-        private static MissionPlan TryLoadScenario(string scene, out string name)
+        private static MissionPlan TryLoadScenario(string scene, NavMesh nav, out string name)
         {
             var log = DirectorPlugin.L;
             name = (DirectorPlugin.Scenario.Value ?? "").Trim();
             if (name.Length == 0) return null;
-            string file = name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? name : name + ".json";
             string dir = Path.Combine(DirectorPlugin.BaseDir, "scenarios");
-            string path = Path.Combine(dir, Path.GetFileName(file));
-            if (!File.Exists(path)) { log.LogWarning("scenario '" + name + "' not found in " + dir + "; generating instead"); return null; }
-            try
+            string mapFile = nav == null ? null : nav.SourceFile;
+
+            if (name != "*")
             {
-                MissionPlan plan = MissionPlan.FromJson(File.ReadAllText(path));
-                // "scene" may name several scenes of the same map: "Suburb Day, Suburb Night". Empty or * = any.
-                bool match = string.IsNullOrWhiteSpace(plan.Scene);
-                if (!match)
-                    foreach (string part in plan.Scene.Split(','))
-                        if (part.Trim() == "*" || string.Equals(part.Trim(), scene, StringComparison.OrdinalIgnoreCase)) match = true;
-                if (!match)
-                {
-                    log.LogInfo("scenario '" + name + "' is for '" + plan.Scene + "', this is '" + scene + "'; generating instead");
-                    return null;
-                }
-                if (plan.Spawns.Count == 0) { log.LogWarning("scenario '" + name + "' has no enemies; generating instead"); return null; }
+                string file = name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? name : name + ".json";
+                string path = Path.Combine(dir, Path.GetFileName(file));
+                if (!File.Exists(path)) { log.LogWarning("scenario '" + name + "' not found in " + dir + "; generating instead"); return null; }
+                MissionPlan plan = ReadScenario(path, scene, mapFile, true, out string why);
+                if (plan == null) log.LogInfo("scenario '" + name + "' " + why + "; generating instead");
                 return plan;
             }
-            catch (Exception e)
+
+            // Every file in the folder that is made for this map. Subfolders are ignored,
+            // so moving a file into one switches it off.
+            var fits = new List<MissionPlan>(); var names = new List<string>();
+            if (Directory.Exists(dir))
+                foreach (string path in Directory.GetFiles(dir, "*.json"))
+                {
+                    MissionPlan plan = ReadScenario(path, scene, mapFile, false, out string why);
+                    if (plan != null) { fits.Add(plan); names.Add(Path.GetFileNameWithoutExtension(path)); }
+                    else log.LogInfo("scenario '" + Path.GetFileNameWithoutExtension(path) + "' " + why);
+                }
+            if (fits.Count == 0) return null;
+            int pick = fits.Count == 1 ? 0 : new System.Random().Next(fits.Count);
+            name = names[pick];
+            if (fits.Count > 1) log.LogInfo(fits.Count + " scenarios fit this map (" + string.Join(", ", names) + "); picked '" + name + "'");
+            return fits[pick];
+        }
+
+        /// <summary>
+        /// A scenario fits when its "scene" lists this scene ("Suburb Day, Suburb Night"), or when it has
+        /// no scene and its "navFile" is this map's file. A file naming neither fits anything, but only
+        /// when it was asked for by name.
+        /// </summary>
+        private static MissionPlan ReadScenario(string path, string scene, string mapFile, bool askedByName, out string why)
+        {
+            why = null;
+            MissionPlan plan;
+            try { plan = MissionPlan.FromJson(File.ReadAllText(path)); }
+            catch (Exception e) { why = "could not be read (" + e.Message + ")"; return null; }
+            if (plan.Spawns.Count == 0) { why = "has no enemies"; return null; }
+
+            bool hasScene = !string.IsNullOrWhiteSpace(plan.Scene), hasMap = !string.IsNullOrWhiteSpace(plan.NavFile);
+            if (hasScene)
             {
-                log.LogWarning("scenario '" + name + "' could not be read (" + e.Message + "); generating instead");
+                foreach (string part in plan.Scene.Split(','))
+                    if (part.Trim() == "*" || string.Equals(part.Trim(), scene, StringComparison.OrdinalIgnoreCase)) return plan;
+                why = "is for '" + plan.Scene + "', this is '" + scene + "'";
                 return null;
             }
+            if (hasMap)
+            {
+                if (mapFile != null && string.Equals(Path.GetFileName(plan.NavFile.Trim()), mapFile, StringComparison.OrdinalIgnoreCase)) return plan;
+                why = "is for map file '" + plan.NavFile + "', this mission uses '" + (mapFile ?? "an unknown map") + "'";
+                return null;
+            }
+            if (askedByName) return plan;
+            why = "names no scene and no map file, so it is only used when asked for by name";
+            return null;
         }
 
         private static float MostCommon(List<float> values)
