@@ -19,7 +19,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.recon";
         public const string DisplayName = "MissionLab Recon (unofficial)";
-        public const string Version = "0.1.1";
+        public const string Version = "0.2.0";
 
         internal static ManualLogSource L;
         internal static string OutDir;
@@ -43,6 +43,8 @@ namespace MissionLab
 
         private IntPtr _raidPtr = IntPtr.Zero;   // raid instance we have already dumped
         private float _nextPoll;
+        private float _nextSample;
+        private bool _tracking;
         private float _lateAt = -1f;
         private bool _hotkeyOk = true;
         private bool _guiOk = true;
@@ -70,13 +72,24 @@ namespace MissionLab
                 {
                     _raidPtr = IntPtr.Zero;
                     _lateAt = -1f;
+                    if (_tracking) { _tracking = false; MovementTracker.End(); }   // mission over: save the movement record
                 }
                 else if (raid.Pointer != _raidPtr)
                 {
+                    if (_tracking) MovementTracker.End();
                     _raidPtr = raid.Pointer;
                     Run("early");                      // before the game has spawned anything
                     _lateAt = now + LateDelaySeconds;  // and again once the map is populated
+                    MovementTracker.Begin();
+                    _tracking = true;
+                    _nextSample = now + 5f;
                 }
+            }
+
+            if (_tracking && now >= _nextSample)
+            {
+                _nextSample = now + 5f;
+                MovementTracker.Sample();
             }
 
             if (_lateAt > 0f && now >= _lateAt)

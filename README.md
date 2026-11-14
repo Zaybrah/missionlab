@@ -12,18 +12,29 @@ players' insertion points, and hands the result to the game's own spawner.
 Only the host runs it. If anything fails before the swap, the mission is left
 exactly as shipped.
 
-- Config: `BepInEx/config/missionlab.director.cfg` (Enabled, Seed, EnemyCount, Scenes, UseHook)
+- Config: `BepInEx/config/missionlab.director.cfg` (Enabled, Seed, EnemyCount, Scenes, Scenario, UseHook)
 - Record of each mission (seed + every position): `BepInEx/MissionLab/missions/`
 - Replay a mission: put its seed in the config.
+- Scenario files: put a plan (or a copied mission record) in `BepInEx/MissionLab/scenarios/`
+  and set `Scenario` to its name. Edit positions, roles and patrol routes by hand; a position
+  off the walkable surface becomes a fixed sentry. Sense values of 0 mean "the map's usual".
+  `scene` may list several scenes of one map (`"Suburb Day, Suburb Night"`); other maps
+  keep generating. Check a file before playing:
+  `dotnet tests/CoreTest/bin/CoreTest.dll --check <scenario.json> <navmesh.bytes>`.
+- Game Master experiment: while hosting, F6 spawns one enemy about 15 m in front of you.
+  The first press goes through the game's own spawner, the second creates the enemy
+  directly; the log says which of the two works.
 
 ## MissionLab.Recon.dll
 Read-only. Writes what a loaded mission contains to `BepInEx/MissionLab/recon/`
-(`<scene>.early.json` at start, `.late.json` after 45 s, `.manual.json` on F7).
+(`<scene>.early.json` at start, `.late.json` after 45 s, `.manual.json` on F7), and
+follows every enemy through the mission (`<scene>.movement.json`).
 
 ## Status
 Director 0.2.2 is tested in game on Suburb Day (solo host): enemies spawn on the
-generated positions and wanderers move. Other maps, co-op and mission types are
-not tested yet. See `docs/findings.md` for what is known about the game's internals.
+generated positions and wanderers move. Version 0.3.0 adds scenario files, all PvE
+maps and the F6 spawn experiment; those are not tested in game yet. Co-op and
+mission types are not tested either. See `docs/findings.md` for what is known about the game's internals.
 
 ## Source layout
 - `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model (no game references)

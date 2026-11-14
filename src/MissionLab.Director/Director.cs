@@ -24,6 +24,13 @@ namespace MissionLab
         internal static string Banner;
         internal static float BannerUntil;
 
+        // What the Game Master tools need to know about the mission in progress.
+        internal static IntPtr CurrentRaidPtr = IntPtr.Zero;
+        internal static GameObject CurrentTemplate;
+        internal static NavMesh CurrentNav;
+        internal static float CurrentDetect, CurrentHear, CurrentFov;
+        internal static float HandledAt;
+
         private static IntPtr _waitingPtr = IntPtr.Zero;
         private static float _waitingSince;
         private const float WaitForSpawnListSeconds = 8f;
@@ -40,7 +47,7 @@ namespace MissionLab
             bool done;
             try { done = TryApply(raid, via); }
             catch { HandledRaidPtr = ptr; throw; }       // never retry after a failure
-            if (done) { HandledRaidPtr = ptr; _waitingPtr = IntPtr.Zero; return; }
+            if (done) { HandledRaidPtr = ptr; HandledAt = Time.unscaledTime; _waitingPtr = IntPtr.Zero; return; }
 
             if (_waitingPtr != ptr) { _waitingPtr = ptr; _waitingSince = Time.unscaledTime; }
             else if (Time.unscaledTime - _waitingSince > WaitForSpawnListSeconds)
@@ -60,6 +67,17 @@ namespace MissionLab
             string scene = raid.gameObject.scene.name ?? "";
             if (!SceneAllowed(scene)) { log.LogInfo("scene '" + scene + "' is not listed in General/Scenes; mission left unchanged"); return true; }
 
+            OperationsManager om = OperationsManager.singleton;
+            if (om != null)
+            {
+                var mode = om.CurrentGameMode;
+                if (mode == OperationsManager.GameMode.PVE_WAVESURVIVAL || mode == OperationsManager.GameMode.StandardPVP || mode == OperationsManager.GameMode.FFAPVP)
+                {
+                    log.LogInfo("game mode " + mode + " is not handled; mission left unchanged");
+                    return true;
+                }
+            }
+
             var sw = Stopwatch.StartNew();
             GameManager gm = GameManager.instance;
 
@@ -67,13 +85,16 @@ namespace MissionLab
             var list = raid.botSpawnPoints;
             if (list == null || list.Count == 0) return false;
 
-            // If the game has already spawned enemies, changing the list would do nothing.
+            // Arriving through the polling fallback with enemies already present means the main
+            // spawn has probably happened. In the hook we are always ahead of it; some maps put
+            // vehicle crews or groups in place during start-up, which is fine.
             int alive = gm != null && gm.allAI != null ? gm.allAI.Count : 0;
-            if (alive > 0)
+            if (alive > 0 && via != "hook")
             {
                 log.LogWarning("mission '" + scene + "' already has " + alive + " enemies; too late to change it");
                 return true;
             }
+            if (alive > 0) log.LogInfo(alive + " enemies were placed during start-up (vehicle crews or groups); the layout applies to the rest");
             var originals = new List<GameObject>();
             var authored = new List<V3>();
             var withDetails = new List<GameObject>();
@@ -105,43 +126,76 @@ namespace MissionLab
                 if (fit > bestFit) { bestFit = fit; template = go; }
             }
 
-            // 2. How many enemies.
+            // 2. Where players come in, and the map's walkable surface.
             int laptopCount = gm != null ? gm.botAmount : 0;
-            int enemies = DirectorPlugin.EnemyCount.Value > 0 ? DirectorPlugin.EnemyCount.Value : laptopCount;
-            if (enemies <= 0) enemies = 10;
-            enemies = Math.Max(1, Math.Min(60, enemies));
-
-            // 3. Where players come in.
             var infils = CollectInfils(raid, out string infilInfo);
-
-            // 4. The map's walkable surface.
             NavMesh nav = NavPicker.Pick(scene, authored, ReadLiveGraph(), out string navInfo);
-            if (nav == null) { log.LogWarning("no map data for '" + scene + "' (" + navInfo + "); mission left unchanged"); return true; }
 
-            // 5. Generate.
-            long seed = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
-            var input = new GeneratorInput { Nav = nav, Seed = seed, Scene = scene, Enemies = enemies, Infils = infils, Authored = authored };
-            if (infils.Count == 0) AddExfilBoxes(raid, input);
-            MissionPlan plan = Generator.Generate(input);
-            if (plan.Spawns.Count < 3)
+            // Remember this mission for the Game Master tools, whatever happens next.
+            CurrentRaidPtr = raid.Pointer; CurrentTemplate = template; CurrentNav = nav;
+            CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
+
+            // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
+            MissionPlan plan = TryLoadScenario(scene, out string scenarioName);
+            bool fromFile = plan != null;
+            long seed; int enemies; string source;
+            if (fromFile)
             {
-                log.LogWarning("generator found only " + plan.Spawns.Count + " positions on '" + scene + "'; mission left unchanged. " + string.Join("; ", plan.Notes));
-                return true;
+                seed = plan.Seed;
+                enemies = Math.Min(100, plan.Spawns.Count);
+                source = "scenario '" + scenarioName + "'";
+                int fixedCount = 0;
+                foreach (SpawnPlan s in plan.Spawns)
+                {
+                    // 0 in a file means "the map's usual value".
+                    if (s.DetectionRange <= 0) s.DetectionRange = tDetect;
+                    if (s.HearingRange <= 0) s.HearingRange = tHear;
+                    if (s.Fov <= 0) s.Fov = tFov;
+                    // A position off the walkable surface can only be a fixed sentry.
+                    if (!s.Fixed && nav != null && nav.TriAt(s.Pos.X, s.Pos.Z, s.Pos.Y, 1.0f, out _) < 0) s.Fixed = true;
+                    if (s.Fixed) { fixedCount++; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
+                }
+                if (fixedCount > 0) plan.Notes.Add(fixedCount + " position(s) treated as fixed sentries (navigation off)");
+            }
+            else
+            {
+                if (nav == null) { log.LogWarning("no map data for '" + scene + "' (" + navInfo + "); mission left unchanged"); return true; }
+                enemies = DirectorPlugin.EnemyCount.Value > 0 ? DirectorPlugin.EnemyCount.Value : laptopCount;
+                if (enemies <= 0) enemies = 10;
+                enemies = Math.Max(1, Math.Min(60, enemies));
+                seed = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                source = "seed " + seed;
+                var input = new GeneratorInput { Nav = nav, Seed = seed, Scene = scene, Enemies = enemies, Infils = infils, Authored = authored };
+                if (infils.Count == 0) AddExfilBoxes(raid, input);
+                plan = Generator.Generate(input);
+                if (plan.Spawns.Count < 3)
+                {
+                    log.LogWarning("generator found only " + plan.Spawns.Count + " positions on '" + scene + "'; mission left unchanged. " + string.Join("; ", plan.Notes));
+                    return true;
+                }
+                // Indoors keep the map's own senses; outdoors never go below sensible open-ground values.
+                foreach (SpawnPlan s in plan.Spawns)
+                {
+                    s.DetectionRange = s.Indoor ? tDetect : Math.Max(tDetect, s.DetectionRange);
+                    s.HearingRange = s.Indoor ? tHear : Math.Max(tHear, s.HearingRange);
+                    s.Fov = s.Indoor ? tFov : Math.Max(tFov, s.Fov);
+                }
             }
 
-            // 6. Build everything, then swap.
+            // 4. Build everything, then swap.
             int generated, toppedUp;
-            Apply(raid, plan, template, originals, enemies, tDetect, tHear, tFov, new Rng(seed ^ 0x5EED), out generated, out toppedUp);
-            string senses = "senses " + tDetect + "/" + tHear + "/" + tFov + " from template '" + template.name + "'";
-            if (DirectorPlugin.EnemyCount.Value > 0 && gm != null) gm.botAmount = enemies;
+            Apply(raid, plan, template, fromFile ? null : originals, enemies, new Rng(seed ^ 0x5EED), out generated, out toppedUp);
+            string senses = "usual senses " + tDetect + "/" + tHear + "/" + tFov + ", template '" + template.name + "'";
+            if (gm != null && (fromFile || DirectorPlugin.EnemyCount.Value > 0)) gm.botAmount = enemies;
             sw.Stop();
 
-            // 7. Tell the player and leave a record that can be replayed with the seed.
-            Banner = "MissionLab: seed " + seed + " | " + enemies + " enemies in " + plan.Groups + " groups | " + nav.SourceFile;
+            // 5. Tell the player and leave a record. A record copied into the scenarios folder replays exactly.
+            Banner = "MissionLab: " + source + " | " + enemies + " enemies in " + plan.Groups + " groups | " + (nav != null ? nav.SourceFile : "no map file");
             BannerUntil = Time.unscaledTime + 12f;
-            log.LogInfo(Banner + " | via " + via + " | " + generated + " generated + " + toppedUp + " original spawn points | insertion: " + infilInfo +
+            log.LogInfo(Banner + " | via " + via + " | " + generated + " planned + " + toppedUp + " original spawn points | insertion: " + infilInfo +
                         " | map: " + navInfo + " | " + senses + " | " + sw.ElapsedMilliseconds + " ms");
-            WriteRecord(scene, seed, via, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
+            plan.Scene = scene;
+            WriteRecord(scene, seed, via, source, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
             return true;
         }
 
@@ -165,6 +219,42 @@ namespace MissionLab
             }
             catch (Exception e) { DirectorPlugin.L.LogWarning("could not read the navigation graph: " + e.Message); }
             return null;
+        }
+
+        /// <summary>
+        /// Loads BepInEx/MissionLab/scenarios/&lt;General.Scenario&gt;.json if it is set and meant for this scene.
+        /// Any problem is logged and the mission falls back to a generated layout.
+        /// </summary>
+        private static MissionPlan TryLoadScenario(string scene, out string name)
+        {
+            var log = DirectorPlugin.L;
+            name = (DirectorPlugin.Scenario.Value ?? "").Trim();
+            if (name.Length == 0) return null;
+            string file = name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? name : name + ".json";
+            string dir = Path.Combine(DirectorPlugin.BaseDir, "scenarios");
+            string path = Path.Combine(dir, Path.GetFileName(file));
+            if (!File.Exists(path)) { log.LogWarning("scenario '" + name + "' not found in " + dir + "; generating instead"); return null; }
+            try
+            {
+                MissionPlan plan = MissionPlan.FromJson(File.ReadAllText(path));
+                // "scene" may name several scenes of the same map: "Suburb Day, Suburb Night". Empty or * = any.
+                bool match = string.IsNullOrWhiteSpace(plan.Scene);
+                if (!match)
+                    foreach (string part in plan.Scene.Split(','))
+                        if (part.Trim() == "*" || string.Equals(part.Trim(), scene, StringComparison.OrdinalIgnoreCase)) match = true;
+                if (!match)
+                {
+                    log.LogInfo("scenario '" + name + "' is for '" + plan.Scene + "', this is '" + scene + "'; generating instead");
+                    return null;
+                }
+                if (plan.Spawns.Count == 0) { log.LogWarning("scenario '" + name + "' has no enemies; generating instead"); return null; }
+                return plan;
+            }
+            catch (Exception e)
+            {
+                log.LogWarning("scenario '" + name + "' could not be read (" + e.Message + "); generating instead");
+                return null;
+            }
         }
 
         private static float MostCommon(List<float> values)
@@ -269,7 +359,7 @@ namespace MissionLab
         }
 
         private static void Apply(RaidManager raid, MissionPlan plan, GameObject template, List<GameObject> originals, int enemies,
-                                  float tDetect, float tHear, float tFov, Rng rng, out int generated, out int toppedUp)
+                                  Rng rng, out int generated, out int toppedUp)
         {
             var root = new GameObject("MissionLab Spawns");
             var created = new List<GameObject>();
@@ -278,7 +368,7 @@ namespace MissionLab
                 root.transform.SetParent(raid.transform);
                 foreach (SpawnPlan s in plan.Spawns)
                 {
-                    var pos = new Vector3(s.Pos.X, s.Pos.Y + 0.1f, s.Pos.Z);
+                    var pos = new Vector3(s.Pos.X, s.Pos.Y + (s.Fixed ? 0f : 0.1f), s.Pos.Z);
                     Quaternion rot = Quaternion.Euler(0f, s.Yaw, 0f);
                     // A copy of one of the map's own spawn points, so it carries everything the game expects.
                     UnityEngine.Object copy = UnityEngine.Object.Instantiate((UnityEngine.Object)template, pos, rot, root.transform);
@@ -290,14 +380,13 @@ namespace MissionLab
                                 : s.Role == SpawnRole.Wander ? BrainAI.IdleStates.Wander
                                 : BrainAI.IdleStates.Patrol;
                     d.reactType = s.Defensive ? BrainAI.ReactType.Defensive : BrainAI.ReactType.Offensive;
-                    // Indoors keep the map's own senses; outdoors never go below sensible open-ground values.
-                    d.DetectionRange = s.Indoor ? tDetect : Math.Max(tDetect, s.DetectionRange);
-                    d.HearingRange = s.Indoor ? tHear : Math.Max(tHear, s.HearingRange);
-                    d.FOV = s.Indoor ? tFov : Math.Max(tFov, s.Fov);
-                    if (s.Role == SpawnRole.Wander) d.WanderDistance = s.WanderDistance;
+                    d.DetectionRange = s.DetectionRange;
+                    d.HearingRange = s.HearingRange;
+                    d.FOV = s.Fov;
+                    if (s.Role == SpawnRole.Wander && s.WanderDistance > 0) d.WanderDistance = s.WanderDistance;
                     d.isProne = false;
                     d.isSpawnGroup = false;
-                    d.disableNavmesh = false;       // must be able to walk: wander, patrol, react
+                    d.disableNavmesh = s.Fixed;     // everyone else must be able to walk: wander, patrol, react
                     d.hvtLinkedSpawnGroup = null;
 
                     var pts = d.patrolPoints;
@@ -328,8 +417,8 @@ namespace MissionLab
             // Never hand the game fewer points than enemies: top up with the map's own points.
             generated = created.Count;
             toppedUp = 0;
-            int need = enemies - created.Count;
-            var pool = new List<GameObject>(originals);
+            int need = originals == null ? 0 : enemies - created.Count;
+            var pool = originals == null ? new List<GameObject>() : new List<GameObject>(originals);
             while (need > 0 && pool.Count > 0)
             {
                 int i = rng.Range(0, pool.Count);
@@ -343,7 +432,7 @@ namespace MissionLab
             foreach (GameObject go in created) list.Add(go);
         }
 
-        private static void WriteRecord(string scene, long seed, string via, int enemies, int laptopCount, int generated, int toppedUp,
+        private static void WriteRecord(string scene, long seed, string via, string source, int enemies, int laptopCount, int generated, int toppedUp,
                                         List<V3> infils, string infilInfo, string navInfo, long ms, MissionPlan plan)
         {
             try
@@ -357,6 +446,7 @@ namespace MissionLab
                 sb.Append(",\"scene\":").Append(Q(scene));
                 sb.Append(",\"seed\":").Append(seed.ToString(inv));
                 sb.Append(",\"via\":").Append(Q(via));
+                sb.Append(",\"source\":").Append(Q(source));
                 sb.Append(",\"enemies\":").Append(enemies);
                 sb.Append(",\"laptopEnemyCount\":").Append(laptopCount);
                 sb.Append(",\"generatedSpawnPoints\":").Append(generated);

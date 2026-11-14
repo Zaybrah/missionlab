@@ -3,6 +3,25 @@ using System.Text.Json;
 using MissionLab.Core;
 
 // usage: CoreTest <navmesh.bytes> <recon.json|-> <outDir> <enemies> <seed>... [--infil x,y,z]...
+//        CoreTest --check <scenario.json> <navmesh.bytes>     validate a hand-edited scenario file
+if (args.Length == 3 && args[0] == "--check")
+{
+    MissionPlan sc;
+    try { sc = MissionPlan.FromJson(File.ReadAllText(args[1])); }
+    catch (Exception e) { Console.WriteLine("NOT A VALID SCENARIO: " + e.Message); return 1; }
+    var map = NavMesh.Load(args[2]);
+    int off = 0, num = 0;
+    foreach (var s in sc.Spawns)
+    {
+        num++;
+        bool walkable = map.TriAt(s.Pos.X, s.Pos.Z, s.Pos.Y, 1.0f, out _) >= 0;
+        if (!walkable && !s.Fixed) { off++; Console.WriteLine($"  enemy {num} ({s.Role}) at {s.Pos} is off the walkable surface: it will be a fixed sentry"); }
+        int w = 0;
+        foreach (var wp in s.Patrol) { w++; if (map.TriAt(wp.X, wp.Z, wp.Y, 1.0f, out _) < 0) Console.WriteLine($"  enemy {num}: patrol waypoint {w} at {wp} is off the walkable surface"); }
+    }
+    Console.WriteLine($"scenario for '{sc.Scene}': {sc.Spawns.Count} enemies in {sc.Groups} groups, {off} off the walkable surface");
+    return 0;
+}
 var navPath = args[0]; var reconPath = args[1]; var outDir = args[2]; int enemies = int.Parse(args[3]);
 var seeds = new List<long>(); var infils = new List<V3>();
 for (int i = 4; i < args.Length; i++)
@@ -65,6 +84,9 @@ foreach (var seed in seeds)
     var json = plan.ToJson();
     if (Generator.Generate(In()).ToJson() != json) { Console.WriteLine("  FAIL: not deterministic"); failures++; }
     JsonDocument.Parse(json).Dispose();   // must be valid JSON
+    string reloaded = MissionPlan.FromJson(json).ToJson();   // enemy positions and settings must survive save and load
+    if (reloaded.Substring(reloaded.IndexOf("\"spawns\"")) != json.Substring(json.IndexOf("\"spawns\""))) { Console.WriteLine("  FAIL: plan does not survive save and load"); failures++; }
+    if (MissionPlan.FromJson("{\"plan\":" + json + "}").Spawns.Count != plan.Spawns.Count) { Console.WriteLine("  FAIL: mission record wrapper not read"); failures++; }
     string body = json.Substring(json.IndexOf("\"spawns\""));
     if (!seenPlans.Add(body)) { Console.WriteLine("  FAIL: same layout as an earlier seed"); failures++; }
     File.WriteAllText(Path.Combine(outDir, $"plan_seed{seed}.json"), json);

@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.2.2";
+        public const string Version = "0.3.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -28,6 +28,8 @@ namespace MissionLab
         internal static ConfigEntry<int> Seed;
         internal static ConfigEntry<int> EnemyCount;
         internal static ConfigEntry<string> Scenes;
+        internal static ConfigEntry<string> Scenario;
+        internal static ConfigEntry<bool> GmTestKey;
         internal static bool Hooked;
         internal static string BaseDir;
 
@@ -40,13 +42,18 @@ namespace MissionLab
                 "0 = a new random mission every time. Any other number replays that exact mission.");
             EnemyCount = Config.Bind("General", "EnemyCount", 0,
                 "0 = use the enemy count chosen on the mission laptop. Otherwise force this many enemies (1-60).");
-            Scenes = Config.Bind("General", "Scenes", "Suburb Day,Suburb Night",
-                "Comma-separated scene names where the director is active. * = every PvE mission (untested).");
+            Scenes = Config.Bind("General", "Scenes", "*",
+                "Comma-separated scene names where the director is active. * = every PvE mission.");
+            Scenario = Config.Bind("General", "Scenario", "",
+                "Name of a file in BepInEx/MissionLab/scenarios to use instead of a generated layout (for the scene it was made for). Empty = generate.");
+            GmTestKey = Config.Bind("GameMaster", "TestSpawnKey", true,
+                "Experiment: while hosting a mission, F6 spawns one enemy about 15 m in front of you.");
             UseHook = Config.Bind("Advanced", "UseHook", true,
                 "true = act the moment the mission's spawner starts. false = slower polling fallback; try this if a mission fails to load.");
 
             BaseDir = Path.Combine(Paths.BepInExRootPath, "MissionLab");
             Directory.CreateDirectory(Path.Combine(BaseDir, "missions"));
+            Directory.CreateDirectory(Path.Combine(BaseDir, "scenarios"));
 
             if (UseHook.Value)
             {
@@ -62,7 +69,7 @@ namespace MissionLab
             }
             AddComponent<DirectorBehaviour>();
             L.LogInfo("MissionLab Director " + Version + " loaded. enabled=" + Enabled.Value + " hook=" + Hooked +
-                      " seed=" + Seed.Value + " enemyCount=" + EnemyCount.Value + " scenes=[" + Scenes.Value + "]");
+                      " seed=" + Seed.Value + " enemyCount=" + EnemyCount.Value + " scenes=[" + Scenes.Value + "] scenario=[" + Scenario.Value + "]");
         }
     }
 
@@ -93,6 +100,8 @@ namespace MissionLab
         {
             if (_errors > 10) return;
             float now = Time.unscaledTime;
+            try { GmTest.Tick(now); }
+            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("GM test failed: " + e); }
             if (now < _nextPoll) return;
             try
             {
