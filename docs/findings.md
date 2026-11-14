@@ -1,0 +1,32 @@
+# What we know about OPERATOR's mission internals
+
+Verified on game version 0.09.5 (Unity 6000.3.8f1, game code dated 7 July 2026),
+BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo.
+
+## Spawning
+- `RaidManager` is the per-map mission director. It fills `botSpawnPoints` during
+  `OnStartServer` (the list is still empty in a prefix on that method) and spawns
+  enemies about 2 seconds later (`botSpawnDelay`).
+- The game spawns exactly `GameManager.botAmount` bots, each on a randomly drawn
+  entry of `botSpawnPoints`. The list itself is not consumed.
+- Each spawn point is a GameObject with a `BotSpawnDetails` component (idle state,
+  react type, detection/hearing range, FOV, patrol points, flags).
+- Replacing the list's contents in place (Clear + Add) before the spawn works: bots
+  appear exactly on the new points. Tested solo as host on Suburb Day.
+- Pitfall: individual authored points can be special cases (`disableNavmesh = true`,
+  double detection range). Copy settings from the most common values, not one point.
+
+## Maps
+- 31 scenes; day and night are separate scenes. `OPERATOR_Data/NavMeshData/*.bytes`
+  holds A* Pathfinding Project 5.3.8 recast-graph caches (zip). `graph0_extra.binary`
+  layout per tile: x, z, w, d, tris[], verts[] (Int3, mm), vertsInGraphSpace[],
+  one flag byte (if set: preCutTags[], preCutVerts[], preCutTris[]), nodes[] (20 bytes each).
+- A file belongs to a scene when its `forcedBoundsCenter/Size` and tile counts equal
+  the live `RecastGraph`'s. "Spawn points stand on the mesh" is NOT enough: flat
+  ground at similar heights exists on several maps.
+- Suburb: all vanilla enemy spawn points sit in one house. Other lots are fenced
+  off and not connected to the walkable mesh.
+- Insertion points are child transforms of each `InfilMethods.infilObject`.
+
+## Not yet verified
+- Co-op with unmodded clients, patrol behaviour, other maps, HVT/intel modes.
