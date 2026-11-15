@@ -102,7 +102,8 @@ namespace MissionLab
                 }
                 GameMaster.EnemyPose(b, out Vector3 pos, out float yaw);
                 char state = 'I';
-                try { state = b.CurrentState.ToString()[0]; } catch { }
+                // A new enemy's first moments read as a state it is not in (see GameMaster.Settled).
+                try { if (GameMaster.Settled(b, now)) state = b.CurrentState.ToString()[0]; } catch { }
                 sb.Append(first ? "" : ",").Append('[').Append(id).Append(',').Append(F(pos.x)).Append(',').Append(F(pos.y)).Append(',').Append(F(pos.z)).Append(',').Append(Mathf.RoundToInt(yaw)).Append(",\"").Append(state).Append("\"]");
                 first = false; seen.Add(id); LastSeen[id] = pos;
             }

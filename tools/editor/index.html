@@ -325,6 +325,26 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
       <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
     </div>
+    <div id="tryBox" hidden>
+      <h2>Try-outs</h2>
+      <p class="hint">One-click experiments while a mission runs. Each asks the game for one thing and reports what happened. They are not finished features; the ones that work get a proper place later.</p>
+      <div class="field"><label for="tryWhat">Try</label><select id="tryWhat">
+        <option value="message">Message on every screen</option>
+        <option value="power:off">Lights out</option>
+        <option value="power:on">Lights back on</option>
+        <option value="hunt">Enemies hunt the nearest player</option>
+        <option value="sides">Split the enemies into two sides</option>
+        <option value="thing">Place a thing</option>
+        <option value="respawn">Bring every player back</option>
+        <option value="fail">End the mission as failed</option>
+        <option value="complete">End the mission as a success</option>
+      </select></div>
+      <div class="field" id="tryTextRow"><label for="tryText">Text</label><input id="tryText" type="text" maxlength="120" placeholder="MissionLab: test message"></div>
+      <div class="field" id="tryThingRow" hidden><label for="tryThing">Thing</label><select id="tryThing"></select></div>
+      <p class="hint" id="tryHint"></p>
+      <div class="row"><button class="btn" id="tryGo" type="button">Try it</button></div>
+      <p class="hint" id="tryNote" role="status"></p>
+    </div>
 
   </section>
 
@@ -2150,6 +2170,9 @@ const mmss = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart
 function loadReplay(obj, name) {
   if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
   const frames = obj.frames.filter(f => Array.isArray(f) && Array.isArray(f[1]) && Array.isArray(f[2]));
+  // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
+  const born = new Map();
+  for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
   replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3),
     start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
   replay.t = replay.data.start; replay.playing = false; replay.name = name;
@@ -2295,6 +2318,8 @@ async function applyLive(s) {
     let tried = ''; try { tried = sessionStorage.getItem('ml-reloaded') || ''; } catch (e) { /* no storage */ }
     if (tried !== s.page) { try { sessionStorage.setItem('ml-reloaded', s.page); } catch (e) { /* no storage */ } location.reload(); return; }
   }
+  live.mission = !!(s && s.mission); live.things = s && Array.isArray(s.things) ? s.things : []; live.tried = (s && s.tried) || '';
+  syncTry();
   if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
   if (s.navFile && s.navFile !== live.nav) {                 // a new mission: fetch its map from the game folder
     live.nav = s.navFile; live.hasGeo = false; live.rev = null;
@@ -2371,7 +2396,47 @@ if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 { let tab = 'map'; try { tab = localStorage.getItem('missionlab-tab') || (served ? 'enemies' : 'map'); } catch (e) { /* storage unavailable */ } showTab(window.__mlAllTabs ? 'all' : ['map', 'enemies', 'triggers', 'doors', 'mission'].includes(tab) ? tab : 'map'); }
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+// ---------------------------------------------------------------- try-outs: one-click experiments in a running mission
+const TRY_HINTS = {
+  message: 'Shows a yellow notice on every player\'s screen. It tells us whether the mod can talk to friends who have no mod.',
+  'power:off': 'Switches off the map\'s breaker box and the lights wired to it. Clean House has one; it shows best at night.',
+  'power:on': 'Switches the breaker box back on.',
+  hunt: 'Tells every enemy where the nearest player is, as if they had heard a noise there.',
+  sides: 'Moves every second enemy to another team. Watch whether the two sides start to fight each other.',
+  thing: 'Places it where the selected enemy marker is, or 6 m in front of you when no marker is selected. A landmine, a weapon and an intel item are good first tries.',
+  respawn: 'Asks the game to bring every player back. It may also send living players back to the start.',
+  fail: 'Ends the mission with the game\'s own failed screen. Keep it for last.',
+  complete: 'Ends the mission as if the team had extracted. The run is marked as modded first, so it should earn nothing. Keep it for last.',
+};
+const THINGS_FIRST = ['Landmine', 'Proximity Explosive_IED ', 'AKM', 'Hard Drive', 'Cell Phone'];
+function syncTry() {
+  const box = $('tryBox'); if (!box) return;
+  box.hidden = !(live.on && live.mission);
+  if (box.hidden) return;
+  const what = $('tryWhat').value.split(':')[0];
+  $('tryTextRow').hidden = what !== 'message'; $('tryThingRow').hidden = what !== 'thing';
+  $('tryHint').textContent = TRY_HINTS[$('tryWhat').value] || '';
+  const sel = $('tryThing'), names = (live.things || []).slice().sort((a, b) => (THINGS_FIRST.indexOf(a) < 0 ? 99 : THINGS_FIRST.indexOf(a)) - (THINGS_FIRST.indexOf(b) < 0 ? 99 : THINGS_FIRST.indexOf(b)) || a.localeCompare(b));
+  const key = names.join('|');
+  if (sel.dataset.key !== key) {
+    const keep = sel.value; sel.dataset.key = key; sel.textContent = '';
+    for (const n of names) { const o = document.createElement('option'); o.value = n; o.textContent = n.trim(); sel.appendChild(o); }
+    if (names.indexOf(keep) >= 0) sel.value = keep;
+  }
+  if (!syncTry.asked) $('tryNote').textContent = live.tried ? 'The game says: ' + live.tried : '';
+}
+function tryOut() {
+  const parts = $('tryWhat').value.split(':'), what = parts[0];
+  const more = { what, arg: what === 'message' ? $('tryText').value : what === 'thing' ? $('tryThing').value : (parts[1] || '') };
+  const e = state.enemies[state.selected];
+  if (what === 'thing' && e) more.pos = e.pos.slice(0, 3);
+  syncTry.asked = true; $('tryNote').textContent = 'Asked the game...';
+  return liveCommand('try', more).then(() => { syncTry.asked = false; syncTry(); });
+}
+$('tryWhat').addEventListener('change', syncTry);
+$('tryGo').addEventListener('click', tryOut);
+
+window.missionlabEditor = { syncTry, tryOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

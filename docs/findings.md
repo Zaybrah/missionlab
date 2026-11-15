@@ -124,6 +124,29 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
     and carried into the mission in `PlayerMaster.CurrentInfilIndex`; `CMD_RequestInfilTarget` is not
     sent during the mission, so hooking it changes nothing. 0.15.1 writes the index itself.
   - The recording was written: 61 moments, 5 events.
+- Second run (0.15.2, solo, Clean House by day, feature test scenario, 4:55 long):
+  - The insertion can be set: the player started on Alpha 2's spot (-40.3, 0.6, -61.2). The index
+    was written when the mission was set up; the second write, just before the insertion, found it set.
+  - Timer and chain triggers fire on time (60.2 s and 75.2 s), and the chain trigger opened the
+    extraction on the host. Nobody walked to it, so "open for the player" is still unseen.
+  - **A new enemy reports a state other than idle for its first half second** (`CurrentState`
+    reads `Evade`). The alert trigger took that for an alert and fired 10 s after the first enemy
+    appeared; the recording showed the same false state. From 0.17 an enemy's state counts only
+    once it has been around for 2 s; the editor reads old recordings the same way.
+  - **The game's vehicle spawner does not always bring a vehicle.** With one spot, one prefab
+    ("Hilux Technical Dshk"), `maxStaticVehicles = 1` and `spawnVehicleAI = true`, no `VehicleAI`
+    existed 3 s after `SpawnStaticVehicleAI()`. (The first run got its BTR the same way.)
+    `RaidManager._currentVehicleCount` suggests the spawner counts or rolls. From 0.17 whatever is
+    missing 3 s later is placed directly from the same prefab with `NetworkServer.Spawn`.
+  - Clean House has one `BreakerSwitch` ("PowerBox" at -16.7, 0.0, -18.6) wired to 59 lights.
+    No alarm, landmine or weapon rack in the map.
+  - Teams: players are team 1, enemies team 2; the game knows USA (0), BLUFOR (1), OPFOR (2),
+    NotApplicable (3), RU (4).
+  - `NetworkManager.spawnPrefabs` holds 125 prefabs: 45 weapons, 26 enemy types, 16 intel items
+    (Hard Drive, Thumbdrive, RFID Card, the Mexico documents ...), grenades (9 Bang, FlashBang, M67,
+    Slap Charge), `Landmine`, `Proximity Explosive_IED`, doors, two drones (`Satelite ISR`, `UAV ISR`),
+    an `AGM-114 Hellfire`, helicopters (UH-60, Littlebird, MH-6), the BTR and the Hilux.
+  - The extraction zone "Exfil" is one box of 67 x 124 m over the east side of the map.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

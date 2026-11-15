@@ -43,6 +43,41 @@ collects them: breakers, alarms, mines, weapon racks, teams, everything spawnabl
 | Adaptive pacing | built from triggers and the alert state the mod already reads |
 | Game Master on another device | the browser link opened to the local network behind a password |
 
+## Try-outs (0.17)
+
+One click each in the browser page (Mission tab, while a mission runs). Each calls one thing the
+game has and reports what happened; the ones that work become real features.
+
+| Try-out | What it calls | Answers |
+|---|---|---|
+| Message on every screen | `ExfilZone.RPCHint(text, YellowWarning)` | can the mod talk to players without the mod? |
+| Lights out / back on | `BreakerSwitch.UserCode_CMD_SetPowerState__Boolean` | lights out |
+| Enemies hunt the nearest player | `BrainAI.HeardTarget(position, distance, player)` | orders for enemies |
+| Split the enemies into two sides | `TeamIdentifier.NetworkTeamID = 4` on every second enemy | factions |
+| Place a thing | `Instantiate` + `NetworkServer.Spawn` of any network prefab | mines, weapons on the ground, intel anywhere |
+| Bring every player back | `GameManagerNetwork.SERVER_SetRespawns(true)`, `UserCode_SERVER_RespawnALL()` | respawn rules |
+| End as failed / as a success | `SERVER_FailOperation()` / `ServerCompleteExfil()` (with `OperationsManager.HasCheated` set first) | win and lose rules |
+
+## Third round: from research (15 November 2026)
+
+The full report, with sources, is in `research-2026-11-15.md`. Its first picks:
+
+| Idea | What it gives | Needs |
+|---|---|---|
+| Messages and title card | text on every player's screen as a trigger action | the message try-out |
+| Fair-play switch and lobby notice | modded missions earn nothing; joiners are told | a decision; `OperationsManager.HasCheated` |
+| Chance and either/or groups | "appears 60 % of the time", "one of these three" | core only |
+| Mission check panel | a list of problems before a mission is played | editor only |
+| Respawn rules and rally points | the team comes back at a checkpoint | the respawn try-out |
+| Enemy profiles | conscript, bodyguard, grenadier, night-vision sentry | `BrainAI`, `WeaponsAI` settings on the host |
+| Mission type on any map | target person, find intel, destroy the vehicle | `OperationsManager.CurrentGameMode`; risky |
+| Radio calls and alarm as cues | the game's own voice lines when a trigger fires | a map with a helicopter, drone or alarm |
+| Trigger logic and "hold the zone" | AND/OR, counters, stay in the circle for N seconds | core only |
+| Team status board and hand tools | health and position of every player; teleport, heal, resupply | reads on the host; player calls |
+
+Also from the report: the game has its own roadside-bomb spawner (`RaidManager.hasIEDs`, `IED`,
+`IED_locations`, `SERVER_SpawnIEDs()`), a lead for the parked "placed bombs" idea.
+
 ## Parked
 
 - **Arriving by car on a new route.** The game's rides are fixed animations that belong

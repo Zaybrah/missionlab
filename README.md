@@ -172,6 +172,13 @@ The Replay tab lists how a recorded mission went: its length, when and from how 
 players were first noticed, how long the enemy was alerted, enemies down, and how far
 each player walked. A row with a time jumps to that moment.
 
+### Try-outs
+While a mission runs, the Mission tab of the browser page has a "Try-outs" box: a message on
+every screen, lights out, enemies hunting the nearest player, two enemy sides, placing a thing
+(landmine, weapon, intel item ...), bringing every player back, ending the mission. Each is one
+call into the game whose effect is not known yet; the page shows what the game answered, and the
+log and the recording keep it. See `docs/ideas.md`.
+
 ### Target person
 In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
 the game spawns its own target type there at the start. A generated layout also moves the

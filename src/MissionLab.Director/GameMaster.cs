@@ -154,7 +154,7 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false;
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; FirstSeen.Clear(); TryOuts.Last = "";
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _vehicleCheckAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
@@ -375,43 +375,101 @@ namespace MissionLab
             return sb.ToString();
         }
 
-        /// <summary>Did the gun trucks come? If the map never starts its vehicle spawner, it is started here, once.</summary>
+        private static int _vehicleLooks;
+
+        /// <summary>
+        /// Did the gun trucks come? If the map never starts its vehicle spawner, it is started here, once. The game's
+        /// spawner does not always bring one (a run with one planned truck ended with none), so whatever is still
+        /// missing after that is placed directly from the same prefab.
+        /// </summary>
         private static void CheckVehicles(RaidManager raid, float now)
         {
             if (Director.VehiclesWanted <= 0 || _vehicleCheckAt < 0f || now < _vehicleCheckAt) return;
-            int have = 0;
+            var at = new List<Vector3>(); var where = new List<string>();
             try
             {
-                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<VehicleAI>(), false);
-                have = found == null ? 0 : found.Length;
+                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<VehicleAI>(), true);
+                for (int i = 0; found != null && i < found.Length; i++)
+                {
+                    VehicleAI v = found[i] == null ? null : found[i].TryCast<VehicleAI>();
+                    if (v == null) continue;
+                    at.Add(v.transform.position);
+                    where.Add(v.gameObject.name.Replace("(Clone)", "").Trim() + " at " + P(v.transform.position) + (v.gameObject.activeInHierarchy ? "" : " (switched off)"));
+                }
             }
             catch { }
-            if (have >= Director.VehiclesWanted || Director.VehiclesAsked)
+            int have = at.Count;
+            if (have < Director.VehiclesWanted && !Director.VehiclesAsked)
             {
-                DirectorPlugin.L.LogInfo("gun trucks: " + have + " in the map, " + Director.VehiclesWanted + " planned" + (Director.VehiclesAsked ? " (the vehicle spawner was started by MissionLab)" : " (spawned by the game itself)"));
+                Director.VehiclesAsked = true; _vehicleCheckAt = now + 3f; _vehicleLooks = 0;
+                try { raid.SpawnStaticVehicleAI(); DirectorPlugin.L.LogInfo("gun trucks: none came by themselves, so the game's vehicle spawner was started"); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks: the game's vehicle spawner failed: " + e.Message); }
+                return;
+            }
+            _vehicleLooks++;
+            DirectorPlugin.L.LogInfo("gun trucks: " + have + " in the map, " + Director.VehiclesWanted + " planned" +
+                                     (Director.VehiclesAsked ? " (the vehicle spawner was started by MissionLab)" : " (spawned by the game itself)") +
+                                     (where.Count > 0 ? ": " + string.Join("; ", where) : ""));
+            if (have >= Director.VehiclesWanted || _vehicleLooks >= 3)
+            {
+                foreach (Vector3 p in at) Replay.Event("appears", "a gun truck is in the map", p);
+                if (have < Director.VehiclesWanted) DirectorPlugin.L.LogWarning("gun trucks: " + (Director.VehiclesWanted - have) + " planned truck(s) never came");
                 _vehicleCheckAt = -1f;
                 return;
             }
-            Director.VehiclesAsked = true; _vehicleCheckAt = now + 3f;
-            try { raid.SpawnStaticVehicleAI(); DirectorPlugin.L.LogInfo("gun trucks: none came by themselves, so the game's vehicle spawner was started"); }
-            catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks: the game's vehicle spawner failed: " + e.Message); _vehicleCheckAt = -1f; }
+            if (_vehicleLooks == 1)
+            {
+                int placed = 0;
+                try
+                {
+                    var spots = raid.staticVehicleSpawnPoints; var kinds = raid.staticVehicleAI;
+                    for (int i = 0; spots != null && kinds != null && kinds.Length > 0 && i < spots.Length && have + placed < Director.VehiclesWanted; i++)
+                    {
+                        if (spots[i] == null) continue;
+                        Vector3 spot = spots[i].transform.position;
+                        if (at.Exists(p => (p - spot).sqrMagnitude < 16f)) continue;
+                        GameObject kind = kinds[i % kinds.Length];
+                        if (kind == null) continue;
+                        GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)kind, spot, spots[i].transform.rotation).Cast<GameObject>();
+                        Mirror.NetworkServer.Spawn(go, (Mirror.NetworkConnection)null);
+                        placed++;
+                    }
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks: placing one directly failed: " + e.Message); }
+                DirectorPlugin.L.LogInfo("gun trucks: the game's spawner brought " + have + ", so " + placed + " were placed directly by MissionLab");
+            }
+            _vehicleCheckAt = now + 4f;
         }
 
         // ------------------------------------------------------------------ triggers
         private static string TriggerName(TriggerPlan t) =>
             (t.When == TriggerPlan.OnZone ? "zone " : "trigger ") + (string.IsNullOrEmpty(t.Name) ? t.Id.ToString() : "'" + t.Name + "'");
 
+        private static readonly Dictionary<IntPtr, float> FirstSeen = new Dictionary<IntPtr, float>();
+
+        /// <summary>
+        /// An enemy that has just appeared reports a state other than idle for its first moments (seen in a recording:
+        /// half a second of "Evade" on every new enemy). That is the game setting it up, not an alert, so its state only
+        /// counts once it has been around for two seconds.
+        /// </summary>
+        internal static bool Settled(BrainAI b, float now)
+        {
+            if (!FirstSeen.TryGetValue(b.Pointer, out float since)) { FirstSeen[b.Pointer] = now; return false; }
+            return now - since >= 2f;
+        }
+
         /// <summary>Has any enemy noticed the players? Once true it stays true.</summary>
-        private static bool Alerted(GameManager gm)
+        private static bool Alerted(GameManager gm, float now)
         {
             if (_alerted) return true;
             var ai = gm.allAI;
+            bool yes = false;
             for (int i = 0; ai != null && i < ai.Count; i++)
             {
                 BrainAI b = ai[i];
-                try { if (b != null && b.CurrentState != BrainAI.States.Idle) return _alerted = true; } catch { }
+                try { if (b != null && Settled(b, now) && b.CurrentState != BrainAI.States.Idle) yes = true; } catch { }
             }
-            return false;
+            return _alerted = yes;
         }
 
         /// <summary>
@@ -484,7 +542,7 @@ namespace MissionLab
                         bool yes;
                         switch (t.When)
                         {
-                            case TriggerPlan.OnAlert: yes = Alerted(gm); break;
+                            case TriggerPlan.OnAlert: yes = Alerted(gm, now); break;
                             case TriggerPlan.OnIntel: yes = IntelTaken(raid, t.Item); break;
                             case TriggerPlan.OnTime: yes = true; break;
                             case TriggerPlan.OnAfter: yes = t.After != 0 && t.After != t.Id && Fired.Contains(t.After); break;
@@ -1473,7 +1531,8 @@ namespace MissionLab
             for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
             sb.Append("],\"infilPoints\":[");
             try { List<V3> pts = Director.CurrentInfils; for (int i = 0; pts != null && i < pts.Count; i++) sb.Append(i > 0 ? "," : "").Append('[').Append(F(pts[i].X)).Append(',').Append(F(pts[i].Y)).Append(',').Append(F(pts[i].Z)).Append(']'); } catch { }
-            sb.Append("],\"vehicleTypes\":[");
+            sb.Append("],\"things\":").Append(TryOuts.ThingsJson()).Append(",\"tried\":").Append(Q(TryOuts.Last));
+            sb.Append(",\"vehicleTypes\":[");
             try { List<GameObject> trucks = Director.VehiclePrefabs(raid); for (int i = 0; i < trucks.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(trucks[i].name)); } catch { }
             // The page takes the marker list over only when this changes.
             sb.Append("],\"rev\":").Append(Q(rev.ToString().GetHashCode().ToString("x") + "-" + _markers.Count)).Append('}');
@@ -1581,13 +1640,21 @@ namespace MissionLab
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
-            string cmd; int id = 0;
+            string cmd; int id = 0; string what = "", arg = ""; bool hasPos = false; Vector3 pos = Vector3.zero;
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
-                cmd = doc.RootElement.GetProperty("cmd").GetString();
-                if (doc.RootElement.TryGetProperty("id", out var idv) && idv.ValueKind == System.Text.Json.JsonValueKind.Number) id = idv.GetInt32();
+                var root = doc.RootElement;
+                cmd = root.GetProperty("cmd").GetString();
+                if (root.TryGetProperty("id", out var idv) && idv.ValueKind == System.Text.Json.JsonValueKind.Number) id = idv.GetInt32();
+                if (root.TryGetProperty("what", out var wv) && wv.ValueKind == System.Text.Json.JsonValueKind.String) what = wv.GetString();
+                if (root.TryGetProperty("arg", out var av) && av.ValueKind == System.Text.Json.JsonValueKind.String) arg = av.GetString();
+                if (root.TryGetProperty("pos", out var pv) && pv.ValueKind == System.Text.Json.JsonValueKind.Array && pv.GetArrayLength() == 3)
+                {
+                    pos = new Vector3(pv[0].GetSingle(), pv[1].GetSingle(), pv[2].GetSingle()); hasPos = true;
+                }
             }
             if (cmd == "fire") FireNow(id);
+            else if (cmd == "try") Say(TryOuts.Run(what, arg, hasPos, pos, raid, gm));
             else if (cmd == "spawnWaiting") SpawnWaiting();
             else if (cmd == "removeAllEnemies") RemoveAllEnemies(gm);
             else if (cmd == "save") Save();

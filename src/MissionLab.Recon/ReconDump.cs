@@ -48,6 +48,8 @@ namespace MissionLab
             Section(root, "alarms", j => Things<AlarmSystem>(j, (o, a) => { o.V("state", a.currentState.ToString()); }));
             Section(root, "landmines", j => Things<Landmine>(j, (o, m) => { o.V("distanceToExplode", m.distanceToExplode); }));
             Section(root, "weaponSpawners", j => Things<N_WeaponSpawner>(j, (o, w) => { o.V("weapons", w.weapons == null ? 0 : w.weapons.Count); o.V("allWeapons", w.AllWeapons); o.V("spawnAmount", w.SpawnAmount); }));
+            Section(root, "vehicles", j => Things<VehicleAI>(j, (o, v) => { o.V("canFire", v.canFire); }));
+            Section(root, "counts", Counts);
             Section(root, "teams", Teams);
             if (phase == "early") Section(root, "spawnables", Spawnables);
             Section(root, "navGraphs", NavGraphs);
@@ -597,6 +599,23 @@ namespace MissionLab
                     j.EndObj();
                 }
             j.EndArr();
+        }
+
+        /// <summary>How many of each kind of thing this map holds; tells which ideas a map can carry at all.</summary>
+        private static void Counts(J j)
+        {
+            j.Obj();
+            Count<DynamicLight>(j, "dynamicLights"); Count<Destructible>(j, "destructibles"); Count<ISR>(j, "drones");
+            Count<WaveSurvival>(j, "waveSurvival"); Count<HelicopterV2>(j, "helicopters"); Count<ProximityExplosive>(j, "proximityExplosives");
+            Count<RangeComputer>(j, "rangeComputers"); Count<PlayerDrawing>(j, "whiteboards"); Count<NetworkedCharacterVoicePlayer>(j, "voicePlayers");
+            j.EndObj();
+        }
+
+        private static void Count<T>(J j, string key) where T : Component
+        {
+            int n = -1;
+            try { var found = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<T>(), true); n = found == null ? 0 : found.Length; } catch { }
+            j.V(key, n);
         }
 
         /// <summary>Every object of one kind in the scene: where it is, plus whatever the caller adds about it.</summary>
