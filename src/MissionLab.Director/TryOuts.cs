@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using UnityEngine;
 
@@ -198,7 +199,8 @@ namespace MissionLab
             if (Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 8f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
             GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)prefab, pos + Vector3.up * 0.05f, Quaternion.Euler(0f, yaw, 0f)).Cast<GameObject>();
             Mirror.NetworkServer.Spawn(go, (Mirror.NetworkConnection)null);
-            string where = "(" + pos.x.ToString("0.0") + ", " + pos.y.ToString("0.0") + ", " + pos.z.ToString("0.0") + ")";
+            CultureInfo inv = CultureInfo.InvariantCulture;
+            string where = "(" + pos.x.ToString("0.0", inv) + ", " + pos.y.ToString("0.0", inv) + ", " + pos.z.ToString("0.0", inv) + ")";
             Replay.Event("appears", "'" + name + "' is placed", pos);
             return "thing: '" + name + "' placed at " + where + (hasPos ? ", where the selected marker is" : ", 6 m in front of you");
         }

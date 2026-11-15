@@ -147,6 +147,21 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
     Slap Charge), `Landmine`, `Proximity Explosive_IED`, doors, two drones (`Satelite ISR`, `UAV ISR`),
     an `AGM-114 Hellfire`, helicopters (UH-60, Littlebird, MH-6), the BTR and the Hilux.
   - The extraction zone "Exfil" is one box of 67 x 124 m over the east side of the map.
+- Third run (0.17.0, solo, Clean House by night, feature test scenario, 7:22 long, all six enemies down):
+  - The gun truck came from the game's own spawner this time ("Hilux Technical Dshk" at -4, 0.2, 54)
+    and was seen in the game. So the spawner brings a vehicle on some runs and none on others.
+  - **A gun truck's gunner is an enemy of his own** ("BOT V2 Cold Insurgent 03 Variant", no
+    navigation agent) and reports `Evade` for as long as he lives. He set the alert trigger off
+    10 s after the truck appeared. From 0.17.1 a state counts only once it has differed from the
+    one the enemy was first seen in, and a truck counts as alerted when `VehicleAI.CurrentTarget` is set.
+  - The intel trigger fired when the first item was picked up and changed its door.
+  - Try-outs that ran: "lights out" (the game then reports `PowerOn` false; 23 lights are wired
+    to the breaker at night, 59 by day), "place a thing" (two `Flashbang`, one `Landmine`; no
+    error), "end as a success" (`ServerCompleteExfil()` ended the mission 2.5 s later, with
+    `HasCheated` set first). What each looked like in the game is not known yet.
+  - Not tried yet: message, hunt, two sides, bring players back, end as failed.
+  - Clean House by night holds 88 `DynamicLight`, one drone (`ISR`), one `WaveSurvival` object,
+    no destructibles. Enemy sight at night is 25 m (50 m by day).
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

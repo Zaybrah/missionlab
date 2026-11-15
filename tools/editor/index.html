@@ -2173,6 +2173,13 @@ function loadReplay(obj, name) {
   // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
   const born = new Map();
   for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
+  // A gun truck's gunner reports "Evade" for as long as he lives (plugin 0.17.0 recorded that). He is where the truck is.
+  const trucks = (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && /gun truck/.test(String(e[2])) && Array.isArray(e[3])).map(e => e[3]);
+  if (trucks.length) {
+    const crew = new Set(), seen = new Set();
+    for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
+    if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
+  }
   replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3),
     start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
   replay.t = replay.data.start; replay.playing = false; replay.name = name;

@@ -154,7 +154,7 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; FirstSeen.Clear(); TryOuts.Last = "";
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; BornAs.Clear(); Changed.Clear(); Vehicles.Clear(); TryOuts.Last = "";
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _vehicleCheckAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
@@ -393,6 +393,7 @@ namespace MissionLab
                 {
                     VehicleAI v = found[i] == null ? null : found[i].TryCast<VehicleAI>();
                     if (v == null) continue;
+                    if (!Vehicles.Contains(v)) Vehicles.Add(v);
                     at.Add(v.transform.position);
                     where.Add(v.gameObject.name.Replace("(Clone)", "").Trim() + " at " + P(v.transform.position) + (v.gameObject.activeInHierarchy ? "" : " (switched off)"));
                 }
@@ -445,20 +446,27 @@ namespace MissionLab
         private static string TriggerName(TriggerPlan t) =>
             (t.When == TriggerPlan.OnZone ? "zone " : "trigger ") + (string.IsNullOrEmpty(t.Name) ? t.Id.ToString() : "'" + t.Name + "'");
 
-        private static readonly Dictionary<IntPtr, float> FirstSeen = new Dictionary<IntPtr, float>();
+        private static readonly Dictionary<IntPtr, BrainAI.States> BornAs = new Dictionary<IntPtr, BrainAI.States>();
+        private static readonly HashSet<IntPtr> Changed = new HashSet<IntPtr>();
+        private static readonly List<VehicleAI> Vehicles = new List<VehicleAI>();
 
         /// <summary>
-        /// An enemy that has just appeared reports a state other than idle for its first moments (seen in a recording:
-        /// half a second of "Evade" on every new enemy). That is the game setting it up, not an alert, so its state only
-        /// counts once it has been around for two seconds.
+        /// Is this enemy's state worth reading yet? Every enemy is born reporting "Evade" (seen in two recordings: half
+        /// a second on a soldier, the whole mission on a gun truck's gunner, who has no legs to stand on and never
+        /// leaves it). So a state only counts once it has differed from the one the enemy was first seen in.
         /// </summary>
-        internal static bool Settled(BrainAI b, float now)
+        internal static bool StateCounts(BrainAI b, out BrainAI.States state)
         {
-            if (!FirstSeen.TryGetValue(b.Pointer, out float since)) { FirstSeen[b.Pointer] = now; return false; }
-            return now - since >= 2f;
+            state = b.CurrentState;
+            IntPtr key = b.Pointer;
+            if (Changed.Contains(key)) return true;
+            if (!BornAs.TryGetValue(key, out BrainAI.States first)) { BornAs[key] = state; return false; }
+            if (state == first) return false;
+            Changed.Add(key);
+            return true;
         }
 
-        /// <summary>Has any enemy noticed the players? Once true it stays true.</summary>
+        /// <summary>Has any enemy noticed the players? Once true it stays true. A gun truck counts once it has a target.</summary>
         private static bool Alerted(GameManager gm, float now)
         {
             if (_alerted) return true;
@@ -467,8 +475,10 @@ namespace MissionLab
             for (int i = 0; ai != null && i < ai.Count; i++)
             {
                 BrainAI b = ai[i];
-                try { if (b != null && Settled(b, now) && b.CurrentState != BrainAI.States.Idle) yes = true; } catch { }
+                try { if (b != null && StateCounts(b, out BrainAI.States state) && state != BrainAI.States.Idle) yes = true; } catch { }
             }
+            foreach (VehicleAI v in Vehicles)
+                try { if (v != null && v.CurrentTarget != null) yes = true; } catch { }
             return _alerted = yes;
         }
 
