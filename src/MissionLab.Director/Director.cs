@@ -496,18 +496,50 @@ namespace MissionLab
         internal static bool VehiclesAsked;
 
         /// <summary>The game's gun truck, from this map's own list or else from the list of everything the game can spawn.</summary>
-        internal static GameObject VehiclePrefab(RaidManager raid, out string from)
+        internal static GameObject VehiclePrefab(RaidManager raid, string wanted, out string from)
         {
-            from = "this map's own list";
-            var own = raid.staticVehicleAI;
-            for (int i = 0; own != null && i < own.Length; i++) if (own[i] != null) return own[i];
+            List<GameObject> all = VehiclePrefabs(raid);
             from = "the game's spawn list";
-            Mirror.NetworkManager net = Mirror.NetworkManager.singleton;
-            var all = net == null ? null : net.spawnPrefabs;
-            for (int i = 0; all != null && i < all.Count; i++)
-                if (all[i] != null && all[i].GetComponentInChildren<VehicleAI>(true) != null) return all[i];
+            if (!string.IsNullOrEmpty(wanted))
+            {
+                GameObject named = all.Find(p => string.Equals(p.name, wanted, StringComparison.OrdinalIgnoreCase));
+                if (named != null) return named;
+                DirectorPlugin.L.LogWarning("gun trucks: the game has no vehicle called '" + wanted + "'; the usual one is used");
+            }
+            var own = raid.staticVehicleAI;
+            for (int i = 0; own != null && i < own.Length; i++) if (own[i] != null) { from = "this map's own list"; return own[i]; }
+            // Elsewhere the pick-up with the machine gun, not whatever armour happens to be first in the list.
+            foreach (string hint in new[] { "technical", "hilux", "pickup", "truck" })
+            {
+                GameObject light = all.Find(p => p.name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (light != null) return light;
+            }
+            if (all.Count > 0) return all[0];
             from = null;
             return null;
+        }
+
+        private static List<GameObject> _vehiclePrefabs;
+        /// <summary>Every armed vehicle the game can spawn: this map's own first, then the rest of the game's spawn list.</summary>
+        internal static List<GameObject> VehiclePrefabs(RaidManager raid)
+        {
+            if (_vehiclePrefabs != null && _vehiclePrefabs.TrueForAll(p => p != null)) return _vehiclePrefabs;
+            var list = new List<GameObject>();
+            var own = raid == null ? null : raid.staticVehicleAI;
+            for (int i = 0; own != null && i < own.Length; i++) if (own[i] != null && !list.Contains(own[i])) list.Add(own[i]);
+            try
+            {
+                Mirror.NetworkManager net = Mirror.NetworkManager.singleton;
+                var all = net == null ? null : net.spawnPrefabs;
+                for (int i = 0; all != null && i < all.Count; i++)
+                    if (all[i] != null && all[i].GetComponentInChildren<VehicleAI>(true) != null && !list.Exists(p => p.name == all[i].name)) list.Add(all[i]);
+            }
+            catch { }
+            _vehiclePrefabs = list;
+            var names = new List<string>();
+            foreach (GameObject p in list) names.Add(p.name);
+            DirectorPlugin.L.LogInfo("gun trucks the game offers: " + (names.Count > 0 ? string.Join(", ", names) : "none"));
+            return list;
         }
 
         /// <summary>
@@ -516,7 +548,8 @@ namespace MissionLab
         /// </summary>
         private static string PlaceVehicles(RaidManager raid, List<SpawnPlan> trucks)
         {
-            GameObject prefab = VehiclePrefab(raid, out string from);
+            SpawnPlan named = trucks.Find(t => !string.IsNullOrEmpty(t.Type));        // one kind of vehicle per mission: the first that is named
+            GameObject prefab = VehiclePrefab(raid, named != null ? named.Type : null, out string from);
             if (prefab == null) return "this build of the game offers no gun truck to place";
             var points = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject>(trucks.Count);
             for (int i = 0; i < trucks.Count; i++)

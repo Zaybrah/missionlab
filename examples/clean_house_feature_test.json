@@ -5,7 +5,7 @@
   "navFile": "suburbv2.bytes",
   "seed": 0,
   "notes": [
-    "A small scenario that uses every feature once, for trying them out alone with the browser page open."
+    "A small scenario that uses every feature once, for trying them out alone with the browser page open. The suicide bomber only comes when you press Fire now on trigger 5."
   ],
   "triggers": [
     {
@@ -48,6 +48,13 @@
           "locked": true
         }
       ]
+    },
+    {
+      "id": 5,
+      "name": "Bomber: fire by hand",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true
     }
   ],
   "objectives": [],
@@ -73,7 +80,7 @@
   "spawns": [
     {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
     {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 1, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "BOT V2 Insurgent Afghan 1 Suicide Bomber Variant", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "BOT V2 Insurgent Afghan 1 Suicide Bomber Variant", "trigger": 5, "hvt": false, "patrol": []},
     {"group": 2, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": []},
     {"group": 2, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []},
     {"group": 2, "role": "Wander", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 3, "hvt": false, "patrol": []},

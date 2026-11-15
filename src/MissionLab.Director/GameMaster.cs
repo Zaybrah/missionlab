@@ -239,6 +239,7 @@ namespace MissionLab
             if (at < 0) return "'" + name + "' is not an insertion of this map (" + string.Join(", ", names) + "); players keep their own choice";
             ForcedInfil = at;
             DirectorPlugin.PatchInsertion();
+            ApplyForcedInfil("when the mission was set up");
             try
             {
                 InfilSelectorDisplayer ui = InfilSelectorDisplayer.instance;
@@ -246,6 +247,49 @@ namespace MissionLab
             }
             catch { }
             return "every player gets '" + names[at] + "' (number " + at + " of " + names.Count + ")";
+        }
+
+        /// <summary>
+        /// Players choose their insertion in the lobby and bring the choice with them. This writes the scenario's
+        /// over it, through the game's own synced value, so every player's game agrees.
+        /// </summary>
+        internal static void ApplyForcedInfil(string when)
+        {
+            if (ForcedInfil < 0) return;
+            var players = PlayerMaster.AllPlayerMasters;
+            int moved = 0, all = 0;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerMaster pm = players[i];
+                if (pm == null) continue;
+                all++;
+                try { if (pm.CurrentInfilIndex != ForcedInfil) { pm.NetworkCurrentInfilIndex = ForcedInfil; moved++; } } catch { }
+            }
+            DirectorPlugin.L.LogInfo("insertion: " + moved + " of " + all + " player(s) switched to number " + ForcedInfil + " " + when);
+        }
+
+        /// <summary>Which insertion a spot belongs to, for the log.</summary>
+        private static string InsertionAt(Vector3 p)
+        {
+            string best = "no insertion"; float near = 15f * 15f;
+            try
+            {
+                InfiltrationManager im = InfiltrationManager.instance;
+                var methods = im == null ? null : im.infilMethods;
+                for (int i = 0; methods != null && i < methods.Length; i++)
+                {
+                    GameObject go = methods[i] == null ? null : methods[i].infilObject;
+                    if (go == null) continue;
+                    Transform t = go.transform;
+                    for (int k = 0; k < t.childCount; k++)
+                    {
+                        float sq = (t.GetChild(k).position - p).sqrMagnitude;
+                        if (sq < near) { near = sq; best = "'" + methods[i].infilName + "'"; }
+                    }
+                }
+            }
+            catch { }
+            return best;
         }
 
         private static bool ExtractionOpen(RaidManager raid)
@@ -798,7 +842,19 @@ namespace MissionLab
                 catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be checked: " + e.Message); }
                 try { string w = ApplyWeather(); if (w != null) DirectorPlugin.L.LogInfo("weather: " + w); }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); }
-                try { DirectorPlugin.L.LogInfo("insertions of this map: " + string.Join(", ", Insertions()) + "; extraction " + (ExtractionOpen(raid) ? "open" : "shut") + " at the start"); } catch { }
+                try
+                {
+                    var where = new List<string>();
+                    var ps = PlayerMaster.AllPlayerMasters;
+                    for (int i = 0; ps != null && i < ps.Count; i++)
+                    {
+                        PlayerNetworking body = ps[i] == null ? null : ps[i].PlayerSpawnedObject;
+                        if (body != null) where.Add(ps[i].thisPlayerName + " at " + InsertionAt(body.transform.position) + " (chose number " + ps[i].CurrentInfilIndex + ")");
+                    }
+                    DirectorPlugin.L.LogInfo("insertions of this map: " + string.Join(", ", Insertions()) + "; players: " + (where.Count > 0 ? string.Join(", ", where) : "none placed yet") +
+                                             "; extraction " + (ExtractionOpen(raid) ? "open" : "shut") + " at the start");
+                }
+                catch { }
                 _vehicleCheckAt = now + 2f;
                 if (_insertion != "" && ForcedInfil < 0)
                 {
@@ -1415,6 +1471,8 @@ namespace MissionLab
             sb.Append("],\"types\":[");
             var types = Types(gm);
             for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
+            sb.Append("],\"vehicleTypes\":[");
+            try { List<GameObject> trucks = Director.VehiclePrefabs(raid); for (int i = 0; i < trucks.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(trucks[i].name)); } catch { }
             // The page takes the marker list over only when this changes.
             sb.Append("],\"rev\":").Append(Q(rev.ToString().GetHashCode().ToString("x") + "-" + _markers.Count)).Append('}');
             return sb.ToString();

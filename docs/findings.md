@@ -111,6 +111,19 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
 - `VectorTimeOfDay.singleton` is null on Suburb, Mexico Depot and Georgia: no weather there.
 - Clean House has 10 doors (7 interior, 2 exterior, a fence gate). `StartLockedChance` counts
   to 100 (seen: 0, 50, 90). Setting a door live works (`Server_SetDoorLocked`, `AiCantOpen`).
+- First run of 0.15.0 (solo, Clean House, feature test scenario):
+  - A door set in the `OnStartServer` hook holds: the game rolls its own doors after the hook
+    (1 locked at the hook, 3 a few seconds in) and leaves ours as set.
+  - The alert trigger fired 10 s after the first enemy noticed the player, as planned.
+  - The suicide bomber works off its own map. It noticed the player at about 50 m, ran to
+    them and blew up 16 s after it appeared.
+  - `SpawnStaticVehicleAI()` places a vehicle on a map that has none, once our spots and a prefab
+    are set and the method is called. The first armed vehicle in `NetworkManager.spawnPrefabs`
+    is a "BTR 82A", so the pick-up has to be asked for by name.
+  - The insertion is chosen in the lobby (`OperationBoardUI`, `MissionLaptopNetworkState.ActiveInfilMask`)
+    and carried into the mission in `PlayerMaster.CurrentInfilIndex`; `CMD_RequestInfilTarget` is not
+    sent during the mission, so hooking it changes nothing. 0.15.1 writes the index itself.
+  - The recording was written: 61 moments, 5 events.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

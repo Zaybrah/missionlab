@@ -299,7 +299,7 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="hvt" type="checkbox"><span>This is the target person (in missions that have one). Takes effect at the next mission start.</span></label>
     <label class="check"><input id="vehicle" type="checkbox"><span>This is a gun truck, not a person. It is parked here, facing this way. Takes effect at the next mission start.</span></label>
     <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
-    <div class="field" id="typeRow" hidden><label for="type">Enemy type</label><select id="type"></select></div>
+    <div class="field" id="typeRow" hidden><label for="type" id="typeLabel">Enemy type</label><select id="type"></select></div>
     <div id="pos"></div>
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
@@ -794,6 +794,8 @@ function loadRecon(obj, name) {
   if (ways.length && !live.on) state.insertions = ways;
   const kinds = ((obj.gameManager || {}).allAITypes || []).filter(t => typeof t === 'string' && t);
   if (kinds.length && !live.on) live.types = kinds;
+  const trucks = ((obj.raid || {}).staticVehicleAI || []).filter(t => typeof t === 'string' && t);
+  if (trucks.length && !live.on) live.vehicleTypes = trucks;
   return pts.length + ' insertion points, ' + (doors.length ? doors.length + ' doors' : 'no door list') + ' and ' + state.authored.length + ' of the game\'s own spawn points loaded from ' + name + (obj.scene ? ' (' + obj.scene + ').' : '.');
 }
 async function openFiles(files) {
@@ -1622,10 +1624,17 @@ function syncSide() {
       sel.value = state.zones.some(z => z.id === e.trigger) ? e.trigger : 0;
     }
   }
-  const tr = $('typeRow'); tr.hidden = !(e && live.types.length);
-  if (e && live.types.length) {
-    const sel = $('type'), want = ['', ...live.types];
-    if (sel.options.length !== want.length) { sel.textContent = ''; want.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t ? t.replace(/^BOT V2 ?/, '').replace(/ Variant$/, '') || 'Standard' : 'Random'; sel.appendChild(o); }); }
+  // An enemy takes one of the game's enemy types; a gun truck one of its vehicles.
+  const kinds = e ? (e.vehicle ? live.vehicleTypes : live.types).slice() : [];
+  if (e && e.type && !kinds.includes(e.type)) kinds.push(e.type);
+  const tr = $('typeRow'); tr.hidden = !kinds.length;
+  if (kinds.length) {
+    const sel = $('type'), want = ['', ...kinds], key = (e.vehicle ? 'v|' : 'e|') + want.join('|');
+    $('typeLabel').textContent = e.vehicle ? 'Vehicle' : 'Enemy type';
+    if (sel.dataset.key !== key && document.activeElement !== sel) {
+      sel.dataset.key = key; sel.textContent = '';
+      want.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t ? t.replace(/^BOT V2 ?/, '').replace(/ Variant$/, '') || 'Standard' : e.vehicle ? 'The usual gun truck' : 'Random'; sel.appendChild(o); });
+    }
     if (document.activeElement !== sel) sel.value = e.type || '';
   }
   const usable = state.enemies.length > 0 && !state.example;
@@ -1782,7 +1791,7 @@ $('copy').addEventListener('click', async () => {
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
 // players and enemies where they are right now. Every change you make here is carried out in the game.
 const PAGE_STAMP = '__ML_PAGE_STAMP__';        // filled in by the game when it serves this page
-const live = { on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0 };
+const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0 };
 const api = (path, body) => fetch(path, body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-MissionLab': '1' }, body: JSON.stringify(body) }).then(r => r.json());
 function startLive() {
   live.on = true; document.body.classList.add('live');
@@ -1919,7 +1928,7 @@ async function applyLive(s) {
     const r = await fetch('/api/geo', { cache: 'no-store' });
     if (r.ok) { loadGeo(await r.arrayBuffer(), live.nav); view3d.dropMap(); }
   }
-  live.players = s.players || []; live.enemies = s.enemies || []; live.types = s.types || [];
+  live.players = s.players || []; live.enemies = s.enemies || []; live.types = s.types || []; live.vehicleTypes = Array.isArray(s.vehicleTypes) ? s.vehicleTypes : [];
   const mine = s.markers || [];
   if (s.rev !== live.rev && !live.sending && !live.pending && !drag) {
     live.rev = s.rev;

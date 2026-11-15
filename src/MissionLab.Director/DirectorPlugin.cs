@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.15.0";
+        public const string Version = "0.15.1";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -60,8 +60,12 @@ namespace MissionLab
         {
             if (_insertionHooked) return;
             _insertionHooked = true;
-            try { new Harmony(Id + ".insertion").PatchAll(typeof(InsertionPatch)); L.LogInfo("the insertion request is hooked: every player gets the scenario's insertion"); }
-            catch (Exception e) { L.LogWarning("could not hook the insertion request (" + e.Message + "); players keep their own choice of insertion"); }
+            // Players pick their insertion in the lobby, so the choice is already made when the mission loads. It is set
+            // again when the mission is set up and once more just before the game places the players.
+            try { new Harmony(Id + ".insertion.start").PatchAll(typeof(InsertionStartPatch)); L.LogInfo("the start of the insertion is hooked: every player gets the scenario's insertion"); }
+            catch (Exception e) { L.LogWarning("could not hook the start of the insertion (" + e.Message + "); the insertion is set when the mission loads only"); }
+            try { new Harmony(Id + ".insertion").PatchAll(typeof(InsertionPatch)); }
+            catch (Exception e) { L.LogWarning("could not hook the insertion request (" + e.Message + ")"); }
         }
         internal static bool Hooked;
         internal static string BaseDir;
@@ -148,6 +152,13 @@ namespace MissionLab
             GameMaster.ExtractionAsked = true;
             return false;
         }
+    }
+
+    /// <summary>Just before the game puts the players on their insertion, everyone is given the scenario's.</summary>
+    [HarmonyPatch(typeof(InfiltrationManager), nameof(InfiltrationManager.Server_StartInfil))]
+    internal static class InsertionStartPatch
+    {
+        private static void Prefix() { try { GameMaster.ApplyForcedInfil("just before the insertion starts"); } catch { } }
     }
 
     /// <summary>Whatever insertion a player asks for, the host hands out the scenario's.</summary>
