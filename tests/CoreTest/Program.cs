@@ -110,6 +110,38 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     ok = ok && MissionPlan.FromJson(dp.ToJson()).Doors.Count == 2;
     if (!ok) { Console.WriteLine("  FAIL: doors do not survive save and load: " + text); failures++; }
 }
+// Triggers: every kind survives save and load, an old file's zone is still a zone, and nonsense is dropped.
+{
+    string src = "{\"spawns\":[{\"pos\":[0,0,0],\"trigger\":2}],\"triggers\":[" +
+        "{\"id\":1,\"pos\":[1,2,3],\"radius\":5}," +
+        "{\"id\":2,\"when\":\"alert\",\"delay\":20,\"name\":\"QRF\"}," +
+        "{\"id\":3,\"when\":\"intel\",\"item\":\"Cell Phone\",\"doors\":[{\"pos\":[4,5,6],\"locked\":true},{\"pos\":[7,8,9]}]}," +
+        "{\"id\":4,\"when\":\"after\",\"after\":3,\"delay\":99999}," +
+        "{\"id\":5,\"when\":\"time\",\"delay\":600,\"facePlayer\":false}," +
+        "{\"id\":6,\"when\":\"zone\"}," +
+        "{\"id\":7,\"when\":\"nonsense\",\"pos\":[0,0,0]}]}";
+    var tp = MissionPlan.FromJson(src);
+    var t = tp.Triggers;
+    bool ok = t.Count == 6 && t[0].When == TriggerPlan.OnZone && t[0].Radius == 5 && t[1].When == TriggerPlan.OnAlert && t[1].Delay == 20 && t[1].Name == "QRF"
+        && t[2].When == TriggerPlan.OnIntel && t[2].Item == "Cell Phone" && t[2].Doors.Count == 1 && t[2].Doors[0].Locked == true
+        && t[3].When == TriggerPlan.OnAfter && t[3].After == 3 && t[3].Delay == 7200 && t[4].When == TriggerPlan.OnTime && t[4].Delay == 600 && !t[4].FacePlayer
+        && t[5].Id == 7 && t[5].When == TriggerPlan.OnZone && tp.Spawns.Count == 1 && tp.Spawns[0].Trigger == 2;
+    string text = MissionPlan.TriggersJson(t);
+    var back = MissionPlan.FromJson("{\"spawns\":[],\"triggers\":" + text + "}");
+    ok = ok && MissionPlan.TriggersJson(back.Triggers) == text && MissionPlan.TriggersJson(MissionPlan.FromJson(tp.ToJson()).Triggers) == text;
+    if (!ok) { Console.WriteLine("  FAIL: triggers do not survive save and load: " + text); failures++; }
+}
+// Mission-wide settings and the gun truck flag survive save and load; left out, they stay left out.
+{
+    var sp = MissionPlan.FromJson("{\"extraction\":{\"after\":3},\"insertion\":\"Alpha 2\",\"weather\":{\"hour\":5.5,\"rain\":true},\"triggers\":[{\"id\":3,\"when\":\"time\",\"delay\":60,\"extraction\":\"open\"}],\"spawns\":[{\"pos\":[1,2,3],\"vehicle\":true},{\"pos\":[4,5,6]}]}");
+    bool ok = sp.ExtractionAfter == 3 && sp.Insertion == "Alpha 2" && sp.Weather.Hour == 5.5f && sp.Weather.Rain == true && sp.Weather.Sandstorm == null
+        && sp.Triggers.Count == 1 && sp.Triggers[0].OpensExtraction && sp.Spawns.Count == 2 && sp.Spawns[0].Vehicle && !sp.Spawns[1].Vehicle;
+    var again = MissionPlan.FromJson(sp.ToJson());
+    ok = ok && again.ToJson() == sp.ToJson() && again.ExtractionAfter == 3 && again.Weather.Rain == true && again.Spawns[0].Vehicle && again.Triggers[0].OpensExtraction;
+    var plain = MissionPlan.FromJson("{\"spawns\":[{\"pos\":[1,2,3]}]}");
+    ok = ok && MissionPlan.SettingsJson(plain) == "" && !plain.ToJson().Contains("vehicle") && !plain.ToJson().Contains("weather");
+    if (!ok) { Console.WriteLine("  FAIL: mission settings do not survive save and load: " + sp.ToJson()); failures++; }
+}
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {
@@ -126,6 +158,22 @@ foreach (var seed in seeds)
     string body = json.Substring(json.IndexOf("\"spawns\""));
     if (!seenPlans.Add(body)) { Console.WriteLine("  FAIL: same layout as an earlier seed"); failures++; }
     File.WriteAllText(Path.Combine(outDir, $"plan_seed{seed}.json"), json);
+
+    // The extras for random layouts: the same roll twice gives the same result, most enemies are still there at the start,
+    // and nobody waits for a trigger that does not exist.
+    {
+        var a = Generator.Generate(In()); var b = Generator.Generate(In());
+        var na = new List<string>(); var nb = new List<string>();
+        Extras.Waves(a, new Rng(seed ^ 0xE87A5), infils, na); Extras.Waves(b, new Rng(seed ^ 0xE87A5), infils, nb);
+        int held = a.Spawns.Count(s => s.Trigger != 0);
+        bool ok = a.ToJson() == b.ToJson() && held <= Math.Max(1, a.Spawns.Count / 3) && a.Spawns.Count - held >= 3
+            && a.Spawns.All(s => s.Trigger == 0 || a.Triggers.Exists(t => t.Id == s.Trigger))
+            && a.Triggers.Select(t => t.Id).Distinct().Count() == a.Triggers.Count
+            && a.Triggers.All(t => t.When != TriggerPlan.OnZone || nav.TriAt(t.Pos.X, t.Pos.Z, t.Pos.Y, 2f, out _) >= 0 || a.Spawns.Exists(s => V3.DistXZ(s.Pos, t.Pos) < 30f))
+            && MissionPlan.FromJson(a.ToJson()).Triggers.Count == a.Triggers.Count;
+        if (!ok) { Console.WriteLine("  FAIL: random extras are off for seed " + seed + ": " + string.Join("; ", na)); failures++; }
+        else if (seed <= 2) Console.WriteLine("  extras, seed " + seed + ": " + (na.Count > 0 ? string.Join("; ", na) : "none") + " (" + held + " of " + a.Spawns.Count + " held back)");
+    }
 
     var seedTris = infils.Select(p => nav.TriAt(p.X, p.Z, p.Y, 2.5f, out _)).Concat(authored.Select(p => nav.TriAt(p.X, p.Z, p.Y, 1.5f, out _))).Where(t => t >= 0).ToList();
     var mask = seedTris.Count > 0 ? nav.Reachable(seedTris) : Generator.LargestComponent(nav);

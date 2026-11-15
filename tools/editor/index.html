@@ -94,9 +94,34 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #layerBox label { display: flex; gap: 8px; align-items: center; }
 #layerBox .n { margin-left: auto; font: 11px var(--mono); color: var(--ink-2); padding-left: 12px; }
 #zoneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#zoneList li { display: grid; grid-template-columns: 52px 1fr 54px auto; gap: 6px; align-items: center; font-size: 12.5px; }
-#zoneList li label { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
-#zoneList input { padding: 3px 6px; }
+#zoneList li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 5px 6px; align-items: center; font-size: 12.5px; padding: 8px 0; border-top: 1px solid var(--line); }
+#zoneList li > b { color: var(--friend); white-space: nowrap; }
+#zoneList li label, #zoneList li .what, #zoneList li .sum { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
+#zoneList input, #zoneList select { padding: 3px 6px; }
+#zoneList .what input[type="number"] { width: 64px; }
+#zoneList .what select { width: auto; max-width: 160px; }
+#zoneList input[type="checkbox"] { width: auto; flex: none; margin-top: 2px; }
+#zoneList li label { flex-wrap: nowrap; align-items: flex-start; }
+#zoneList .grp { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+#trigAdd select { width: auto; flex: 1; }
+#doorTrigs { display: flex; flex-direction: column; gap: 6px; }
+#missionBox { display: flex; flex-direction: column; gap: 8px; }
+/* The panel shows one part at a time, so it never grows into one long column. */
+#tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 10px 18px; position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
+#tabs button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 5px 4px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+#tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+#tabs button .n { opacity: .7; font-variant-numeric: tabular-nums; margin-left: 3px; }
+#side:not([data-show="map"]):not([data-show="all"]) section[data-tab="map"] { display: none !important; }
+#side:not([data-show="enemies"]):not([data-show="all"]) section[data-tab="enemies"] { display: none !important; }
+#side:not([data-show="triggers"]):not([data-show="all"]) section[data-tab="triggers"] { display: none !important; }
+#side:not([data-show="doors"]):not([data-show="all"]) section[data-tab="doors"] { display: none !important; }
+#side:not([data-show="mission"]):not([data-show="all"]) section[data-tab="mission"] { display: none !important; }
+#side:not([data-show="replay"]):not([data-show="all"]) section[data-tab="replay"] { display: none !important; }
+#replayBox input[type="range"] { width: 100%; padding: 0; }
+#replayBox select, #replayPick select { width: auto; flex: 1; min-width: 0; }
+#rpEvents { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
+#rpEvents button { all: unset; cursor: pointer; display: block; width: 100%; box-sizing: border-box; padding: 3px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+#rpEvents button:hover, #rpEvents button:focus-visible { background: var(--line); }
 #list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 176px; overflow-y: auto; }
 #list li button { width: 100%; display: grid; grid-template-columns: 30px 62px 1fr auto; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 6px; cursor: pointer; font-size: 12.5px; }
 #list li button:hover { border-color: var(--line); }
@@ -145,14 +170,22 @@ body.dragging #drop { display: flex; }
 </style>
 </head>
 <body>
-<aside id="side">
+<aside id="side" data-show="map">
   <header>
     <h1>MissionLab Scenario Editor</h1>
     <p>Place enemies on a map and save the layout as a scenario file. Unofficial tool for the game OPERATOR.</p>
   </header>
+  <nav id="tabs" role="tablist" aria-label="Parts of the editor">
+    <button type="button" role="tab" data-tab="map" aria-selected="true">Map</button>
+    <button type="button" role="tab" data-tab="enemies">Enemies<span class="n" id="tabEnemies"></span></button>
+    <button type="button" role="tab" data-tab="triggers">Triggers<span class="n" id="tabTriggers"></span></button>
+    <button type="button" role="tab" data-tab="doors">Doors<span class="n" id="tabDoors"></span></button>
+    <button type="button" role="tab" data-tab="mission">Mission</button>
+    <button type="button" role="tab" data-tab="replay" id="tabReplay" hidden>Replay</button>
+  </nav>
 
-  <section aria-labelledby="h-map">
-    <h2 id="h-map">1. Map</h2>
+  <section aria-labelledby="h-map" data-tab="map">
+    <h2 id="h-map">Map</h2>
     <div id="liveBox">
       <span class="chip info" id="liveChip">Live</span>
       <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
@@ -162,6 +195,10 @@ body.dragging #drop { display: flex; }
         <button class="btn" id="liveSpawn" type="button">Spawn waiting</button>
         <button class="btn danger" id="liveClear" type="button">Remove all live enemies</button>
         <button class="btn" id="liveExport" type="button" hidden>Make the 3D map</button>
+      </div>
+      <div class="row" id="replayPick" hidden>
+        <select id="rpList" aria-label="Recorded missions"></select>
+        <button class="btn" id="rpOpen" type="button">Open replay</button>
       </div>
     </div>
     <div class="row offline">
@@ -181,29 +218,70 @@ body.dragging #drop { display: flex; }
     </details>
   </section>
 
-  <section aria-labelledby="h-enemies">
-    <h2 id="h-enemies">2. Enemies <span id="count"></span></h2>
+  <section aria-labelledby="h-replay" id="replayBox" data-tab="replay" hidden>
+    <h2 id="h-replay">Replay</h2>
+    <p class="hint" id="rpName"></p>
+    <div class="row">
+      <button class="btn primary" id="rpPlay" type="button">Play</button>
+      <select id="rpSpeed" aria-label="Playback speed"><option value="1">1× speed</option><option value="4" selected>4× speed</option><option value="16">16× speed</option><option value="60">60× speed</option></select>
+      <button class="btn" id="rpClose" type="button">Close</button>
+    </div>
+    <input id="rpTime" type="range" min="0" max="1" step="0.5" value="0" aria-label="Time in the mission">
+    <p class="hint" id="rpClock" role="status"></p>
+    <ul id="rpEvents"></ul>
+    <p class="hint">Blue is a player, red an enemy; a filled red dot has noticed the players. Lines show the last half minute. Click an event to jump to it. The replay is drawn on the 2D map.</p>
+  </section>
+
+  <section aria-labelledby="h-enemies" data-tab="enemies">
+    <h2 id="h-enemies">Enemies <span id="count"></span></h2>
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
+  </section>
+  <section data-tab="mission" aria-label="Intel items" id="intelSection" hidden>
     <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
     <div id="intelBox" hidden>
       <h2>Intel items</h2>
       <ul id="intelList"></ul>
     </div>
+  </section>
+  <section data-tab="doors" aria-label="Doors">
+    <p class="hint" id="noDoors">Doors show up here once the editor knows where they are: connect to the game during a mission, or open a recon file written after one mission on the map.</p>
     <div id="doorsBox" hidden>
       <h2>Doors <span id="doorCount"></span></h2>
       <p class="hint">Thick lines on the map are doors. Choose Select and click one to lock or unlock it. The game locks some doors by chance, different ones each mission; a door you set is always as you set it.</p>
       <ul id="doorList"></ul>
     </div>
-    <div id="zoneBox" hidden>
-      <h2>Zones</h2>
+  </section>
+  <section data-tab="triggers" aria-label="Triggers">
+    <div id="zoneBox">
+      <h2>Triggers</h2>
       <ul id="zoneList"></ul>
-      <p class="hint">An enemy bound to a zone is not on the map at the start. It appears when the first player walks into the zone.</p>
+      <div class="row" id="trigAdd">
+        <select id="trigKind" aria-label="Kind of trigger to add">
+          <option value="alert">When the enemy is alerted</option>
+          <option value="intel">When intel is picked up</option>
+          <option value="time">After a set time</option>
+          <option value="after">After another trigger</option>
+        </select>
+        <button class="btn" id="trigNew" type="button">Add trigger</button>
+      </div>
+  </section>
+  <section data-tab="mission" aria-label="Mission settings">
+    <div id="missionBox">
+      <h2>Mission</h2>
+      <div class="field"><label for="extractAfter">Extraction</label><select id="extractAfter"></select></div>
+      <div class="field"><label for="insertion">Insertion</label><select id="insertion"></select></div>
+      <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
+      <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
+      <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
+      <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
+    </div>
+      <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
     </div>
   </section>
 
-  <section aria-labelledby="h-sel" id="panel" hidden>
+  <section aria-labelledby="h-sel" id="panel" data-tab="enemies" hidden>
     <h2 id="h-sel">Selected enemy <span id="selNo"></span></h2>
     <div class="seg" role="group" aria-label="Role">
       <button type="button" data-role="Guard" title="Stays where it is placed">Guard</button>
@@ -219,6 +297,7 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="fixed" type="checkbox"><span>Fixed sentry: never leaves this spot</span></label>
     <label class="check"><input id="prone" type="checkbox"><span>Lies prone (lying down)</span></label>
     <label class="check"><input id="hvt" type="checkbox"><span>This is the target person (in missions that have one). Takes effect at the next mission start.</span></label>
+    <label class="check"><input id="vehicle" type="checkbox"><span>This is a gun truck, not a person. It is parked here, facing this way. Takes effect at the next mission start.</span></label>
     <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
     <div class="field" id="typeRow" hidden><label for="type">Enemy type</label><select id="type"></select></div>
     <div id="pos"></div>
@@ -228,7 +307,7 @@ body.dragging #drop { display: flex; }
     </div>
   </section>
 
-  <section aria-labelledby="h-door" id="doorPanel" hidden>
+  <section aria-labelledby="h-door" id="doorPanel" data-tab="doors" hidden>
     <h2 id="h-door">Selected door</h2>
     <p class="hint" id="doorNow"></p>
     <div class="field"><label for="doorLock">Lock</label><select id="doorLock"><option value="">Leave to the game</option><option value="1">Locked</option><option value="0">Unlocked</option></select></div>
@@ -236,10 +315,11 @@ body.dragging #drop { display: flex; }
     <div class="row">
       <button class="btn" id="doorClear" type="button">Leave both to the game</button>
     </div>
+    <div id="doorTrigs"></div>
   </section>
 
   <section aria-labelledby="h-save" id="saveBox">
-    <h2 id="h-save">3. Save</h2>
+    <h2 id="h-save">Save</h2>
     <div class="field"><label for="title">File name</label><input id="title" type="text" maxlength="60" spellcheck="false"></div>
     <div class="row">
       <button class="btn primary" id="save" type="button" hidden>Save file</button>
@@ -307,11 +387,16 @@ const state = {
   lastRole: 'Guard',
   lastGroup: 0,
   geo: null,            // solid geometry of the map exported from the game: { positions, indices, name }
-  zones: [],            // { id, pos:[x,y,z], radius, name }: enemies bound to a zone appear when a player walks into it
+  zones: [],            // triggers: { id, name, when: zone|alert|intel|time|after, pos, radius, delay, item, after, facePlayer, doors:[{name,pos,locked}] }
   fired: [],            // live: ids of the zones players have already reached
   objectives: [],       // the mission's own intel items: { name, label, pos:[x,y,z], yaw, obtained }
   doors: [],            // the map's doors: { name, pos:[hinge], mid:[x,y,z], locked, enemiesCanOpen (true, false, or null = left to the game), known }
   door: -1,             // the selected door
+  extractionAfter: 0,   // the extraction stays shut until this trigger has fired (0: the mission's own rule alone)
+  insertion: '',        // the insertion every player gets ('': each player's own choice)
+  insertions: [],       // the map's insertions by name, from the game or a recon file
+  weather: { hour: null, rain: null, sandstorm: null },     // null: left to the game
+  weatherNow: null,     // live: what the map has and shows
   mode: '2d',
 };
 const undoStack = [];
@@ -496,7 +581,7 @@ function facePlayers(e) {
   return e;
 }
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false,
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false,
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -514,6 +599,7 @@ function scenarioObject() {
     triggers: zonesOut(),
     objectives: objectivesOut(true),
     doors: doorsOut(),
+    ...settingsOut(),
     spawns: state.enemies.map(spawnOf),
   };
 }
@@ -522,7 +608,7 @@ function spawnOf(e) {
     group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
     detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
-    prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt,
+    prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt, ...(e.vehicle ? { vehicle: true } : {}),
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
@@ -565,15 +651,53 @@ function setDoorWishes(wishes) {
   applyDoorWishes(wishes); state.door = -1;
 }
 function setKnownDoors(list) { const wishes = doorsOut(); state.doors = list; applyDoorWishes(wishes); state.door = -1; }
-const zonesOut = () => state.zones.map(z => ({ id: z.id, name: z.name || '', pos: r3(z.pos), radius: r2(z.radius), facePlayer: z.facePlayer !== false }));
-const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && isVec(z.pos) && z.id > 0).map(z => ({ id: z.id | 0, name: typeof z.name === 'string' ? z.name : '', pos: z.pos.slice(0, 3), radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false }));
+// Settings for the whole mission. Only what somebody set is written.
+function settingsOut() {
+  const o = {}, w = {};
+  if (state.extractionAfter && state.zones.some(z => z.id === state.extractionAfter)) o.extraction = { after: state.extractionAfter };
+  if (state.insertion) o.insertion = state.insertion;
+  if (state.weather.hour !== null) w.hour = r2(state.weather.hour);
+  if (state.weather.rain !== null) w.rain = state.weather.rain;
+  if (state.weather.sandstorm !== null) w.sandstorm = state.weather.sandstorm;
+  if (Object.keys(w).length) o.weather = w;
+  return o;
+}
+function settingsIn(root) {
+  const ex = root && root.extraction, w = (root && root.weather) || {};
+  state.extractionAfter = ex && typeof ex === 'object' ? Math.max(0, num(ex.after, 0) | 0) : 0;
+  state.insertion = root && typeof root.insertion === 'string' ? root.insertion : '';
+  state.weather = { hour: Number.isFinite(w.hour) ? Math.max(0, Math.min(24, w.hour)) : null, rain: tri(w.rain), sandstorm: tri(w.sandstorm) };
+}
+const WHENS = ['zone', 'alert', 'intel', 'time', 'after'];
+const zonesOut = () => state.zones.map(z => {
+  const o = { id: z.id, name: z.name || '', when: z.when || 'zone' };
+  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); }
+  if (o.when === 'intel') o.item = z.item || '';
+  if (o.when === 'after') o.after = z.after | 0;
+  if (z.delay > 0) o.delay = r2(z.delay);
+  o.facePlayer = z.facePlayer !== false;
+  const doors = (z.doors || []).filter(d => d.locked !== null).map(d => ({ name: d.name || '', pos: r3(d.pos), locked: d.locked }));
+  if (doors.length) o.doors = doors;
+  if (z.opensExtraction) o.extraction = 'open';
+  return o;
+});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false }, more || {});
+// What a trigger waits for, in a few words.
+const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
+const trigText = z => z.when === 'zone' ? 'When players reach zone ' + z.id : (z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
+const trigTag = id => { const z = state.zones.find(q => q.id === id); return (z && z.when !== 'zone' ? 'trigger ' : 'zone ') + id; };
+// A file from before there were other kinds has only zones; a zone needs a place, the other kinds do not.
+const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id > 0 && (isVec(z.pos) || (WHENS.includes(z.when) && z.when !== 'zone'))).map(z => newTrigger(z.id | 0, WHENS.includes(z.when) ? z.when : 'zone', {
+  name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
+  delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
+  doors: (Array.isArray(z.doors) ? z.doors : []).filter(d => d && isVec(d.pos) && tri(d.locked) !== null).map(d => ({ name: typeof d.name === 'string' ? d.name : '', pos: d.pos.slice(0, 3), locked: d.locked })) }));
 function enemyOf(s, i) {
   if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
   const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
   if (!role) throw new Error('Enemy ' + (i + 1) + ' has an unknown role "' + s.role + '".');
   return Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
     yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
-    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt,
+    prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt, vehicle: !!s.vehicle,
     detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
     wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
     patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -644,7 +768,7 @@ function loadScenario(obj, name) {
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
-  state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives); setDoorWishes(root.doors);
+  state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives); setDoorWishes(root.doors); settingsIn(root);
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
   // A generated mission names one scene (day or night). Matching by map file covers both.
@@ -666,6 +790,8 @@ function loadRecon(obj, name) {
   const doors = doorsIn(obj.doors);
   if (Array.isArray(obj.doors)) setKnownDoors(doors);
   // The game's enemy types, so one can be chosen without the game running (the suicide bomber, for one).
+  const ways = (((obj.infiltration || {}).infilMethods) || []).map(m => m && m.infilName).filter(n => typeof n === 'string' && n);
+  if (ways.length && !live.on) state.insertions = ways;
   const kinds = ((obj.gameManager || {}).allAITypes || []).filter(t => typeof t === 'string' && t);
   if (kinds.length && !live.on) live.types = kinds;
   return pts.length + ' insertion points, ' + (doors.length ? doors.length + ' doors' : 'no door list') + ' and ' + state.authored.length + ' of the game\'s own spawn points loaded from ' + name + (obj.scene ? ' (' + obj.scene + ').' : '.');
@@ -688,9 +814,14 @@ async function openFiles(files) {
         notes.push(f.name + ': ' + state.map.n.toLocaleString('en') + ' walkable triangles.');
       } else {
         const obj = JSON.parse(new TextDecoder().decode(buf));
-        if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)))) { notes.push(loadScenario(obj, f.name)); if (!state.map) fit(); }
+        if (obj && obj.schema === 'missionlab-replay/1') {
+          // A recording carries the plan it was played with; offline that is shown too, so zones and doors are on the map.
+          if (!live.on && obj.plan && Array.isArray(obj.plan.spawns) && obj.plan.spawns.length) { loadScenario(obj.plan, f.name); if (!state.map) fit(); }
+          notes.push(loadReplay(obj, f.name));
+        }
+        else if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)))) { notes.push(loadScenario(obj, f.name)); if (!state.map) fit(); }
         else if (obj && (obj.infiltration || obj.raid)) notes.push(loadRecon(obj, f.name));
-        else throw new Error('It is not a scenario, a mission record or a recon file.');
+        else throw new Error('It is not a scenario, a mission record, a replay or a recon file.');
       }
     } catch (err) { notes.push(f.name + ' could not be opened. ' + (err && err.message ? err.message : err)); }
   }
@@ -784,6 +915,7 @@ function draw() {
 
   // Zones: walk in here and the enemies bound to it appear.
   for (const z of state.zones) {
+    if (z.when !== 'zone') continue;
     const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id);
     ctx.beginPath(); ctx.arc(x, y, z.radius * v.scale, 0, Math.PI * 2);
     ctx.globalAlpha = done ? 0.04 : 0.1; ctx.fillStyle = css.friend; ctx.fill();
@@ -858,14 +990,18 @@ function draw() {
     const above = e.pos[1] > state.ceiling + 0.4;                            // stands on a floor that is hidden right now
     if (above) ctx.globalAlpha = 0.35;
     ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(yaw) * (r + 9), y - Math.cos(yaw) * (r + 9)); ctx.stroke();
-    shape(e.role, x, y, r); ctx.fillStyle = live.on && !e.live ? css.panel : css.enemy; ctx.fill();      // hollow: not in the game (yet)
+    if (e.vehicle) {                                   // a gun truck: a box as long as the truck, nose where it faces
+      const L = Math.max(10, 5.2 * v.scale), W = Math.max(5, 2 * v.scale);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(yaw); ctx.beginPath(); ctx.rect(-W / 2, -L / 2, W, L); ctx.restore();
+    } else shape(e.role, x, y, r);
+    ctx.fillStyle = live.on && !e.live ? css.panel : css.enemy; ctx.fill();      // hollow: not in the game (yet)
     if (live.on && !e.live) { ctx.lineWidth = 2; ctx.strokeStyle = css.enemy; ctx.stroke(); }
     ctx.lineWidth = 1.5; ctx.strokeStyle = bad ? css.warn : css.panel; if (bad) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
     if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
     if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
     ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     if (e.hvt) { ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = css.warn; ctx.stroke(); }
-    const tag = String(i + 1) + (e.hvt ? ' TARGET' : e.trigger ? ' → zone ' + e.trigger : '');
+    const tag = String(i + 1) + (e.vehicle ? ' TRUCK' : e.hvt ? ' TARGET' : e.trigger ? ' → ' + trigTag(e.trigger) : '');
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(tag, x + r + 6, y - r - 3); ctx.fillStyle = e.hvt ? css.warn : e.trigger ? css.friend : css.ink; ctx.fillText(tag, x + r + 6, y - r - 3);
     ctx.globalAlpha = 1;
   });
@@ -884,6 +1020,45 @@ function draw() {
       ctx.strokeStyle = css.friend; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(a) * 16, y - Math.cos(a) * 16); ctx.stroke();
       ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fillStyle = css.friend; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
       ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(p.name || 'Player', x + 10, y + 12); ctx.fillStyle = css.friend; ctx.fillText(p.name || 'Player', x + 10, y + 12);
+    }
+  }
+
+  // Replay: everybody where they were at this moment, and the way they came.
+  if (replay.data) {
+    const now = replayNow(), fr = replay.data.frames, at = replayFrame(replay.t).i, from = Math.max(0, at - 60);
+    const trail = (which, id, colour, width, alpha) => {
+      ctx.beginPath(); let going = false;
+      for (let n = from; n <= at; n++) {
+        const p = fr[n][which].find(q => q[0] === id);
+        if (!p) { going = false; continue; }
+        const [x, y] = toScreen(p[1], p[3]);
+        if (going) ctx.lineTo(x, y); else { ctx.moveTo(x, y); going = true; }
+      }
+      ctx.globalAlpha = alpha; ctx.lineWidth = width; ctx.strokeStyle = colour; ctx.stroke(); ctx.globalAlpha = 1;
+    };
+    for (const e of now.enemies) trail(2, e.id, css.enemy, 1.2, 0.35);
+    for (const p of now.players) trail(1, p.id, css.friend, 2.2, 0.6);
+    for (const e of now.enemies) {
+      const [x, y] = toScreen(e.pos[0], e.pos[2]), a = e.yaw * Math.PI / 180, alert = !!e.state && e.state !== 'I';
+      ctx.globalAlpha = e.pos[1] > state.ceiling + 0.4 ? 0.35 : 1;
+      ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(a) * 11, y - Math.cos(a) * 11); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, 6.2832); ctx.fillStyle = alert ? css.enemy : css.panel; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = css.enemy; ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    for (const p of now.players) {
+      const [x, y] = toScreen(p.pos[0], p.pos[2]), a = p.yaw * Math.PI / 180;
+      ctx.strokeStyle = css.friend; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(a) * 16, y - Math.cos(a) * 16); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 6.5, 0, 6.2832); ctx.fillStyle = css.friend; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
+      ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(p.name, x + 10, y + 12); ctx.fillStyle = css.friend; ctx.fillText(p.name, x + 10, y + 12);
+    }
+    // What just happened, where it happened: a ring that widens and fades over six seconds.
+    for (const ev of replay.data.events) {
+      if (!Array.isArray(ev[3]) || ev[0] > replay.t || replay.t - ev[0] > 6) continue;
+      const [x, y] = toScreen(ev[3][0], ev[3][2]), age = (replay.t - ev[0]) / 6;
+      ctx.globalAlpha = 1 - age; ctx.lineWidth = 2; ctx.strokeStyle = ev[1] === 'down' ? css.ink : css.warn;
+      ctx.beginPath(); ctx.arc(x, y, 8 + age * 14, 0, 6.2832); ctx.stroke();
+      if (ev[1] === 'down') { ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke(); }
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -1017,9 +1192,9 @@ const view3d = (() => {
     state.enemies.forEach((e, i) => {
       const ghost = live.on && !e.live;                     // placed, but not in the game (yet)
       const sel = i === state.selected, g = new T.Group(), mat = new T.MeshPhongMaterial({ color: red, emissive: sel ? red : 0x000000, emissiveIntensity: 0.45, transparent: ghost, opacity: ghost ? 0.4 : 1 });
-      const body = e.prone ? new T.Mesh(new T.BoxGeometry(0.5, 0.3, 1.7), mat) : new T.Mesh(new T.CylinderGeometry(0.28, 0.28, 1.75, 12), mat);
-      body.position.y = e.prone ? 0.15 : 0.875; body.userData.enemy = i;
-      const nose = new T.Mesh(new T.ConeGeometry(0.2, 0.7, 10), mat); nose.rotation.x = -Math.PI / 2; nose.position.set(0, e.prone ? 0.25 : 1.5, -(e.prone ? 1.15 : 0.6)); nose.userData.enemy = i;   // points where it looks
+      const body = e.vehicle ? new T.Mesh(new T.BoxGeometry(2, 1.8, 5.2), mat) : e.prone ? new T.Mesh(new T.BoxGeometry(0.5, 0.3, 1.7), mat) : new T.Mesh(new T.CylinderGeometry(0.28, 0.28, 1.75, 12), mat);
+      body.position.y = e.vehicle ? 0.9 : e.prone ? 0.15 : 0.875; body.userData.enemy = i;
+      const nose = new T.Mesh(new T.ConeGeometry(0.2, 0.7, 10), mat); nose.rotation.x = -Math.PI / 2; nose.position.set(0, e.vehicle ? 2.1 : e.prone ? 0.25 : 1.5, -(e.vehicle ? 2.2 : e.prone ? 1.15 : 0.6)); nose.userData.enemy = i;   // points where it looks
       g.add(body, nose); g.position.set(e.pos[0], e.pos[1], -e.pos[2]); g.rotation.y = -e.yaw * Math.PI / 180;
       if (sel) { const ring = new T.Mesh(new T.RingGeometry(0.55, 0.7, 28), new T.MeshBasicMaterial({ color: ink, side: T.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; g.add(ring); }
       enemyGroup.add(g);
@@ -1037,6 +1212,7 @@ const view3d = (() => {
     });
     const blue = col('friend');
     for (const z of state.zones) {
+      if (z.when !== 'zone') continue;
       const pts = []; for (let a = 0; a <= 72; a++) pts.push(new T.Vector3(z.pos[0] + Math.cos(a / 72 * 6.2832) * z.radius, z.pos[1] + 0.3, -z.pos[2] + Math.sin(a / 72 * 6.2832) * z.radius));
       extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: blue, transparent: true, opacity: state.fired.includes(z.id) ? 0.35 : 1 })));
       const post = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3, 6), new T.MeshBasicMaterial({ color: blue })); post.position.set(z.pos[0], z.pos[1] + 1.5, -z.pos[2]); extraGroup.add(post);
@@ -1131,10 +1307,10 @@ function warningFor(e) {
 }
 
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut() })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut() })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.selected = Math.min(o.s, o.e.length - 1); changed();
 }
 // Brings a thing into view. In 3D the floors above it are hidden, or the roof would be all there is to see.
 function showAt(p, top) {
@@ -1142,8 +1318,17 @@ function showAt(p, top) {
   if (state.ceiling > top) { state.ceiling = top; const c = $('ceiling'); c.value = Math.min(+c.max, Math.max(+c.min, top)); syncSide(); }
   view3d.lookFrom(p);
 }
-function selectDoor(n) { state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }
-function select(i) { state.selected = i; if (i >= 0) state.door = -1; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
+// One part of the side panel at a time. A test page may ask for all of them at once.
+function showTab(name, byHand) {
+  const side = $('side');
+  if (side.dataset.show === 'all' && !byHand && name !== 'all') return;
+  side.dataset.show = name;
+  for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+  if (name !== 'all' && name !== 'replay') { try { localStorage.setItem('missionlab-tab', name); } catch (e) { /* storage unavailable */ } }
+}
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
+function selectDoor(n) { if (n >= 0) showTab('doors'); state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }
+function select(i) { if (i >= 0) showTab('enemies'); state.selected = i; if (i >= 0) state.door = -1; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
 function setMode(mode) {
   if (mode === '3d' && !view3d.available()) return say('The 3D view could not start. It needs an internet connection to load its 3D library, and a browser with WebGL.');
   state.mode = mode;
@@ -1155,6 +1340,7 @@ function setMode(mode) {
 }
 function setTool(t) {
   state.tool = t;
+  if (t === 'add' || t === 'route') showTab('enemies'); else if (t === 'zone') showTab('triggers');
   document.querySelectorAll('#tools .tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
   if (state.mode === '3d') { $('hintLine').textContent = 'Drag to look, W A S D to fly, Q and E for down and up, Shift is faster, scroll moves forward. ' + { select: 'Click an enemy to select it, drag it to move it. Right click: the selected enemy looks there. ', add: 'Click to place an enemy. ', route: 'Click to add route stops. ', zone: 'Click to place a zone. ' }[t]; return; }
   $('hintLine').textContent = { select: 'Click an enemy to select it, drag to move it. Drag empty ground to pan, scroll to zoom. ',
@@ -1281,7 +1467,7 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? 'zone ' + e.trigger : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -1298,12 +1484,14 @@ function syncSide() {
       : e.role === 'Wander' ? 'Roams around its position.'
       : 'Walks its ' + e.patrol.length + ' route stops in a loop. Choose Draw route to add stops, drag a stop to move it, Backspace removes the last one.';
     setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
-    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone; $('hvt').checked = !!e.hvt;
+    $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone; $('hvt').checked = !!e.hvt; $('vehicle').checked = !!e.vehicle;
     $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
     $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
     syncPos();
   }
 
+  $('tabEnemies').textContent = state.enemies.length || ''; $('tabTriggers').textContent = state.zones.length || '';
+  $('tabDoors').textContent = state.doors.filter(doorSet).length || ''; $('noDoors').hidden = state.doors.length > 0;
   // Doors. Choosing an enemy by any route lets go of the door.
   if (state.selected >= 0 && state.selected !== syncSide.lastEnemy) state.door = -1;
   syncSide.lastEnemy = state.selected;
@@ -1332,7 +1520,7 @@ function syncSide() {
   });
 
   setVal($('title'), state.title); setVal($('scene'), state.scene);
-  $('zoneBox').hidden = !state.zones.length; $('objectiveHint').hidden = !state.objectives.length;
+  $('objectiveHint').hidden = !state.objectives.length; $('intelSection').hidden = !state.objectives.length;
   $('intelBox').hidden = !state.objectives.length;
   const il = $('intelList'); il.textContent = '';
   state.objectives.forEach(o => {
@@ -1350,18 +1538,79 @@ function syncSide() {
   if (!zl.contains(document.activeElement)) {
     zl.textContent = '';
     state.zones.forEach((z, zi) => {
-      const li = document.createElement('li'), label = document.createElement('span'), bound = document.createElement('span'), rad = document.createElement('input'), del = document.createElement('button');
-      label.textContent = 'Zone ' + z.id; label.style.color = 'var(--friend)'; label.style.fontWeight = '600';
-      const n = state.enemies.filter(en => en.trigger === z.id).length;
-      bound.textContent = n + (n === 1 ? ' enemy' : ' enemies') + (state.fired.includes(z.id) ? ' · reached' : ''); bound.className = 'hint';
-      rad.type = 'number'; rad.min = 2; rad.max = 200; rad.step = 1; rad.value = Math.round(z.radius); rad.title = 'Radius in metres'; rad.setAttribute('aria-label', 'Radius of zone ' + z.id + ' in metres');
-      rad.addEventListener('change', () => { pushUndo(); z.radius = Math.max(2, Math.min(200, +rad.value || 10)); changed(); });
-      del.type = 'button'; del.className = 'btn danger'; del.textContent = 'Delete'; del.style.padding = '3px 8px';
-      del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); changed(); });
-      const face = document.createElement('label'), box = document.createElement('input');
-      box.type = 'checkbox'; box.checked = z.facePlayer !== false; box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
-      face.append(box, document.createTextNode('Its enemies appear looking at the player who walks in'));
-      li.append(label, bound, rad, del, face); zl.appendChild(li);
+      const mk = (tag, props) => Object.assign(document.createElement(tag), props || {});
+      const li = mk('li'), title = mk('b', { textContent: trigTitle(z) });
+      const name = mk('input', { type: 'text', value: z.name || '', placeholder: 'Name (optional)', maxLength: 40 }); name.setAttribute('aria-label', 'Name of ' + trigTitle(z));
+      name.addEventListener('change', () => { pushUndo(); z.name = name.value.trim(); changed(); });
+      const fire = mk('button', { type: 'button', className: 'btn', textContent: 'Fire now', hidden: !live.on || state.fired.includes(z.id) }); fire.style.padding = '3px 8px';
+      fire.title = 'Set this trigger off now, whatever it waits for'; fire.addEventListener('click', () => liveCommand('fire', { id: z.id }));
+      const del = mk('button', { type: 'button', className: 'btn danger', textContent: 'Delete' }); del.style.padding = '3px 8px';
+      del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); state.zones.forEach(q => { if (q.after === z.id) q.after = 0; }); if (state.extractionAfter === z.id) state.extractionAfter = 0; changed(); });
+      // What it waits for.
+      const what = mk('div', { className: 'what' });
+      const numIn = (value, min, max, step, label, set) => { const el = mk('input', { type: 'number', min, max, step, value }); el.setAttribute('aria-label', label); el.addEventListener('change', () => { pushUndo(); set(Math.max(min, Math.min(max, +el.value || 0))); changed(); }); return el; };
+      const grp = (...parts) => { const g = mk('span', { className: 'grp' }); g.append(...parts); return g; };
+      if (z.when === 'zone') what.append(grp('Players walk in. Radius', numIn(Math.round(z.radius), 2, 200, 1, 'Radius of zone ' + z.id + ' in metres', v => { z.radius = v; }), 'm'));
+      else if (z.when === 'alert') what.append('An enemy notices the players');
+      else if (z.when === 'time') what.append('The mission has started');
+      else if (z.when === 'intel') {
+        const sel = mk('select'); sel.setAttribute('aria-label', 'Which intel item');
+        const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
+        if (z.item && z.item !== 'all' && !kinds.includes(z.item)) kinds.push(z.item);
+        [['', 'Any item'], ['all', 'Every item'], ...kinds.map(k => [k, k])].forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t })));
+        sel.value = z.item || ''; sel.addEventListener('change', () => { pushUndo(); z.item = sel.value; changed(); });
+        what.append(grp('Picked up:', sel));
+      } else {
+        const sel = mk('select'); sel.setAttribute('aria-label', 'Which trigger comes first');
+        [[0, 'Choose a trigger'], ...state.zones.filter(q => q.id !== z.id).map(q => [q.id, trigTitle(q) + (q.name ? ': ' + q.name : '')])].forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t })));
+        sel.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; sel.addEventListener('change', () => { pushUndo(); z.after = +sel.value || 0; changed(); });
+        what.append(grp('After', sel));
+      }
+      what.append(grp('Then wait', numIn(Math.round(z.delay || 0), 0, 7200, 5, 'Seconds ' + trigTitle(z) + ' waits before it fires', v => { z.delay = v; }), 's'));
+      const face = mk('label'), box = mk('input', { type: 'checkbox', checked: z.facePlayer !== false });
+      box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
+      face.append(box, 'Its enemies appear looking at ' + (z.when === 'zone' ? 'the player who walks in' : 'the nearest player'));
+      const n = state.enemies.filter(en => en.trigger === z.id).length, locks = (z.doors || []).filter(d => d.locked === true).length, opens = (z.doors || []).filter(d => d.locked === false).length;
+      const sum = mk('div', { className: 'sum hint' });
+      sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
+      const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
+      exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
+      exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
+      li.append(title, name, fire, del, what, face, exf, sum); zl.appendChild(li);
+    });
+  }
+  // Settings for the whole mission.
+  const fill = (sel, options, value) => {
+    if (document.activeElement === sel) return;
+    sel.textContent = ''; options.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+    sel.value = options.some(([v]) => String(v) === String(value)) ? value : options[0][0];
+  };
+  fill($('extractAfter'), [[0, 'By the mission\'s own rule'], ...state.zones.map(z => [z.id, 'Only after ' + trigTitle(z).toLowerCase() + (z.name ? ' (' + z.name + ')' : '')])], state.extractionAfter);
+  const ways = state.insertions.slice(); if (state.insertion && !ways.includes(state.insertion)) ways.push(state.insertion);
+  fill($('insertion'), [['', 'Each player\'s own choice'], ...ways.map(n => [n, 'Everyone starts at ' + n])], state.insertion);
+  setVal($('wxRain'), state.weather.rain === null ? '' : state.weather.rain ? '1' : '0'); setVal($('wxStorm'), state.weather.sandstorm === null ? '' : state.weather.sandstorm ? '1' : '0');
+  setVal($('wxHour'), state.weather.hour === null ? '' : state.weather.hour);
+  const wn = state.weatherNow;
+  $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. '
+    + (wn ? (wn.has ? 'This map has weather' + (wn.fixedTime ? ', but its time of day is fixed.' : ' and a time of day.') : 'This map has no weather or time of day, so rain, sandstorm and hour do nothing here.')
+          : 'Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.')
+    + (ways.length ? '' : ' To list a map\'s insertions, connect to the game or open a recon file.');
+  // What each trigger does to the selected door.
+  const dt = $('doorTrigs');
+  if (!dt.contains(document.activeElement)) {
+    dt.textContent = '';
+    if (dr) state.zones.forEach(z => {
+      const row = document.createElement('div'), lab = document.createElement('label'), sel = document.createElement('select'), id = 'doorTrig' + z.id;
+      row.className = 'field'; lab.htmlFor = id; lab.textContent = trigTitle(z) + (z.name ? ': ' + z.name : ''); sel.id = id;
+      [['', 'Leaves it alone'], ['1', 'Locks it'], ['0', 'Unlocks it']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      const cur = (z.doors || []).find(x => nearDoor(x.pos, [dr]) === 0);
+      sel.value = cur ? (cur.locked ? '1' : '0') : '';
+      sel.addEventListener('change', () => {
+        pushUndo(); z.doors = (z.doors || []).filter(x => nearDoor(x.pos, [dr]) !== 0);
+        if (sel.value !== '') z.doors.push({ name: dr.name || '', pos: dr.pos.slice(), locked: sel.value === '1' });
+        changed();
+      });
+      row.append(lab, sel); dt.appendChild(row);
     });
   }
   $('triggerRow').hidden = !(e && state.zones.length);
@@ -1369,7 +1618,7 @@ function syncSide() {
     const sel = $('trigger');
     if (document.activeElement !== sel) {
       sel.textContent = '';
-      [[0, 'From the start'], ...state.zones.map(z => [z.id, 'When players reach zone ' + z.id])].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      [[0, 'From the start'], ...state.zones.map(z => [z.id, trigText(z) + (z.name ? ': ' + z.name : '')])].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
       sel.value = state.zones.some(z => z.id === e.trigger) ? e.trigger : 0;
     }
   }
@@ -1406,12 +1655,13 @@ $('defensive').addEventListener('change', ev => edit(e => { e.defensive = ev.tar
 $('fixed').addEventListener('change', ev => edit(e => { e.fixed = ev.target.checked; if (e.fixed && e.role === 'Patrol') e.role = 'Guard'; }));
 $('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.checked; }));
 $('type').addEventListener('change', ev => edit(e => { e.type = ev.target.value; }));
-$('hvt').addEventListener('change', ev => edit(e => { e.hvt = ev.target.checked; if (e.hvt) { e.trigger = 0; e.type = ''; } }));
+$('hvt').addEventListener('change', ev => edit(e => { e.hvt = ev.target.checked; if (e.hvt) { e.trigger = 0; e.type = ''; e.vehicle = false; } }));
+$('vehicle').addEventListener('change', ev => edit(e => { e.vehicle = ev.target.checked; if (e.vehicle) { e.trigger = 0; e.type = ''; e.hvt = false; e.prone = false; e.role = 'Guard'; e.patrol = []; } }));
 $('trigger').addEventListener('change', ev => edit(e => { e.trigger = +ev.target.value || 0; }));
 function addZone(x, y, z) {
   pushUndo();
   const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1;
-  state.zones.push({ id, name: '', pos: [x, y, z], radius: 12, facePlayer: true });
+  state.zones.push(newTrigger(id, 'zone', { pos: [x, y, z] })); showTab('triggers');
   const e = state.enemies[state.selected];
   changed();
   say('Zone ' + id + ' placed. Select an enemy and set "Appears" to bind it to this zone.' + (e ? '' : ''));
@@ -1429,6 +1679,20 @@ $('undo').addEventListener('click', undo);
 $('fit').addEventListener('click', fit);
 $('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1.4); });
 $('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
+$('trigNew').addEventListener('click', () => {
+  pushUndo();
+  const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1, when = $('trigKind').value, last = state.zones.length ? state.zones[state.zones.length - 1].id : 0;
+  state.zones.push(newTrigger(id, when, when === 'time' ? { delay: 300 } : when === 'after' ? { after: last } : {}));
+  changed();
+  showTab('triggers');
+  say('Trigger ' + id + ' added. Select an enemy and set "Appears" to bind it, or select a door to have the trigger lock or unlock it.');
+});
+const missionEdit = fn => { pushUndo(); fn(); changed(); };
+$('extractAfter').addEventListener('change', ev => missionEdit(() => { state.extractionAfter = +ev.target.value || 0; }));
+$('insertion').addEventListener('change', ev => missionEdit(() => { state.insertion = ev.target.value; }));
+$('wxRain').addEventListener('change', ev => missionEdit(() => { state.weather.rain = ev.target.value === '' ? null : ev.target.value === '1'; }));
+$('wxStorm').addEventListener('change', ev => missionEdit(() => { state.weather.sandstorm = ev.target.value === '' ? null : ev.target.value === '1'; }));
+$('wxHour').addEventListener('change', ev => missionEdit(() => { state.weather.hour = ev.target.value === '' ? null : Math.max(0, Math.min(24, +ev.target.value || 0)); }));
 const doorEdit = fn => { const d = state.doors[state.door]; if (!d) return; pushUndo(); fn(d); changed(); };
 $('doorLock').addEventListener('change', ev => doorEdit(d => { d.locked = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('doorAi').addEventListener('change', ev => doorEdit(d => { d.enemiesCanOpen = ev.target.value === '' ? null : ev.target.value === '1'; }));
@@ -1524,14 +1788,107 @@ function startLive() {
   live.on = true; document.body.classList.add('live');
   state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0;
   $('save').hidden = false; $('save').textContent = 'Save in the game';
+  listReplays(); setInterval(listReplays, 15000);
   pollLive();
 }
+// ------------------------------------------------------------------ replay
+const replay = { data: null, t: 0, playing: false, speed: 4, last: 0, name: '' };
+const mmss = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+function loadReplay(obj, name) {
+  if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
+  const frames = obj.frames.filter(f => Array.isArray(f) && Array.isArray(f[1]) && Array.isArray(f[2]));
+  replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3),
+    start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
+  replay.t = replay.data.start; replay.playing = false; replay.name = name;
+  if (state.mode === '3d') setMode('2d');
+  $('tabReplay').hidden = false; showTab('replay');
+  syncReplay(); invalidate();
+  return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events. Press Play.';
+}
+function closeReplay() { replay.data = null; replay.playing = false; $('tabReplay').hidden = true; if ($('side').dataset.show === 'replay') showTab('map'); syncReplay(); invalidate(); }
+// The recorded moment at or before a time, the one after it, and how far along we are between them.
+function replayFrame(t) {
+  const fr = replay.data.frames; let lo = 0, hi = fr.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fr[mid][0] <= t) lo = mid; else hi = mid - 1; }
+  const a = fr[lo], b = fr[Math.min(fr.length - 1, lo + 1)], span = b[0] - a[0];
+  return { i: lo, a, b, k: span > 0 ? Math.max(0, Math.min(1, (t - a[0]) / span)) : 0 };
+}
+// Everybody at the current time, moved smoothly between two recorded moments.
+function replayNow() {
+  const { a, b, k } = replayFrame(replay.t);
+  const mix = (list, next) => list.map(p => {
+    const q = next.find(n => n[0] === p[0]);
+    return { id: p[0], pos: q ? [p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k, p[3] + (q[3] - p[3]) * k] : [p[1], p[2], p[3]], yaw: p[4], state: p[5] };
+  });
+  return { players: mix(a[1], b[1]).map(p => Object.assign(p, { name: replay.data.players[p.id] || 'Player' })), enemies: mix(a[2], b[2]) };
+}
+function syncReplay() {
+  const d = replay.data; $('replayBox').hidden = !d; if (!d) return;
+  $('rpName').textContent = replay.name + (d.scene ? ' · ' + d.scene : '');
+  const tr = $('rpTime'); tr.min = d.start; tr.max = d.end; if (document.activeElement !== tr) tr.value = replay.t;
+  $('rpPlay').textContent = replay.playing ? 'Pause' : 'Play';
+  const now = replayNow();
+  $('rpClock').textContent = mmss(replay.t) + ' of ' + mmss(d.end) + ' · ' + now.players.length + (now.players.length === 1 ? ' player, ' : ' players, ') + now.enemies.length + (now.enemies.length === 1 ? ' enemy' : ' enemies');
+  const ul = $('rpEvents'), key = replay.name + '/' + d.events.length;
+  if (ul.dataset.key !== key) {
+    ul.dataset.key = key; ul.textContent = '';
+    d.events.forEach(ev => {
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button'; b.textContent = mmss(ev[0]) + '  ' + ev[2];
+      b.addEventListener('click', () => { replay.t = Math.max(d.start, Math.min(d.end, ev[0] - 2)); if (Array.isArray(ev[3])) { state.view.cx = ev[3][0]; state.view.cz = ev[3][2]; } syncReplay(); invalidate(); });
+      li.appendChild(b); ul.appendChild(li);
+    });
+  }
+}
+function replayTick(now) {
+  if (!replay.playing || !replay.data) return;
+  const dt = Math.min(0.1, (now - replay.last) / 1000); replay.last = now;
+  replay.t += dt * replay.speed;
+  if (replay.t >= replay.data.end) { replay.t = replay.data.end; replay.playing = false; }
+  syncReplay(); invalidate();
+  if (replay.playing) requestAnimationFrame(replayTick);
+}
+$('rpPlay').addEventListener('click', () => {
+  if (!replay.data) return;
+  if (replay.t >= replay.data.end) replay.t = replay.data.start;
+  replay.playing = !replay.playing; replay.last = performance.now(); syncReplay();
+  if (replay.playing) requestAnimationFrame(replayTick);
+});
+$('rpSpeed').addEventListener('change', ev => { replay.speed = +ev.target.value || 1; });
+$('rpTime').addEventListener('input', ev => { replay.t = +ev.target.value; syncReplay(); invalidate(); });
+$('rpClose').addEventListener('click', closeReplay);
+// Connected to the game: its recordings are listed, and one opens with its map even after the mission has ended.
+async function listReplays() {
+  try {
+    const list = await (await fetch('/api/replays', { cache: 'no-store' })).json(), sel = $('rpList');
+    if (!Array.isArray(list) || document.activeElement === sel) return;
+    const key = list.map(r => r.name).join('|');
+    if (sel.dataset.key !== key) {
+      sel.dataset.key = key; sel.textContent = '';
+      list.forEach(r => { const o = document.createElement('option'); o.value = r.name; o.textContent = r.name.replace(/\.json$/, '').replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}_/, '$3-$2 $4:$5  ').replace(/_/g, ' '); sel.appendChild(o); });
+    }
+    $('replayPick').hidden = !list.length;
+  } catch (e) { /* an older game side has no recordings to list */ }
+}
+$('rpOpen').addEventListener('click', async () => {
+  const name = $('rpList').value; if (!name) return;
+  try {
+    const obj = await (await fetch('/api/replay/' + encodeURIComponent(name), { cache: 'no-store' })).json();
+    if (obj.navFile && (!state.map || state.navFile !== obj.navFile)) {
+      const r = await fetch('/api/mapfile/' + encodeURIComponent(obj.navFile), { cache: 'no-store' });
+      if (r.ok) { state.map = makeMap(await readMapFile(await r.arrayBuffer()), obj.navFile, false); state.navFile = obj.navFile; state.ceiling = Infinity; live.nav = ''; view3d.dropMap(); fit(); }
+    }
+    say(loadReplay(obj, name)); syncSide(); invalidate();
+  } catch (e) { say('The replay could not be opened. ' + (e && e.message ? e.message : '')); }
+});
+
 async function pollLive() {
   try { await applyLive(await api('/api/state')); }
   catch (e) { $('liveStatus').textContent = 'The game is not answering. Is it still running?'; }
   setTimeout(pollLive, 600);
 }
 function clearLive() {
+  if (replay.data) return;                       // a replay is being watched: its map stays
   if (!state.map && !state.enemies.length) return;
   state.map = null; state.geo = null; state.enemies = []; state.selected = -1; state.doors = []; state.door = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
   view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
@@ -1568,6 +1925,8 @@ async function applyLive(s) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
+    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather });
+    state.insertions = Array.isArray(s.insertions) ? s.insertions.filter(n => typeof n === 'string' && n) : []; state.weatherNow = s.weather || null;
     const doorWas = state.doors[state.door] ? state.doors[state.door].pos : null;
     state.doors = doorsIn(s.doors); state.door = doorWas ? nearDoor(doorWas, state.doors) : -1;
     state.enemies = mine.map((m, i) => Object.assign(enemyOf(m, i), { id: m.id, live: !!m.live, waiting: !!m.waiting }));
@@ -1586,11 +1945,11 @@ function pushLive() {
   live.pending = true; clearTimeout(live.pushTimer);
   live.pushTimer = setTimeout(async () => {
     live.sending = true; live.pending = false;
-    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), objectives: objectivesOut(), doors: doorsOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
+    try { const s = await api('/api/markers', { spawnNow: $('spawnNow').checked, triggers: zonesOut(), objectives: objectivesOut(), doors: doorsOut(), settings: settingsOut(), markers: state.enemies.map(e => Object.assign({ id: e.id || 0 }, spawnOf(e))) }); live.sending = false; live.rev = null; await applyLive(s); }
     catch (e) { live.sending = false; say('The change did not reach the game. Is it still running?'); }
   }, 150);
 }
-const liveCommand = cmd => api('/api/command', { cmd }).then(s => { live.rev = null; return applyLive(s); }).catch(() => say('The game did not answer.'));
+const liveCommand = (cmd, more) => api('/api/command', Object.assign({ cmd }, more || {})).then(s => { live.rev = null; return applyLive(s); }).catch(() => say('The game did not answer.'));
 $('liveSpawn').addEventListener('click', () => liveCommand('spawnWaiting'));
 $('liveClear').addEventListener('click', () => liveCommand('removeAllEnemies'));
 $('liveExport').addEventListener('click', async () => { say('Making the 3D map. The game freezes for a few seconds...'); await liveCommand('export'); live.hasGeo = false; });
@@ -1621,8 +1980,9 @@ new ResizeObserver(invalidate).observe(canvas);
 const served = /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
+{ let tab = 'map'; try { tab = localStorage.getItem('missionlab-tab') || (served ? 'enemies' : 'map'); } catch (e) { /* storage unavailable */ } showTab(window.__mlAllTabs ? 'all' : ['map', 'enemies', 'triggers', 'doors', 'mission'].includes(tab) ? tab : 'map'); }
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt };   // for automated tests
+window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab };   // for automated tests
 })();
 </script>
 </body>

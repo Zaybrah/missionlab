@@ -105,6 +105,47 @@ is the same on every map, so types that the game itself only uses on one map, su
 the suicide bomber of the Afghan maps, can be placed anywhere. An enemy with a chosen
 type appears a few seconds after the mission starts.
 
+### Triggers
+A trigger waits for something and then brings in the enemies bound to it, locks or
+unlocks its doors, and can open the extraction. What it can wait for:
+
+| `"when"` | Fires when |
+|---|---|
+| `zone` | a player walks into the circle (`pos`, `radius`) |
+| `alert` | any enemy notices the players |
+| `intel` | an intel item is picked up (`item`: its name, `""` for any, `"all"` for every one) |
+| `time` | `delay` seconds after the mission started |
+| `after` | another trigger (`after`: its id) has fired |
+
+Every kind takes `delay` (seconds to wait before firing), `doors` (a list like the
+scenario's own, with `locked`), and `"extraction": "open"`. In the editor triggers have
+their own tab; connected to the game each has a "Fire now" button.
+
+### Mission settings
+- `"extraction": { "after": 3 }` holds the extraction shut until trigger 3 has fired; the
+  mission's own rule still has to be met as well.
+- `"insertion": "Alpha 2"` gives every player that insertion, whatever they pick.
+- `"weather": { "hour": 5.5, "rain": true, "sandstorm": false }` on maps that have
+  weather. Clean House, Mexico Depot and Georgia have none, so it does nothing there.
+
+### Gun trucks
+An enemy marked `"vehicle": true` is not a person but one of the game's gun trucks,
+parked at that spot facing `yaw`. It is placed when the mission starts.
+
+### Random layouts
+A random layout also gets a wave of enemies that comes once the enemy is alerted, an
+ambush where players walk into the busiest building, about one in seven doors locked,
+and the intel laid on a table somewhere else in the same building. `RandomExtras = false`
+in the config gives positions only.
+
+### Replay
+Each mission you host is recorded to `BepInEx/MissionLab/replays` (positions twice a
+second, and what happened). In the browser page pick one under "Open replay"; in the
+editor open the file. It plays on the 2D map with a timeline and a list of events.
+`[Replay] Enabled = false` turns recording off; `Keep` says how many files to keep.
+
+All of the above is built from the game's class listing and has not run in the game yet.
+
 ### Target person
 In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
 the game spawns its own target type there at the start. A generated layout also moves the

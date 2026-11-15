@@ -72,6 +72,7 @@ namespace MissionLab
         /// <summary>Returns true when this mission is finished with, false to try again next frame.</summary>
         private static bool TryApply(RaidManager raid, string via)
         {
+            VehiclesWanted = 0; VehiclesAsked = false;
             var log = DirectorPlugin.L;
 
             if (!DirectorPlugin.Enabled.Value) { log.LogInfo("disabled in config; mission left unchanged"); return true; }
@@ -173,12 +174,12 @@ namespace MissionLab
                 // Enemies of a chosen type cannot go through the game's own start-up spawn; they follow a few seconds later.
                 bool keptOne = false;
                 foreach (SpawnPlan s in plan.Spawns)
-                    if (s.Trigger != 0 || !string.IsNullOrEmpty(s.Type)) later.Add(s); else keptOne = true;
+                    if (s.Vehicle || s.Trigger != 0 || !string.IsNullOrEmpty(s.Type)) later.Add(s); else keptOne = true;      // a gun truck is not a person: it never joins the enemy list
                 if (!keptOne)
                 {
                     // The game's own spawner needs at least one enemy that is simply there from the start.
-                    SpawnPlan firstOne = plan.Spawns.Find(s => s.Trigger == 0) ?? plan.Spawns[0];
-                    firstOne.Trigger = 0; later.Remove(firstOne);
+                    SpawnPlan firstOne = plan.Spawns.Find(s => s.Trigger == 0 && !s.Vehicle) ?? plan.Spawns.Find(s => !s.Vehicle) ?? plan.Spawns[0];
+                    firstOne.Trigger = 0; firstOne.Vehicle = false; later.Remove(firstOne);
                 }
                 enemies = Math.Min(100, plan.Spawns.Count - later.Count);
                 int fixedCount = 0;
@@ -217,6 +218,14 @@ namespace MissionLab
                     s.HearingRange = s.Indoor ? tHear : Math.Max(tHear, s.HearingRange);
                     s.Fov = s.Indoor ? tFov : Math.Max(tFov, s.Fov);
                 }
+                // More than positions: a wave on alert, an ambush, locked doors, intel somewhere else.
+                if (DirectorPlugin.RandomExtras.Value)
+                {
+                    try { RandomExtras.Add(plan, raid, nav, new Rng(seed ^ 0xE87A5), infils); }
+                    catch (Exception e) { log.LogWarning("the random layout's extras could not be rolled: " + e.Message); }
+                    foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0) later.Add(s);
+                    foreach (string note in plan.Notes) if (note.StartsWith("extras:")) log.LogInfo(note);
+                }
             }
 
             // Missions with a target person: the plan may say where that person stands.
@@ -250,15 +259,23 @@ namespace MissionLab
                 SpawnPlan free = plan.Spawns.Find(s => !s.Hvt);
                 if (free != null) { free.Trigger = 0; free.Type = null; later.Remove(free); }
             }
-            if (fromFile) enemies = Math.Max(1, Math.Min(100, plan.Spawns.Count - later.Count));
+            bool heldBack = later.Count > 0;                 // then the start-up list is shorter than the plan, and the game must be told how many to spawn
+            if (fromFile || heldBack) enemies = Math.Max(1, Math.Min(100, plan.Spawns.Count - later.Count));
 
             // 4. Build everything, then swap.
             int generated, toppedUp;
             Apply(raid, plan, template, fromFile ? null : originals, enemies, new Rng(seed ^ 0x5EED), later, out generated, out toppedUp);
             int movedTargets = targets.Count > 0 ? PlaceTargets(raid, targets, gm.botHVTAmount) : 0;
             foreach (SpawnPlan s in targets) later.Remove(s);           // the game itself spawns the target; nothing to add later
+            List<SpawnPlan> trucks = plan.Spawns.FindAll(s => s.Vehicle);
+            foreach (SpawnPlan s in trucks) later.Remove(s);            // parked by the game's own vehicle spawner
+            if (trucks.Count > 0)
+            {
+                try { log.LogInfo("gun trucks: " + PlaceVehicles(raid, trucks)); }
+                catch (Exception e) { log.LogWarning("gun trucks could not be set up: " + e.Message); }
+            }
             string senses = (movedTargets > 0 ? movedTargets + " target position(s) set | " : "") + "usual senses " + tDetect + "/" + tHear + "/" + tFov + ", template '" + template.name + "'";
-            if (gm != null && (fromFile || DirectorPlugin.EnemyCount.Value > 0)) gm.botAmount = enemies;
+            if (gm != null && (fromFile || heldBack || DirectorPlugin.EnemyCount.Value > 0)) gm.botAmount = enemies;
             sw.Stop();
 
             // 5. Tell the player and leave a record. A record copied into the scenarios folder replays exactly.
@@ -475,6 +492,51 @@ namespace MissionLab
         /// Replaces the mission's target-person spawn points with the planned ones. The game spawns
         /// the target on one of these about two seconds after the start, the same way it does enemies.
         /// </summary>
+        internal static int VehiclesWanted;
+        internal static bool VehiclesAsked;
+
+        /// <summary>The game's gun truck, from this map's own list or else from the list of everything the game can spawn.</summary>
+        internal static GameObject VehiclePrefab(RaidManager raid, out string from)
+        {
+            from = "this map's own list";
+            var own = raid.staticVehicleAI;
+            for (int i = 0; own != null && i < own.Length; i++) if (own[i] != null) return own[i];
+            from = "the game's spawn list";
+            Mirror.NetworkManager net = Mirror.NetworkManager.singleton;
+            var all = net == null ? null : net.spawnPrefabs;
+            for (int i = 0; all != null && i < all.Count; i++)
+                if (all[i] != null && all[i].GetComponentInChildren<VehicleAI>(true) != null) return all[i];
+            from = null;
+            return null;
+        }
+
+        /// <summary>
+        /// Hands the game's own vehicle spawner our parking spots, the same way the enemy spawn points are swapped.
+        /// A map without gun trucks never starts that spawner, so GameMaster calls it a few seconds in if no truck came.
+        /// </summary>
+        private static string PlaceVehicles(RaidManager raid, List<SpawnPlan> trucks)
+        {
+            GameObject prefab = VehiclePrefab(raid, out string from);
+            if (prefab == null) return "this build of the game offers no gun truck to place";
+            var points = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject>(trucks.Count);
+            for (int i = 0; i < trucks.Count; i++)
+            {
+                var go = new GameObject("ML truck " + (i + 1));
+                go.transform.SetParent(raid.transform, false);
+                go.transform.SetPositionAndRotation(new Vector3(trucks[i].Pos.X, trucks[i].Pos.Y, trucks[i].Pos.Z), Quaternion.Euler(0f, trucks[i].Yaw, 0f));
+                points[i] = go;
+            }
+            int had = raid.staticVehicleSpawnPoints == null ? 0 : raid.staticVehicleSpawnPoints.Length;
+            raid.staticVehicleSpawnPoints = points;
+            var one = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject>(1); one[0] = prefab;
+            raid.staticVehicleAI = one;
+            raid.maxStaticVehicles = trucks.Count;
+            bool was = raid.spawnVehicleAI;
+            raid.spawnVehicleAI = true;
+            VehiclesWanted = trucks.Count;
+            return trucks.Count + " parking spot(s) set in place of the map's " + had + ", '" + prefab.name + "' from " + from + (was ? "" : "; this map does not use vehicles itself");
+        }
+
         private static int PlaceTargets(RaidManager raid, List<SpawnPlan> targets, int wanted)
         {
             var old = raid.hvtSpawnPoints;

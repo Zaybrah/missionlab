@@ -103,6 +103,14 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   `aiReinforcement` + `ReinforcementTrigger` (no map seen so far uses them), `VehicleAI` gun
   vehicles (Mexico Depot: 1 type, 6 spots), `ProximityExplosive` (no map seen ships one),
   `ExfilZone.canExtract` (SyncVar), `AlarmSystem`, `VectorTimeOfDay` (hour, rain, sandstorm).
+- Insertion is each player's own choice in the mission (`PlayerMaster.CMD_RequestInfilTarget(int)`,
+  `CurrentInfilIndex`, UI in `InfilSelectorDisplayer` with `SetInfilEnabled(index, bool)`).
+- Extraction: `RaidManager.EnableGlobalExtraction()` / `RPC_CanExfil()`, `ExfilZone.canExtract`.
+- Vehicles: `RaidManager.SpawnStaticVehicleAI()` uses `spawnVehicleAI`, `maxStaticVehicles`,
+  `staticVehicleSpawnPoints` and `staticVehicleAI` ("Hilux Technical Dshk" on Mexico Depot).
+- `VectorTimeOfDay.singleton` is null on Suburb, Mexico Depot and Georgia: no weather there.
+- Clean House has 10 doors (7 interior, 2 exterior, a fence gate). `StartLockedChance` counts
+  to 100 (seen: 0, 50, 90). Setting a door live works (`Server_SetDoorLocked`, `AiCantOpen`).
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.14.0";
+        public const string Version = "0.15.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -30,7 +30,8 @@ namespace MissionLab
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
         internal static ConfigEntry<bool> GmEnabled;
-        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget;
+        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget, RandomExtras, ReplayEnabled;
+        internal static ConfigEntry<int> ReplayKeep;
         internal static ConfigEntry<int> LivePort;
         internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
         internal static bool InputHooked;
@@ -43,6 +44,24 @@ namespace MissionLab
         {
             try { new Harmony(Id + ".input").PatchAll(typeof(InputBlockPatch)); InputHooked = true; L.LogInfo("the game's key binds are hooked: they stay silent while Game Master mode is open"); }
             catch (Exception e) { L.LogWarning("could not hook the game's key reader (" + e.Message + "); relying on the game's own input switch"); }
+        }
+        private static bool _extractionHooked, _insertionHooked;
+        /// <summary>Hooked only when a scenario holds the extraction back, so other sessions never touch it.</summary>
+        internal static void PatchExtraction()
+        {
+            if (_extractionHooked) return;
+            _extractionHooked = true;
+            try { new Harmony(Id + ".extraction").PatchAll(typeof(ExtractionHoldPatch)); L.LogInfo("the game's extraction switch is hooked: it waits for the scenario's trigger"); }
+            catch (Exception e) { L.LogWarning("could not hook the game's extraction switch (" + e.Message + "); the extraction is shut again whenever the game opens it early"); }
+        }
+
+        /// <summary>Hooked only when a scenario names the insertion.</summary>
+        internal static void PatchInsertion()
+        {
+            if (_insertionHooked) return;
+            _insertionHooked = true;
+            try { new Harmony(Id + ".insertion").PatchAll(typeof(InsertionPatch)); L.LogInfo("the insertion request is hooked: every player gets the scenario's insertion"); }
+            catch (Exception e) { L.LogWarning("could not hook the insertion request (" + e.Message + "); players keep their own choice of insertion"); }
         }
         internal static bool Hooked;
         internal static string BaseDir;
@@ -62,8 +81,13 @@ namespace MissionLab
                 "Comma-separated scene names where the director is active. * = every PvE mission.");
             MoveTarget = Config.Bind("General", "MoveTarget", true,
                 "In missions with a target person, a generated layout also picks a new place for the target. false = the game's own places.");
+            RandomExtras = Config.Bind("General", "RandomExtras", true,
+                "A random layout also gets a wave of enemies that comes once the enemy is alerted, an ambush where players walk into a building, a few locked doors, and the intel laid somewhere else. false = positions only.");
             Scenario = Config.Bind("General", "Scenario", "*",
                 "What the next mission uses. * = any scenario file in BepInEx/MissionLab/scenarios made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Nothing = always a random layout. (empty) = an empty map to build your own. In the lobby, F8 steps through these.");
+            ReplayEnabled = Config.Bind("Replay", "Enabled", true,
+                "Record where everybody was during each mission you host, for playing back on the map in the browser page. Files go to BepInEx/MissionLab/replays and stay on this computer.");
+            ReplayKeep = Config.Bind("Replay", "Keep", 20, "How many recordings to keep; the oldest are removed.");
             GmEnabled = Config.Bind("GameMaster", "Enabled", true,
                 "Game Master mode while you host a mission: place, spawn and remove enemies in the running mission and save the result as a scenario.");
             KeyGm = Config.Bind("GameMaster", "KeyOpen", KeyCode.F8, "Opens and closes Game Master mode.");
@@ -114,6 +138,25 @@ namespace MissionLab
     /// It has to be "after": the game fills its spawn list during that setup, and
     /// only spawns enemies a couple of seconds later.
     /// </summary>
+    /// <summary>While a scenario holds the extraction back, the game's own "you may extract now" is noted and not carried out.</summary>
+    [HarmonyPatch(typeof(RaidManager), nameof(RaidManager.EnableGlobalExtraction))]
+    internal static class ExtractionHoldPatch
+    {
+        private static bool Prefix()
+        {
+            if (!GameMaster.HoldExtraction) return true;
+            GameMaster.ExtractionAsked = true;
+            return false;
+        }
+    }
+
+    /// <summary>Whatever insertion a player asks for, the host hands out the scenario's.</summary>
+    [HarmonyPatch(typeof(PlayerMaster), nameof(PlayerMaster.UserCode_CMD_RequestInfilTarget__Int32))]
+    internal static class InsertionPatch
+    {
+        private static void Prefix(ref int __0) { if (GameMaster.ForcedInfil >= 0) __0 = GameMaster.ForcedInfil; }
+    }
+
     [HarmonyPatch(typeof(InputLayer), nameof(InputLayer.GetKey))]
     internal static class InputBlockPatch
     {

@@ -75,6 +75,16 @@ namespace MissionLab
                 return r.Path == "/api/map" ? HttpResponse.File(Path.Combine(_navDir, Path.GetFileName(nav)), "application/octet-stream")
                                             : HttpResponse.File(Path.Combine(_mapsDir, Path.GetFileNameWithoutExtension(nav) + ".mlgeo"), "application/octet-stream");
             }
+            // Recordings and map files by name, so a mission can be played back after it has ended. Names only: no folders.
+            if (r.Path == "/api/replays") return HttpResponse.Json(Replay.ListJson());
+            foreach (var kind in new[] { ("/api/replay/", Replay.Dir, ".json", "application/json"), ("/api/mapfile/", _navDir, ".bytes", "application/octet-stream"), ("/api/geofile/", _mapsDir, ".mlgeo", "application/octet-stream") })
+            {
+                if (!r.Path.StartsWith(kind.Item1, StringComparison.Ordinal)) continue;
+                string name = Uri.UnescapeDataString(r.Path.Substring(kind.Item1.Length));
+                if (name.Length == 0 || name.Length > 120 || name != Path.GetFileName(name) || name.Contains("..") || !name.EndsWith(kind.Item3, StringComparison.OrdinalIgnoreCase)) return HttpResponse.Error(400, "not a file name");
+                string full = Path.Combine(kind.Item2, name);
+                return File.Exists(full) ? HttpResponse.File(full, kind.Item4) : HttpResponse.Error(404, "no such file");
+            }
             if (!r.Path.StartsWith("/api/", StringComparison.Ordinal)) return HttpResponse.Error(404, "not found");
             if (r.Method != "GET" && !r.Headers.ContainsKey("X-MissionLab")) return HttpResponse.Error(403, "not from the editor page");
 

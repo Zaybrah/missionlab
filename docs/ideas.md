@@ -4,31 +4,19 @@ What could come next, with what the game already offers for each. "Odds" is the 
 works as hoped. Everything here comes from the game's class listing and from recon files;
 none of it has run in the game unless it says so.
 
-## In progress
+## Built, waiting for a test in the game
 
-| Idea | What the game has | State |
+| Idea | How it is done | Version |
 |---|---|---|
-| Locked doors | `DoorV2`: a synced lock, a "starts locked" chance, "enemies cannot open", latch and hinges that take damage | Built in 0.14.0, waiting for a test |
-| Bombers on any map | The suicide bomber is in the game-wide enemy type list | Can be chosen today; not yet tried off its own map |
-
-## Next, in this order
-
-1. **More triggers.** When: an enemy spots a player, an intel item is picked up, the
-   target dies, a timer runs out. Then: enemies appear (exists), a door locks or unlocks,
-   an alarm starts. All of the "when" side can already be read. Odds: high.
-2. **Random missions that use all of it.** The generator also rolls zones, intel spots on
-   table tops and locked doors, so a mission is never the same twice. Odds: high once
-   doors and triggers exist.
-3. **Extraction rules.** `ExfilZone.canExtract` is synced to all players: extraction opens
-   only after both items are taken, or after a timer. Odds: medium.
-4. **Choosing the insertion.** Each map lists its insertions (Clean House: three on foot,
-   one ride). A scenario picks one. Odds: high.
-5. **Weather and time.** Hour of day, rain and sandstorm are switches on
-   `VectorTimeOfDay`. Whether other players see the same is unknown. Odds: medium.
-6. **Replay after the mission.** Positions are already recorded; the browser plays the
-   mission back on the map. Odds: high.
-7. **Enemy gun vehicles.** Mexico Depot has them (six parking spots). Placing them there
-   should work; bringing one to another map may not. Odds: medium there, low elsewhere.
+| Locked doors | `DoorV2.Server_SetDoorLocked`, `AiCantOpen`; live setting confirmed in game | 0.14 |
+| Bombers on any map | the suicide bomber is in the game-wide enemy type list | 0.14 |
+| More triggers | alert, intel taken, timer, chains; door actions; "Fire now" | 0.15 |
+| Random missions that use it all | wave on alert, ambush zone, locked doors, intel on another table | 0.15 |
+| Extraction rules | a trigger opens it; a scenario holds it until a trigger has fired | 0.15 |
+| Choosing the insertion | the host hands every player the scenario's insertion | 0.15 |
+| Weather and time | `VectorTimeOfDay`; none of the three maps recorded has it | 0.15 |
+| Gun trucks | the game's own vehicle spawner, with our parking spots | 0.15 |
+| Replay | positions and events recorded; played back on the 2D map | 0.15 |
 
 ## Parked
 

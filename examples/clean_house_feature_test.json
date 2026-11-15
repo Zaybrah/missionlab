@@ -1,0 +1,82 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: feature test",
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "A small scenario that uses every feature once, for trying them out alone with the browser page open."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "One minute",
+      "when": "time",
+      "delay": 60,
+      "facePlayer": true
+    },
+    {
+      "id": 2,
+      "name": "Alarm",
+      "when": "alert",
+      "delay": 10,
+      "facePlayer": true
+    },
+    {
+      "id": 3,
+      "name": "Follow-up",
+      "when": "after",
+      "after": 1,
+      "delay": 15,
+      "facePlayer": true,
+      "extraction": "open"
+    },
+    {
+      "id": 4,
+      "name": "Intel taken",
+      "when": "intel",
+      "item": "",
+      "facePlayer": true,
+      "doors": [
+        {
+          "name": "Door Exterior Paneled_3",
+          "pos": [
+            -19.55,
+            0.7,
+            -19.57
+          ],
+          "locked": true
+        }
+      ]
+    }
+  ],
+  "objectives": [],
+  "doors": [
+    {
+      "name": "Door Interior Paneled",
+      "pos": [
+        -24.06,
+        0.7,
+        -2.67
+      ],
+      "locked": true,
+      "enemiesCanOpen": false
+    }
+  ],
+  "extraction": {
+    "after": 1
+  },
+  "insertion": "Alpha 2",
+  "weather": {
+    "rain": true
+  },
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "BOT V2 Insurgent Afghan 1 Suicide Bomber Variant", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Wander", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 3, "hvt": false, "patrol": []},
+    {"group": 3, "role": "Guard", "pos": [-4.0, 0.2, 54.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "vehicle": true}
+  ]
+}

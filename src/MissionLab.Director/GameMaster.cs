@@ -51,6 +51,18 @@ namespace MissionLab
         private static readonly Dictionary<IntPtr, Pose> Homes = new Dictionary<IntPtr, Pose>();   // where the game itself put each item
         private static bool _resendFailed;
         private static List<DoorPlan> _doorPlans = new List<DoorPlan>();    // what the scenario or the Game Master asked of doors
+        private static readonly Dictionary<int, float> MetAt = new Dictionary<int, float>();          // trigger -> when the thing it waits for happened
+        private static readonly Dictionary<int, Vector3> MetWhere = new Dictionary<int, Vector3>();   // zone -> where the player stood
+        private static readonly Dictionary<IntPtr, string[]> Items = new Dictionary<IntPtr, string[]>();   // intel seen in play -> what it goes by
+        private static readonly HashSet<IntPtr> Taken = new HashSet<IntPtr>();
+        private static bool _alerted;
+        internal static bool HoldExtraction;      // read by the hook: the game may not open the extraction yet
+        internal static bool ExtractionAsked;     // ...but it has tried to
+        internal static int ForcedInfil = -1;     // read by the hook: the insertion every player gets (-1: their own choice)
+        private static int _holdAfter;            // the trigger the extraction waits for
+        private static string _insertion = "";
+        private static WeatherPlan _weather = new WeatherPlan();
+        private static float _vehicleCheckAt = -1f;
         private static List<DoorV2> _doorList;
         private static float _doorScanAt;
         private static string _doorError;
@@ -92,7 +104,24 @@ namespace MissionLab
             // Intel goes to its place straight away. A friend's game is told where every item lies when it finishes
             // loading, which is normally after this moment, so they get the new place with nothing extra being sent.
             MissionPlan plan = Director.CurrentPlan;
+            string sceneName = plan != null ? plan.Scene : "";
+            try { RaidManager now = RaidManager.singleton; if (now != null) sceneName = now.gameObject.scene.name; } catch { }
+            try { Replay.Begin(sceneName, Director.CurrentNav != null ? Director.CurrentNav.SourceFile : "", plan != null ? plan.ToJson() : null); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
+            _weather = plan.Weather ?? new WeatherPlan();
+            _insertion = plan.Insertion ?? "";
+            if (_insertion != "")
+            {
+                try { DirectorPlugin.L.LogInfo("insertion: " + ForceInsertion(_insertion)); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the insertion could not be set: " + e.Message); }
+            }
+            if (plan.ExtractionAfter != 0 && plan.Triggers.Exists(t => t.Id == plan.ExtractionAfter))
+            {
+                _holdAfter = plan.ExtractionAfter; HoldExtraction = true;
+                DirectorPlugin.PatchExtraction();
+                DirectorPlugin.L.LogInfo("extraction: held back until trigger " + _holdAfter + " has fired");
+            }
             if (plan.Doors.Count > 0)
             {
                 // Doors too: a door may not have decided yet whether it starts locked, so both its starting
@@ -125,6 +154,8 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false;
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _vehicleCheckAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -134,8 +165,9 @@ namespace MissionLab
             if (_raidPtr == IntPtr.Zero) return;
             RaidManager raid = RaidManager.singleton;
             GameManager gm = GameManager.instance;
-            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Reset(); return; }
+            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End(); Reset(); return; }
 
+            Replay.Tick(raid, gm, now);
             PumpSpawns(raid, gm, now);
             if (!_keysOk || !DirectorPlugin.GmEnabled.Value) return;
             try { Keys(raid, gm); }
@@ -152,6 +184,7 @@ namespace MissionLab
         /// <summary>On screen only while someone is acting as Game Master; a player should not be told an ambush just appeared.</summary>
         private static void Tell(string text)
         {
+            Replay.Event("note", text);
             if (_active || Time.unscaledTime - LiveLink.LastRequestAt < 5f) Say(text);
             else DirectorPlugin.L.LogInfo("MissionLab: " + text);
         }
@@ -183,6 +216,296 @@ namespace MissionLab
             return found;
         }
 
+        // ------------------------------------------------------------------ mission-wide settings
+        private static bool Special(SpawnPlan s) => s.Hvt || s.Vehicle;     // not spawned like an ordinary enemy
+
+        internal static List<string> Insertions()
+        {
+            var names = new List<string>();
+            try
+            {
+                InfiltrationManager im = InfiltrationManager.instance;
+                var methods = im == null ? null : im.infilMethods;
+                for (int i = 0; methods != null && i < methods.Length; i++) names.Add(methods[i] == null ? "" : methods[i].infilName ?? "");
+            }
+            catch { }
+            return names;
+        }
+
+        private static string ForceInsertion(string name)
+        {
+            List<string> names = Insertions();
+            int at = names.FindIndex(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+            if (at < 0) return "'" + name + "' is not an insertion of this map (" + string.Join(", ", names) + "); players keep their own choice";
+            ForcedInfil = at;
+            DirectorPlugin.PatchInsertion();
+            try
+            {
+                InfilSelectorDisplayer ui = InfilSelectorDisplayer.instance;
+                if (ui != null) for (int i = 0; i < names.Count; i++) ui.SetInfilEnabled(i, i == at);        // the host's own map shows only this one
+            }
+            catch { }
+            return "every player gets '" + names[at] + "' (number " + at + " of " + names.Count + ")";
+        }
+
+        private static bool ExtractionOpen(RaidManager raid)
+        {
+            var zones = raid.exfilZones;
+            for (int i = 0; zones != null && i < zones.Count; i++)
+                try { if (zones[i] != null && zones[i].canExtract) return true; } catch { }
+            return false;
+        }
+
+        /// <summary>Lets the team extract now, by the game's own switch first.</summary>
+        private static void OpenExtraction(RaidManager raid, string why)
+        {
+            HoldExtraction = false;
+            string how = "the game's own switch";
+            try { raid.EnableGlobalExtraction(); } catch (Exception e) { how = "set directly (" + e.Message + ")"; }
+            if (!ExtractionOpen(raid))
+            {
+                how = "set on each extraction zone";
+                var zones = raid.exfilZones;
+                for (int i = 0; zones != null && i < zones.Count; i++)
+                    try { if (zones[i] != null) zones[i].canExtract = true; } catch { }
+                try { raid.RPC_CanExfil(); } catch { }
+            }
+            Tell("extraction is open (" + why + "; " + how + ")");
+        }
+
+        /// <summary>While a scenario holds the extraction back, an opening that slipped past the hook is undone.</summary>
+        private static void KeepExtractionShut(RaidManager raid)
+        {
+            var zones = raid.exfilZones;
+            for (int i = 0; zones != null && i < zones.Count; i++)
+                try { if (zones[i] != null && zones[i].canExtract) { zones[i].canExtract = false; ExtractionAsked = true; } } catch { }
+        }
+
+        private static string ApplyWeather()
+        {
+            if (!_weather.HasWish) return null;
+            VectorTimeOfDay v = VectorTimeOfDay.singleton;
+            if (v == null) return "this map has no weather or time of day to set";
+            var done = new List<string>();
+            if (_weather.Hour.HasValue)
+            {
+                if (v.isStaticLighting) done.Add("the time of day is fixed on this map");
+                else { float before = v.timeOfDay; v.SetTimeOfDay(_weather.Hour.Value); done.Add("time " + before.ToString("0.##", Inv) + " -> " + v.timeOfDay.ToString("0.##", Inv) + " (hour " + v.hour + ")"); }
+            }
+            if (_weather.Rain.HasValue)
+            {
+                if (v.isRaining != _weather.Rain.Value) v.ToggleRain();
+                v.RainChance = _weather.Rain.Value ? 100f : 0f;             // so the game's own weather turn keeps it
+                done.Add("rain " + (v.isRaining ? "on" : "off"));
+            }
+            if (_weather.Sandstorm.HasValue)
+            {
+                if (v.isSandStorm != _weather.Sandstorm.Value) v.ToggleSandstorm();
+                v.sandStormChance = _weather.Sandstorm.Value ? 100f : 0f;
+                done.Add("sandstorm " + (v.isSandStorm ? "on" : "off"));
+            }
+            return string.Join(", ", done);
+        }
+
+        private static string SettingsStateJson(RaidManager raid, System.Text.StringBuilder rev)
+        {
+            var sb = new System.Text.StringBuilder(256);
+            bool open = ExtractionOpen(raid);
+            sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
+              .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
+            sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
+            List<string> names = Insertions();
+            for (int i = 0; i < names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(names[i]));
+            sb.Append("],\"weather\":{");
+            VectorTimeOfDay v = null;
+            try { v = VectorTimeOfDay.singleton; } catch { }
+            sb.Append("\"has\":").Append(v != null ? "true" : "false");
+            if (v != null)
+                try { sb.Append(",\"fixedTime\":").Append(v.isStaticLighting ? "true" : "false").Append(",\"nowHour\":").Append(F(v.timeOfDay)).Append(",\"nowRain\":").Append(v.isRaining ? "true" : "false").Append(",\"nowSandstorm\":").Append(v.isSandStorm ? "true" : "false"); } catch { }
+            if (_weather.Hour.HasValue) sb.Append(",\"hour\":").Append(F(_weather.Hour.Value));
+            if (_weather.Rain.HasValue) sb.Append(",\"rain\":").Append(_weather.Rain.Value ? "true" : "false");
+            if (_weather.Sandstorm.HasValue) sb.Append(",\"sandstorm\":").Append(_weather.Sandstorm.Value ? "true" : "false");
+            sb.Append('}');
+            rev.Append('X').Append(_holdAfter).Append(HoldExtraction ? 'h' : '-').Append(open ? 'o' : '-').Append(_insertion).Append(names.Count)
+               .Append(_weather.Hour.HasValue ? F(_weather.Hour.Value) : "").Append(_weather.Rain).Append(_weather.Sandstorm).Append(v != null ? 'w' : '-');
+            return sb.ToString();
+        }
+
+        /// <summary>Did the gun trucks come? If the map never starts its vehicle spawner, it is started here, once.</summary>
+        private static void CheckVehicles(RaidManager raid, float now)
+        {
+            if (Director.VehiclesWanted <= 0 || _vehicleCheckAt < 0f || now < _vehicleCheckAt) return;
+            int have = 0;
+            try
+            {
+                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<VehicleAI>(), false);
+                have = found == null ? 0 : found.Length;
+            }
+            catch { }
+            if (have >= Director.VehiclesWanted || Director.VehiclesAsked)
+            {
+                DirectorPlugin.L.LogInfo("gun trucks: " + have + " in the map, " + Director.VehiclesWanted + " planned" + (Director.VehiclesAsked ? " (the vehicle spawner was started by MissionLab)" : " (spawned by the game itself)"));
+                _vehicleCheckAt = -1f;
+                return;
+            }
+            Director.VehiclesAsked = true; _vehicleCheckAt = now + 3f;
+            try { raid.SpawnStaticVehicleAI(); DirectorPlugin.L.LogInfo("gun trucks: none came by themselves, so the game's vehicle spawner was started"); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks: the game's vehicle spawner failed: " + e.Message); _vehicleCheckAt = -1f; }
+        }
+
+        // ------------------------------------------------------------------ triggers
+        private static string TriggerName(TriggerPlan t) =>
+            (t.When == TriggerPlan.OnZone ? "zone " : "trigger ") + (string.IsNullOrEmpty(t.Name) ? t.Id.ToString() : "'" + t.Name + "'");
+
+        /// <summary>Has any enemy noticed the players? Once true it stays true.</summary>
+        private static bool Alerted(GameManager gm)
+        {
+            if (_alerted) return true;
+            var ai = gm.allAI;
+            for (int i = 0; ai != null && i < ai.Count; i++)
+            {
+                BrainAI b = ai[i];
+                try { if (b != null && b.CurrentState != BrainAI.States.Idle) return _alerted = true; } catch { }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Which intel has been picked up. An item counts as taken when the game marks it so, or when it was in play
+        /// and is gone. Only looked at once the game has settled on its items, a few seconds into the mission.
+        /// </summary>
+        private static bool IntelTaken(RaidManager raid, string item)
+        {
+            var live = new HashSet<IntPtr>();
+            foreach (ObjectiveObject o in Objectives(raid))
+            {
+                live.Add(o.Pointer);
+                if (!Items.ContainsKey(o.Pointer)) Items[o.Pointer] = new[] { ObjectivePlan.Kind(o.DisplayName), ObjectivePlan.Kind(o.gameObject.name) };
+                try { if (o.isObtained) Taken.Add(o.Pointer); } catch { }
+            }
+            foreach (IntPtr seen in Items.Keys) if (!live.Contains(seen)) Taken.Add(seen);
+
+            string kind = ObjectivePlan.Kind(item);
+            if (kind == "" || kind == "any")
+            {
+                if (Taken.Count > 0) return true;
+                try { return raid.collectedItemsCount > 0; } catch { return false; }
+            }
+            bool some = false;
+            foreach (var kv in Items)
+            {
+                if (kind != "all" && Array.IndexOf(kv.Value, kind) < 0) continue;
+                some = true;
+                if (!Taken.Contains(kv.Key)) return false;
+            }
+            return some;
+        }
+
+        /// <summary>Where an enemy really is. Its own object stays at the spawn spot; the navigation agent has the truth.</summary>
+        internal static void EnemyPose(BrainAI b, out Vector3 pos, out float yaw)
+        {
+            pos = b.transform.position; yaw = b.transform.eulerAngles.y;
+            try { AgentController ac = b.agent; if (ac != null && ac.entityExists) { pos = ac.position; if (ac.Agent != null) yaw = ac.Agent.rotation.eulerAngles.y; } } catch { }
+        }
+
+        private static bool NearestPlayer(Vector3 from, out Vector3 where)
+        {
+            where = Vector3.zero;
+            float best = float.MaxValue;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerMaster pm = players[i];
+                PlayerNetworking body = pm == null ? null : pm.PlayerSpawnedObject;
+                if (body == null) continue;
+                Vector3 p = body.transform.position;
+                float sq = (p - from).sqrMagnitude;
+                if (sq < best) { best = sq; where = p; }
+            }
+            return best < float.MaxValue;
+        }
+
+        /// <summary>Looks at every trigger that has not fired: has its moment come, and has its wait run out?</summary>
+        private static void CheckTriggers(RaidManager raid, GameManager gm, float now)
+        {
+            for (int pass = 0; pass < 4; pass++)            // a trigger that waits for another may follow in the same look
+            {
+                bool any = false;
+                foreach (TriggerPlan t in _zones)
+                {
+                    if (Fired.Contains(t.Id)) continue;
+                    if (!MetAt.TryGetValue(t.Id, out float met))
+                    {
+                        Vector3 who = Vector3.zero;
+                        bool yes;
+                        switch (t.When)
+                        {
+                            case TriggerPlan.OnAlert: yes = Alerted(gm); break;
+                            case TriggerPlan.OnIntel: yes = IntelTaken(raid, t.Item); break;
+                            case TriggerPlan.OnTime: yes = true; break;
+                            case TriggerPlan.OnAfter: yes = t.After != 0 && t.After != t.Id && Fired.Contains(t.After); break;
+                            default: yes = PlayerInside(t, out who); break;
+                        }
+                        if (!yes) continue;
+                        MetAt[t.Id] = met = t.When == TriggerPlan.OnTime ? Director.HandledAt : now;     // a timer counts from the start of the mission
+                        if (t.When == TriggerPlan.OnZone) MetWhere[t.Id] = who;
+                    }
+                    if (now < met + t.Delay) continue;
+                    Fire(t, now);
+                    any = true;
+                }
+                if (!any) break;
+            }
+        }
+
+        /// <summary>The trigger's enemies appear and its doors lock or unlock.</summary>
+        private static void Fire(TriggerPlan t, float now)
+        {
+            Fired.Add(t.Id);
+            if (!MetAt.ContainsKey(t.Id)) MetAt[t.Id] = now;
+            bool stood = MetWhere.TryGetValue(t.Id, out Vector3 who);
+            var mine = new List<Marker>();
+            if (_markers != null)
+                foreach (Marker m in _markers)
+                {
+                    if (m.Plan.Trigger != t.Id || !m.Waiting || m.Queued || Special(m.Plan)) continue;
+                    var at = new Vector3(m.Plan.Pos.X, m.Plan.Pos.Y, m.Plan.Pos.Z);
+                    Vector3 look = who;
+                    if (t.FacePlayer && (stood || NearestPlayer(at, out look)))
+                        m.FaceYaw = (Mathf.Atan2(look.x - at.x, look.z - at.z) * Mathf.Rad2Deg + 360f) % 360f;
+                    mine.Add(m);
+                }
+            Enqueue(mine);
+            int doors = 0;
+            foreach (DoorPlan p in t.Doors)
+            {
+                if (!p.Locked.HasValue) continue;
+                DoorV2 d = DoorAt(p.Pos);
+                if (d == null) continue;
+                try { if (d.CurrentlyLocked != p.Locked.Value) d.Server_SetDoorLocked(p.Locked.Value); doors++; }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("a door could not be set by " + TriggerName(t) + ": " + e.Message); }
+            }
+            RaidManager raidNow = RaidManager.singleton;
+            if (raidNow != null)
+            {
+                bool wasHeld = HoldExtraction && t.Id == _holdAfter;
+                if (wasHeld) HoldExtraction = false;
+                if (t.OpensExtraction) OpenExtraction(raidNow, TriggerName(t) + " opens it");
+                else if (wasHeld && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
+            }
+            string why = t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
+                       : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
+            Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : ""));
+        }
+
+        /// <summary>The Game Master sets a trigger off by hand.</summary>
+        private static void FireNow(int id)
+        {
+            TriggerPlan t = _zones.Find(z => z.Id == id);
+            if (t == null || Fired.Contains(id)) { Say(t == null ? "there is no trigger " + id : TriggerName(t) + " has already fired"); return; }
+            Fire(t, Time.unscaledTime);
+        }
+
         // ------------------------------------------------------------------ doors
         /// <summary>The map's doors that still exist.</summary>
         private static List<DoorV2> Doors()
@@ -209,7 +532,7 @@ namespace MissionLab
         }
 
         /// <summary>Where the door turns. This stays put while the door swings, so it tells doors apart.</summary>
-        private static Vector3 Hinge(DoorV2 d)
+        internal static Vector3 Hinge(DoorV2 d)
         {
             Transform p = null;
             try { p = d.PivotTransform; } catch { }
@@ -236,11 +559,20 @@ namespace MissionLab
         }
 
         /// <summary>Locks, unlocks and closes doors to enemies as asked. Lock state is the game's own and reaches every player.</summary>
-        private static string ApplyDoors(bool atStart)
+        private static string DoorKey(DoorPlan p) => Math.Round(p.Pos.X, 1) + "/" + Math.Round(p.Pos.Y, 1) + "/" + Math.Round(p.Pos.Z, 1);
+
+        /// <param name="before">
+        /// Given when the browser sends its list again: only doors whose setting differs from this earlier list are
+        /// touched, so a door that a trigger locked, or that players got open, is not put back by an unrelated change.
+        /// </param>
+        private static string ApplyDoors(bool atStart, List<DoorPlan> before = null)
         {
             int found = 0, changed = 0, failed = 0;
+            var old = new Dictionary<string, DoorPlan>();
+            if (before != null) foreach (DoorPlan b in before) old[DoorKey(b)] = b;
             foreach (DoorPlan p in _doorPlans)
             {
+                if (before != null && old.TryGetValue(DoorKey(p), out DoorPlan was) && was.Locked == p.Locked && was.EnemiesCanOpen == p.EnemiesCanOpen) continue;
                 DoorV2 d = DoorAt(p.Pos);
                 if (d == null) continue;
                 found++;
@@ -428,7 +760,7 @@ namespace MissionLab
             var ai = gm.allAI;
             foreach (Marker m in _markers)
             {
-                if (m.Bot != IntPtr.Zero || (m.Waiting && !m.Queued)) continue;
+                if (m.Bot != IntPtr.Zero || (m.Waiting && !m.Queued) || m.Plan.Vehicle) continue;
                 float best = 0.8f; BrainAI pick = null;
                 for (int i = 0; ai != null && i < ai.Count; i++)
                 {
@@ -452,7 +784,7 @@ namespace MissionLab
             {
                 EnsureMarkers();
                 var mine = new List<Marker>();
-                foreach (Marker m in _markers) if (_later.Contains(m.Plan) && m.Plan.Trigger == 0) mine.Add(m);
+                foreach (Marker m in _markers) if (_later.Contains(m.Plan) && m.Plan.Trigger == 0 && !Special(m.Plan)) mine.Add(m);
                 _later = null;
                 Enqueue(mine);
             }
@@ -464,6 +796,15 @@ namespace MissionLab
                 // And every door has made up its mind. Said once per mission, asked for or not: it shows what the map has.
                 try { DirectorPlugin.L.LogInfo("doors, a few seconds in: " + ApplyDoors(false)); }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be checked: " + e.Message); }
+                try { string w = ApplyWeather(); if (w != null) DirectorPlugin.L.LogInfo("weather: " + w); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); }
+                try { DirectorPlugin.L.LogInfo("insertions of this map: " + string.Join(", ", Insertions()) + "; extraction " + (ExtractionOpen(raid) ? "open" : "shut") + " at the start"); } catch { }
+                _vehicleCheckAt = now + 2f;
+                if (_insertion != "" && ForcedInfil < 0)
+                {
+                    // The insertion list was not there yet when the mission was set up.
+                    try { DirectorPlugin.L.LogInfo("insertion, second try: " + ForceInsertion(_insertion)); } catch { }
+                }
                 if (plan != null && plan.Objectives.Count > 0)
                 {
                     EnsureMarkers();
@@ -474,25 +815,16 @@ namespace MissionLab
                     DirectorPlugin.L.LogInfo("objectives: " + stay + " of " + Objectives(raid).Count + " item(s) lie where the scenario says (" + plan.Objectives.Count + " named, " + late + " moved late); in the map: " + Describe(raid));
                 }
             }
+            try { CheckVehicles(raid, now); } catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks could not be checked: " + e.Message); _vehicleCheckAt = -1f; }
+            if (HoldExtraction) KeepExtractionShut(raid);
+            // A scenario whose triggers only work doors holds no enemies back, so nothing above has set the markers up.
+            if (_markers == null && _later == null && Director.CurrentPlan != null && Director.CurrentPlan.Triggers.Count > 0) EnsureMarkers();
             if (_markers != null && now >= _zoneCheckAt)
             {
-                // Zones: the first player to walk into one brings in the enemies bound to it.
                 _zoneCheckAt = now + 0.25f;
                 if (_later != null) EnsureMarkers();
-                foreach (TriggerPlan z in _zones)
-                {
-                    if (Fired.Contains(z.Id) || !PlayerInside(z, out Vector3 who)) continue;
-                    Fired.Add(z.Id);
-                    var mine = new List<Marker>();
-                    foreach (Marker m in _markers)
-                    {
-                        if (m.Plan.Trigger != z.Id || !m.Waiting || m.Queued || m.Plan.Hvt) continue;
-                        if (z.FacePlayer) m.FaceYaw = (Mathf.Atan2(who.x - m.Plan.Pos.X, who.z - m.Plan.Pos.Z) * Mathf.Rad2Deg + 360f) % 360f;
-                        mine.Add(m);
-                    }
-                    Enqueue(mine);
-                    Tell("zone " + (string.IsNullOrEmpty(z.Name) ? z.Id.ToString() : "'" + z.Name + "'") + " reached: " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear"));
-                }
+                try { CheckTriggers(raid, gm, now); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("triggers could not be checked: " + e.Message); _zoneCheckAt = now + 5f; }
             }
             if (_markers != null)
             {
@@ -501,7 +833,7 @@ namespace MissionLab
                 {
                     if (m.TurnedAt < 0f || now - m.TurnedAt < 0.6f || m.Queued) continue;
                     m.TurnedAt = -1f;
-                    if (m.Plan.Hvt) continue;                                 // the target person is never re-made: it would come back as an ordinary enemy
+                    if (Special(m.Plan)) continue;                            // the target person is never re-made: it would come back as an ordinary enemy
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
                     if (b == null) continue;                              // not alive: the new facing applies when it spawns
                     if (!Destroy(b)) continue;
@@ -893,7 +1225,7 @@ namespace MissionLab
         {
             var list = new List<Marker>();
             for (int i = 0; i < _markers.Count; i++)
-                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && !_markers[i].Plan.Hvt && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
+                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && !Special(_markers[i].Plan) && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
             if (list.Count == 0) { Say("no waiting enemies"); return; }
             Enqueue(list);
             Say("spawning " + list.Count + " waiting enemies");
@@ -970,7 +1302,7 @@ namespace MissionLab
         /// Which way a player looks. The player object itself does not turn; the game keeps the
         /// view direction in CharacterRotationY (sent to everyone), and the host's own camera is exact.
         /// </summary>
-        private static float PlayerYaw(PlayerMaster pm, PlayerNetworking body)
+        internal static float PlayerYaw(PlayerMaster pm, PlayerNetworking body)
         {
             float synced = body.CharacterRotationY;
             Transform character = body.Character;
@@ -1057,7 +1389,7 @@ namespace MissionLab
             for (int i = 0; i < _markers.Count; i++)
             {
                 Marker m = _markers[i];
-                bool live = m.Bot != IntPtr.Zero && alive.Contains(m.Bot);
+                bool live = m.Plan.Vehicle ? !m.Waiting : m.Bot != IntPtr.Zero && alive.Contains(m.Bot);     // a gun truck placed at the start is simply there
                 string spawn = MissionPlan.SpawnJson(m.Plan);
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(m.Id).Append(",\"live\":").Append(live ? "true" : "false").Append(",\"waiting\":").Append(m.Waiting ? "true" : "false").Append(',').Append(spawn, 1, spawn.Length - 1);
                 rev.Append(m.Id).Append(live ? 'L' : m.Waiting ? 'W' : 'G').Append(spawn);
@@ -1075,6 +1407,7 @@ namespace MissionLab
                 first = false;
             }
             sb.Append("],\"doors\":").Append(DoorsStateJson(rev));
+            try { sb.Append(SettingsStateJson(raid, rev)); } catch { }
             sb.Append(",\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
             first = true;
             foreach (int id in Fired) { sb.Append(first ? "" : ",").Append(id); first = false; }
@@ -1096,13 +1429,19 @@ namespace MissionLab
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
-            var ids = new List<int>(); bool spawnNow; MissionPlan sent;
+            var ids = new List<int>(); bool spawnNow; MissionPlan sent; MissionPlan settings = null;
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
                 System.Text.Json.JsonElement root = doc.RootElement, list = root.GetProperty("markers");
                 spawnNow = root.TryGetProperty("spawnNow", out var sn) && sn.ValueKind == System.Text.Json.JsonValueKind.True;
                 foreach (System.Text.Json.JsonElement e in list.EnumerateArray())
                     if (e.ValueKind == System.Text.Json.JsonValueKind.Object) ids.Add(e.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.Number ? id.GetInt32() : 0);
+                if (root.TryGetProperty("settings", out var st) && st.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    // The page sends the mission-wide settings as they stand in a scenario file; read them the same way.
+                    string raw = st.GetRawText().Trim(), inner = raw.Substring(1, raw.Length - 2).Trim();
+                    settings = MissionPlan.FromJson("{" + (inner.Length > 0 ? inner + "," : "") + "\"spawns\":[]}");
+                }
                 string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
                 string itemsText = root.TryGetProperty("objectives", out var os) && os.ValueKind == System.Text.Json.JsonValueKind.Array ? os.GetRawText() : MissionPlan.ObjectivesJson(_wanted);
                 string doorsText = root.TryGetProperty("doors", out var ds) && ds.ValueKind == System.Text.Json.JsonValueKind.Array ? ds.GetRawText() : MissionPlan.DoorsJson(_doorPlans);
@@ -1124,7 +1463,7 @@ namespace MissionLab
                     if (MissionPlan.SpawnJson(m.Plan) != MissionPlan.SpawnJson(s))
                     {
                         bool released = m.Plan.Trigger != 0 && s.Trigger == 0 && m.Waiting && !m.Queued && m.Bot == IntPtr.Zero;   // unbound from its zone
-                        bool target = s.Hvt || m.Plan.Hvt;           // the target person is spawned by the game at the start only
+                        bool target = Special(s) || Special(m.Plan);  // the target person and gun trucks are spawned by the game at the start only
                         m.Plan = s;
                         if (target) { }
                         else if (m.Bot != IntPtr.Zero) m.TurnedAt = now;
@@ -1137,7 +1476,7 @@ namespace MissionLab
                     if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
                     var created = new Marker { Plan = s, Waiting = true };
                     result.Add(created);
-                    if (spawnNow && s.Trigger == 0 && !s.Hvt) fresh.Add(created);       // a zone enemy waits for its zone; a target for the next start
+                    if (spawnNow && s.Trigger == 0 && !Special(s)) fresh.Add(created);       // a zone enemy waits for its zone; a target for the next start
                 }
             }
             foreach (Marker gone in byId.Values)
@@ -1147,10 +1486,33 @@ namespace MissionLab
                 if (b != null) Destroy(b);
             }
             _markers = result; _aiming = -1; _current = -1;
+            // A timer made during the mission counts from now; one that was taken away forgets what it saw.
+            var had = new HashSet<int>();
+            foreach (TriggerPlan z in _zones) had.Add(z.Id);
+            var have = new HashSet<int>();
+            foreach (TriggerPlan z in sent.Triggers) { have.Add(z.Id); if (!had.Contains(z.Id) && z.When == TriggerPlan.OnTime) MetAt[z.Id] = now; }
+            foreach (int id in had) if (!have.Contains(id)) { MetAt.Remove(id); MetWhere.Remove(id); Fired.Remove(id); }
             _zones = sent.Triggers;
             _wanted = sent.Objectives; PlaceObjectives(raid);
+            if (settings != null)
+            {
+                // The insertion is for the next start; weather applies now; the extraction rule applies from now on.
+                _insertion = settings.Insertion ?? "";
+                bool weatherChanged = MissionPlan.SettingsJson(new MissionPlan { Weather = settings.Weather }) != MissionPlan.SettingsJson(new MissionPlan { Weather = _weather });
+                _weather = settings.Weather;
+                if (weatherChanged) { try { string w = ApplyWeather(); if (w != null) Tell("weather: " + w); } catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); } }
+                int holdNow = settings.ExtractionAfter != 0 && sent.Triggers.Exists(t => t.Id == settings.ExtractionAfter) ? settings.ExtractionAfter : 0;
+                if (holdNow != _holdAfter)
+                {
+                    _holdAfter = holdNow;
+                    bool hold = holdNow != 0 && !Fired.Contains(holdNow);
+                    if (hold) { HoldExtraction = true; DirectorPlugin.PatchExtraction(); }
+                    else if (HoldExtraction) { HoldExtraction = false; if (ExtractionAsked) OpenExtraction(raid, "nothing holds it back any more"); }
+                }
+            }
+            List<DoorPlan> doorsBefore = _doorPlans;
             _doorPlans = sent.Doors;
-            try { ApplyDoors(false); } catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set: " + e.Message); }
+            try { ApplyDoors(false, doorsBefore); } catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set: " + e.Message); }
             if (fresh.Count > 0) Enqueue(fresh);
             return StateJson();
         }
@@ -1159,9 +1521,14 @@ namespace MissionLab
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
-            string cmd;
-            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json)) cmd = doc.RootElement.GetProperty("cmd").GetString();
-            if (cmd == "spawnWaiting") SpawnWaiting();
+            string cmd; int id = 0;
+            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
+            {
+                cmd = doc.RootElement.GetProperty("cmd").GetString();
+                if (doc.RootElement.TryGetProperty("id", out var idv) && idv.ValueKind == System.Text.Json.JsonValueKind.Number) id = idv.GetInt32();
+            }
+            if (cmd == "fire") FireNow(id);
+            else if (cmd == "spawnWaiting") SpawnWaiting();
             else if (cmd == "removeAllEnemies") RemoveAllEnemies(gm);
             else if (cmd == "save") Save();
             else if (cmd == "export") ExportMap();
@@ -1180,6 +1547,7 @@ namespace MissionLab
             foreach (Marker m in _markers) { plan.Spawns.Add(m.Plan); plan.Groups = Math.Max(plan.Groups, m.Plan.Group + 1); }
             plan.Triggers.AddRange(_zones);
             plan.Doors.AddRange(_doorPlans);
+            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather;
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))

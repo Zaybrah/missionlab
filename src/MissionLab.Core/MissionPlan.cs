@@ -8,14 +8,31 @@ namespace MissionLab.Core
     public enum SpawnRole { Guard, Wander, Patrol }
 
     /// <summary>One enemy position and how the enemy behaves there.</summary>
-    /// <summary>A zone on the map. When a player walks into it, the enemies bound to it appear.</summary>
+    /// <summary>
+    /// Something that happens during the mission, and what follows from it. When it fires, the enemies bound
+    /// to it appear and its doors lock or unlock.
+    /// </summary>
     public sealed class TriggerPlan
     {
+        public const string OnZone = "zone";      // a player walks into the circle at Pos
+        public const string OnAlert = "alert";    // an enemy notices the players
+        public const string OnIntel = "intel";    // an intel item is picked up (Item: its kind, "" for any, "all" for every one)
+        public const string OnTime = "time";      // Delay seconds after the mission started
+        public const string OnAfter = "after";    // another trigger (After) has fired
+
         public int Id;
+        public string When = OnZone;
         public V3 Pos;
         public float Radius = 10f;
         public string Name;
-        public bool FacePlayer = true;    // its enemies appear looking at the player who walked in
+        public bool FacePlayer = true;    // its enemies appear looking at the player who set it off, or the nearest one
+        public float Delay;               // seconds between the thing happening and the trigger firing
+        public string Item = "";
+        public int After;
+        public List<DoorPlan> Doors = new List<DoorPlan>();     // only Locked is used: the door locks or unlocks when the trigger fires
+        public bool OpensExtraction;      // when it fires, the team may extract, whatever the mission's own rule says
+
+        public static bool Known(string when) => when == OnZone || when == OnAlert || when == OnIntel || when == OnTime || when == OnAfter;
     }
 
     /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
@@ -38,6 +55,15 @@ namespace MissionLab.Core
             else end = name.Length;                         // digits that are part of the name itself stay
             return name.Substring(0, end).Trim().ToLowerInvariant();
         }
+    }
+
+    /// <summary>Weather and time of day, on maps that have them. Left out, a setting stays with the game.</summary>
+    public sealed class WeatherPlan
+    {
+        public float? Hour;         // 0 to 24
+        public bool? Rain;
+        public bool? Sandstorm;
+        public bool HasWish => Hour.HasValue || Rain.HasValue || Sandstorm.HasValue;
     }
 
     /// <summary>
@@ -66,6 +92,7 @@ namespace MissionLab.Core
         public float Fov;
         public int Trigger;               // 0 = there from the start; otherwise the id of the zone that brings it in
         public bool Hvt;                  // the mission's target person stands here (missions that have one)
+        public bool Vehicle;              // not a person: one of the game's gun trucks is parked here, facing Yaw
         public bool Prone;                // spawns lying down
         public string Type;               // enemy type by name; empty = one of the mission's usual types
         public int WanderDistance;        // metres; only used by Wander
@@ -88,6 +115,9 @@ namespace MissionLab.Core
         public List<TriggerPlan> Triggers = new List<TriggerPlan>();
         public List<ObjectivePlan> Objectives = new List<ObjectivePlan>();
         public List<DoorPlan> Doors = new List<DoorPlan>();
+        public int ExtractionAfter;       // extraction stays shut until this trigger has fired (0: the mission's own rule alone)
+        public string Insertion = "";     // the insertion every player gets, by name ("": each player's own choice)
+        public WeatherPlan Weather = new WeatherPlan();
         public List<string> Notes = new List<string>();
 
         public static string DoorsJson(List<DoorPlan> doors)
@@ -134,8 +164,17 @@ namespace MissionLab.Core
             for (int i = 0; i < zones.Count; i++)
             {
                 TriggerPlan z = zones[i];
-                sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append((z.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
-                  .Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius)).Append(",\"facePlayer\":").Append(z.FacePlayer ? "true" : "false").Append('}');
+                string Text(string t) => (t ?? "").Replace("\\", "/").Replace("\"", "'");
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append(Text(z.Name)).Append("\",\"when\":\"").Append(z.When).Append('"');
+                if (z.When == TriggerPlan.OnZone)
+                    sb.Append(",\"pos\":[").Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius));
+                if (z.When == TriggerPlan.OnIntel) sb.Append(",\"item\":\"").Append(Text(z.Item)).Append('"');
+                if (z.When == TriggerPlan.OnAfter) sb.Append(",\"after\":").Append(z.After);
+                if (z.Delay > 0f) sb.Append(",\"delay\":").Append(F(z.Delay));
+                sb.Append(",\"facePlayer\":").Append(z.FacePlayer ? "true" : "false");
+                if (z.Doors.Exists(d => d.Locked.HasValue)) sb.Append(",\"doors\":").Append(DoorsJson(z.Doors));
+                if (z.OpensExtraction) sb.Append(",\"extraction\":\"open\"");
+                sb.Append('}');
             }
             return sb.Append(']').ToString();
         }
@@ -164,9 +203,28 @@ namespace MissionLab.Core
             sb.Append(",\"type\":").Append(S(string.IsNullOrEmpty(s.Type) ? "" : s.Type));
             sb.Append(",\"trigger\":").Append(s.Trigger);
             sb.Append(",\"hvt\":").Append(s.Hvt ? "true" : "false");
+            if (s.Vehicle) sb.Append(",\"vehicle\":true");
             sb.Append(",\"patrol\":[");
             for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
             sb.Append("]}");
+            return sb.ToString();
+        }
+
+        /// <summary>The settings for the whole mission, as ",name:value" pairs; nothing for a setting left to the game.</summary>
+        public static string SettingsJson(MissionPlan p)
+        {
+            var sb = new StringBuilder(96);
+            var inv = CultureInfo.InvariantCulture;
+            if (p.ExtractionAfter != 0) sb.Append(",\"extraction\":{\"after\":").Append(p.ExtractionAfter).Append('}');
+            if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(p.Insertion.Replace("\\", "/").Replace("\"", "'")).Append('"');
+            if (p.Weather.HasWish)
+            {
+                var parts = new List<string>();
+                if (p.Weather.Hour.HasValue) parts.Add("\"hour\":" + System.Math.Round(p.Weather.Hour.Value, 2).ToString(inv));
+                if (p.Weather.Rain.HasValue) parts.Add("\"rain\":" + (p.Weather.Rain.Value ? "true" : "false"));
+                if (p.Weather.Sandstorm.HasValue) parts.Add("\"sandstorm\":" + (p.Weather.Sandstorm.Value ? "true" : "false"));
+                sb.Append(",\"weather\":{").Append(string.Join(",", parts)).Append('}');
+            }
             return sb.ToString();
         }
 
@@ -186,6 +244,7 @@ namespace MissionLab.Core
             sb.Append("],\"triggers\":").Append(TriggersJson(Triggers));
             sb.Append(",\"objectives\":").Append(ObjectivesJson(Objectives));
             sb.Append(",\"doors\":").Append(DoorsJson(Doors));
+            sb.Append(SettingsJson(this));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
             {
@@ -214,7 +273,15 @@ namespace MissionLab.Core
                     Seed = root.TryGetProperty("seed", out var seed) && seed.ValueKind == JsonValueKind.Number ? seed.GetInt64() : 0,
                     Scene = Str(root, "scene"),
                     NavFile = Str(root, "navFile"),
+                    Insertion = Str(root, "insertion") ?? "",
                 };
+                if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0));
+                if (root.TryGetProperty("weather", out JsonElement we) && we.ValueKind == JsonValueKind.Object)
+                {
+                    if (we.TryGetProperty("hour", out JsonElement wh) && wh.ValueKind == JsonValueKind.Number) plan.Weather.Hour = System.Math.Min(24f, System.Math.Max(0f, wh.GetSingle()));
+                    plan.Weather.Rain = Flag(we, "rain");
+                    plan.Weather.Sandstorm = Flag(we, "sandstorm");
+                }
                 int index = 0;
                 foreach (JsonElement e in spawns.EnumerateArray())
                 {
@@ -238,6 +305,7 @@ namespace MissionLab.Core
                         Type = Str(e, "type"),
                         Trigger = (int)Num(e, "trigger", 0),
                         Hvt = Bool(e, "hvt"),
+                        Vehicle = Bool(e, "vehicle"),
                     };
                     string role = Str(e, "role") ?? "Guard";
                     if (!System.Enum.TryParse(role, true, out s.Role)) throw new System.FormatException("spawn " + index + ": unknown role \"" + role + "\" (Guard, Wander or Patrol)");
@@ -251,10 +319,19 @@ namespace MissionLab.Core
                 if (root.TryGetProperty("triggers", out JsonElement zones) && zones.ValueKind == JsonValueKind.Array)
                     foreach (JsonElement z in zones.EnumerateArray())
                     {
-                        if (z.ValueKind != JsonValueKind.Object || !TryVec(z, "pos", out V3 zp)) continue;
+                        if (z.ValueKind != JsonValueKind.Object) continue;
+                        string when = Str(z, "when");
+                        if (!TriggerPlan.Known(when)) when = TriggerPlan.OnZone;                 // files from before there were other kinds
+                        bool placed = TryVec(z, "pos", out V3 zp);
                         int id = (int)Num(z, "id", 0);
-                        if (id > 0) plan.Triggers.Add(new TriggerPlan { Id = id, Pos = zp, Radius = System.Math.Max(1f, Num(z, "radius", 10)), Name = Str(z, "name"),
-                                                                   FacePlayer = !(z.TryGetProperty("facePlayer", out JsonElement fp) && fp.ValueKind == JsonValueKind.False) });
+                        if (id <= 0 || (when == TriggerPlan.OnZone && !placed)) continue;
+                        var t = new TriggerPlan { Id = id, When = when, Pos = zp, Radius = System.Math.Max(1f, Num(z, "radius", 10)), Name = Str(z, "name"),
+                                                  FacePlayer = !(z.TryGetProperty("facePlayer", out JsonElement fp) && fp.ValueKind == JsonValueKind.False),
+                                                  Delay = System.Math.Min(7200f, System.Math.Max(0f, Num(z, "delay", 0))), Item = Str(z, "item") ?? "", After = (int)Num(z, "after", 0) };
+                        if (z.TryGetProperty("doors", out JsonElement zd) && zd.ValueKind == JsonValueKind.Array) ReadDoors(zd, t.Doors);
+                        t.OpensExtraction = Str(z, "extraction") == "open";
+                        t.Doors.RemoveAll(d => !d.Locked.HasValue);
+                        plan.Triggers.Add(t);
                     }
                 if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)
                     foreach (JsonElement o in items.EnumerateArray())
@@ -262,13 +339,7 @@ namespace MissionLab.Core
                         string name = o.ValueKind == JsonValueKind.Object ? Str(o, "name") : null;
                         if (!string.IsNullOrEmpty(name) && TryVec(o, "pos", out V3 op)) plan.Objectives.Add(new ObjectivePlan { Name = name, Pos = op, Yaw = Num(o, "yaw", 0) });
                     }
-                if (root.TryGetProperty("doors", out JsonElement doors) && doors.ValueKind == JsonValueKind.Array)
-                    foreach (JsonElement d in doors.EnumerateArray())
-                    {
-                        if (d.ValueKind != JsonValueKind.Object || !TryVec(d, "pos", out V3 dp)) continue;
-                        var door = new DoorPlan { Name = Str(d, "name"), Pos = dp, Locked = Flag(d, "locked"), EnemiesCanOpen = Flag(d, "enemiesCanOpen") };
-                        if (door.HasWish) plan.Doors.Add(door);
-                    }
+                if (root.TryGetProperty("doors", out JsonElement doors) && doors.ValueKind == JsonValueKind.Array) ReadDoors(doors, plan.Doors);
                 // An enemy that names a zone that does not exist is simply there from the start.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0 && !plan.Triggers.Exists(t => t.Id == s.Trigger)) s.Trigger = 0;
                 plan.RequestedEnemies = plan.Spawns.Count;
@@ -281,6 +352,16 @@ namespace MissionLab.Core
 
         private static float Num(JsonElement o, string name, float fallback) =>
             o.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number ? v.GetSingle() : fallback;
+
+        private static void ReadDoors(JsonElement list, List<DoorPlan> into)
+        {
+            foreach (JsonElement d in list.EnumerateArray())
+            {
+                if (d.ValueKind != JsonValueKind.Object || !TryVec(d, "pos", out V3 dp)) continue;
+                var door = new DoorPlan { Name = Str(d, "name"), Pos = dp, Locked = Flag(d, "locked"), EnemiesCanOpen = Flag(d, "enemiesCanOpen") };
+                if (door.HasWish) into.Add(door);
+            }
+        }
 
         /// <summary>true, false, or nothing said.</summary>
         private static bool? Flag(JsonElement o, string name) =>
