@@ -142,6 +142,45 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     ok = ok && MissionPlan.SettingsJson(plain) == "" && !plain.ToJson().Contains("vehicle") && !plain.ToJson().Contains("weather");
     if (!ok) { Console.WriteLine("  FAIL: mission settings do not survive save and load: " + sp.ToJson()); failures++; }
 }
+{   // what a scenario leaves to chance, and what a trigger can do besides bringing enemies
+    string src = "{\"power\":\"off\",\"triggers\":[{\"id\":1,\"when\":\"time\",\"delay\":600,\"power\":\"on\",\"message\":\"Hold  the\\nhouse\",\"end\":\"success\"},{\"id\":2,\"when\":\"alert\",\"end\":\"failed\",\"power\":\"dim\",\"message\":\"" + new string('x', 200) + "\"}]," +
+                 "\"spawns\":[{\"pos\":[0,0,0]},{\"pos\":[1,0,0],\"chance\":40},{\"pos\":[2,0,0],\"chance\":50,\"lot\":3},{\"pos\":[3,0,0],\"chance\":50,\"lot\":3}," +
+                 "{\"pos\":[4,0,0],\"either\":1,\"option\":1},{\"pos\":[5,0,0],\"either\":1,\"option\":1},{\"pos\":[6,0,0],\"either\":1,\"option\":2},{\"pos\":[7,0,0],\"either\":1,\"option\":3},{\"pos\":[8,0,0],\"chance\":0},{\"pos\":[9,0,0],\"chance\":250}]}";
+    var vp = MissionPlan.FromJson(src);
+    var again = MissionPlan.FromJson(vp.ToJson());
+    bool ok = vp.Power == "off" && again.Power == "off"
+        && again.Triggers.Count == 2 && again.Triggers[0].Power == "on" && again.Triggers[0].Message == "Hold  the house" && again.Triggers[0].End == "success"
+        && again.Triggers[1].Power == "" && again.Triggers[1].End == "failed" && again.Triggers[1].Message.Length == TriggerPlan.MessageLength
+        && again.Spawns.Count == 10 && again.Spawns[0].Chance == 100 && again.Spawns[1].Chance == 40 && again.Spawns[2].Lot == 3 && again.Spawns[6].Either == 1 && again.Spawns[6].Option == 2
+        && again.Spawns[8].Chance == 1 && again.Spawns[9].Chance == 100
+        && again.ToJson() == vp.ToJson() && !MissionPlan.SpawnJson(again.Spawns[0]).Contains("chance") && !MissionPlan.SpawnJson(again.Spawns[0]).Contains("either");
+    if (!ok) { Console.WriteLine("  FAIL: chance, either/or and trigger actions do not survive save and load: " + again.ToJson()); failures++; }
+
+    var seen = new Dictionary<string, int>(); int lone = 0, squad = 0; const int runs = 4000;
+    for (int r = 0; r < runs; r++)
+    {
+        var p = MissionPlan.FromJson(src);
+        var notes = new List<string>();
+        var gone = Variants.Resolve(p, new Rng(1000 + r), notes);
+        var q = MissionPlan.FromJson(src);
+        Variants.Resolve(q, new Rng(1000 + r), null);
+        if (q.ToJson() != p.ToJson()) { Console.WriteLine("  FAIL: the same roll gives another mission"); failures++; break; }
+        if (gone.Count + p.Spawns.Count != 10 || !p.Spawns.Exists(s => s.Pos.X == 0) || !p.Spawns.Exists(s => s.Pos.X == 9)) { Console.WriteLine("  FAIL: an enemy without chance was dropped, or one was lost"); failures++; break; }
+        bool a = p.Spawns.Exists(s => s.Pos.X == 4), a2 = p.Spawns.Exists(s => s.Pos.X == 5), b = p.Spawns.Exists(s => s.Pos.X == 6), c = p.Spawns.Exists(s => s.Pos.X == 7);
+        if (a != a2 || (a ? 1 : 0) + (b ? 1 : 0) + (c ? 1 : 0) != 1) { Console.WriteLine("  FAIL: an either/or set did not keep exactly one option"); failures++; break; }
+        string which = a ? "A" : b ? "B" : "C"; seen[which] = seen.TryGetValue(which, out int n) ? n + 1 : 1;
+        bool l2 = p.Spawns.Exists(s => s.Pos.X == 2), l3 = p.Spawns.Exists(s => s.Pos.X == 3);
+        if (l2 != l3) { Console.WriteLine("  FAIL: a lot was split"); failures++; break; }
+        if (l2) squad++;
+        if (p.Spawns.Exists(s => s.Pos.X == 1)) lone++;
+    }
+    bool fair = seen.Count == 3 && Math.Abs(seen["A"] - runs / 3) < runs / 20 && Math.Abs(seen["B"] - runs / 3) < runs / 20
+             && Math.Abs(lone - runs * 0.4) < runs / 20 && Math.Abs(squad - runs * 0.5) < runs / 20;
+    if (!fair) { Console.WriteLine("  FAIL: the rolls are off: options " + string.Join(",", seen) + ", 40% enemy " + lone + ", 50% squad " + squad + " of " + runs); failures++; }
+    else Console.WriteLine("  chance and either/or: options " + string.Join(" ", seen) + " | 40% enemy there " + lone + ", 50% squad there " + squad + " of " + runs);
+    var none = MissionPlan.FromJson("{\"spawns\":[{\"pos\":[1,2,3]}]}");
+    if (Variants.Any(none) || Variants.Resolve(none, new Rng(1), null).Count != 0 || none.Spawns.Count != 1) { Console.WriteLine("  FAIL: a plain scenario was touched by the rolls"); failures++; }
+}
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {

@@ -162,6 +162,12 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   - Not tried yet: message, hunt, two sides, bring players back, end as failed.
   - Clean House by night holds 88 `DynamicLight`, one drone (`ISR`), one `WaveSurvival` object,
     no destructibles. Enemy sight at night is 25 m (50 m by day).
+- Seen by the player in the third run: "lights out" makes the house go dark. The two flashbangs
+  and the landmine placed by hand were not seen (neither on the ground nor going off); whether
+  they were there is open, so from 0.18 the try-out looks at a placed thing again 2 s later and
+  reports whether it is still there, where, and how many of its parts are drawn. After
+  `ServerCompleteExfil()` with `HasCheated` set, the end screen says that cheating was detected and
+  that there are no achievements: the flag does what its name says.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

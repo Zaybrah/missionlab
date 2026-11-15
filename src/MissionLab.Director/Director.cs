@@ -32,6 +32,8 @@ namespace MissionLab
         internal static float HandledAt;
         internal static MissionPlan CurrentPlan;            // the layout this mission started with
         internal static string CurrentScenarioPath;         // the file it came from, or null for a generated layout
+        /// <summary>Enemies of the scenario that lost their roll this time (chance, either/or). A save puts them back.</summary>
+        internal static readonly List<SpawnPlan> SatOut = new List<SpawnPlan>();
         internal static string CurrentScenarioScene;        // that file's own "scene" value
         private static string _lastScenarioPath;
 
@@ -147,7 +149,7 @@ namespace MissionLab
 
             // Remember this mission for the Game Master tools, whatever happens next.
             CurrentRaidPtr = raid.Pointer; CurrentTemplate = template; CurrentNav = nav;
-            CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null;
+            CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null; SatOut.Clear();
             CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
 
             // The lobby choice "Empty map": nobody spawns; you build the mission yourself and save it.
@@ -168,6 +170,15 @@ namespace MissionLab
             long seed; int enemies; string source;
             var later = new HashSet<SpawnPlan>();
             string scenarioScene = fromFile ? plan.Scene : "";
+            if (fromFile && Variants.Any(plan))
+            {
+                // What the scenario leaves to chance is rolled now, anew for every mission unless a seed is set.
+                long roll = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                var rolls = new List<string>();
+                int before = plan.Spawns.Count;
+                SatOut.AddRange(Variants.Resolve(plan, new Rng(roll ^ 0x5EED), rolls));
+                log.LogInfo("left to chance: " + string.Join("; ", rolls) + " | " + plan.Spawns.Count + " of " + before + " enemies are in this mission (roll " + roll + ")");
+            }
             if (fromFile)
             {
                 seed = plan.Seed;

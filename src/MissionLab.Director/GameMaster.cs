@@ -62,6 +62,7 @@ namespace MissionLab
         private static int _holdAfter;            // the trigger the extraction waits for
         private static string _insertion = "";
         private static WeatherPlan _weather = new WeatherPlan();
+        private static string _power = "";
         private static float _vehicleCheckAt = -1f;
         private static List<DoorV2> _doorList;
         private static float _doorScanAt;
@@ -110,6 +111,7 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
             _weather = plan.Weather ?? new WeatherPlan();
+            _power = plan.Power ?? "";
             _insertion = plan.Insertion ?? "";
             if (_insertion != "")
             {
@@ -154,8 +156,8 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; BornAs.Clear(); Changed.Clear(); Vehicles.Clear(); TryOuts.Last = "";
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _vehicleCheckAt = -1f;
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; BornAs.Clear(); Changed.Clear(); Vehicles.Clear(); TryOuts.Reset();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -168,13 +170,14 @@ namespace MissionLab
             if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End(); Reset(); return; }
 
             Replay.Tick(raid, gm, now);
+            TryOuts.Tick(Time.unscaledTime);
             PumpSpawns(raid, gm, now);
             if (!_keysOk || !DirectorPlugin.GmEnabled.Value) return;
             try { Keys(raid, gm); }
             catch (InvalidOperationException e) { _keysOk = false; DirectorPlugin.L.LogWarning("Game Master keys disabled: " + e.Message); }
         }
 
-        private static void Say(string text)
+        internal static void Say(string text)
         {
             Director.Banner = "MissionLab GM: " + text;
             Director.BannerUntil = Time.unscaledTime + 7f;
@@ -357,6 +360,8 @@ namespace MissionLab
             bool open = ExtractionOpen(raid);
             sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
               .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
+            sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count);
+            rev.Append('P').Append(_power);
             sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
             List<string> names = Insertions();
             for (int i = 0; i < names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(names[i]));
@@ -605,9 +610,19 @@ namespace MissionLab
                 if (t.OpensExtraction) OpenExtraction(raidNow, TriggerName(t) + " opens it");
                 else if (wasHeld && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
             }
+            string more = "";
+            if (t.Power == "off" || t.Power == "on")
+                try { TryOuts.Power(t.Power == "on"); more += ", the lights go " + t.Power; }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set by " + TriggerName(t) + ": " + e.Message); }
+            if (!string.IsNullOrEmpty(t.Message) && raidNow != null)
+                try { TryOuts.Message(raidNow, t.Message); more += ", a message is shown"; Replay.Event("note", "message: " + t.Message); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the message of " + TriggerName(t) + " could not be shown: " + e.Message); }
             string why = t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
                        : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
-            Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : ""));
+            Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more);
+            if (t.End == "success" || t.End == "failed")
+                try { Say(TriggerName(t) + " ends the mission: " + TryOuts.End(t.End == "success")); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the mission could not be ended by " + TriggerName(t) + ": " + e.Message); }
         }
 
         /// <summary>The Game Master sets a trigger off by hand.</summary>
@@ -924,6 +939,9 @@ namespace MissionLab
                 }
                 catch { }
                 _vehicleCheckAt = now + 2f;
+                if (_power == "off" || _power == "on")
+                    try { DirectorPlugin.L.LogInfo("lights at the start: " + TryOuts.Power(_power == "on")); }
+                    catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set at the start: " + e.Message); }
                 if (_insertion != "" && ForcedInfil < 0)
                 {
                     // The insertion list was not there yet when the mission was set up.
@@ -1629,6 +1647,11 @@ namespace MissionLab
                 _insertion = settings.Insertion ?? "";
                 bool weatherChanged = MissionPlan.SettingsJson(new MissionPlan { Weather = settings.Weather }) != MissionPlan.SettingsJson(new MissionPlan { Weather = _weather });
                 _weather = settings.Weather;
+                if ((settings.Power ?? "") != _power)
+                {
+                    _power = settings.Power ?? "";
+                    if (_power != "") try { Tell("lights: " + TryOuts.Power(_power == "on")); } catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set: " + e.Message); }
+                }
                 if (weatherChanged) { try { string w = ApplyWeather(); if (w != null) Tell("weather: " + w); } catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); } }
                 int holdNow = settings.ExtractionAfter != 0 && sent.Triggers.Exists(t => t.Id == settings.ExtractionAfter) ? settings.ExtractionAfter : 0;
                 if (holdNow != _holdAfter)
@@ -1684,7 +1707,8 @@ namespace MissionLab
             foreach (Marker m in _markers) { plan.Spawns.Add(m.Plan); plan.Groups = Math.Max(plan.Groups, m.Plan.Group + 1); }
             plan.Triggers.AddRange(_zones);
             plan.Doors.AddRange(_doorPlans);
-            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather;
+            foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
+            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power;
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))

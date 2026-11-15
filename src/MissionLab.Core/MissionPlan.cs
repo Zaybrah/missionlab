@@ -31,6 +31,19 @@ namespace MissionLab.Core
         public int After;
         public List<DoorPlan> Doors = new List<DoorPlan>();     // only Locked is used: the door locks or unlocks when the trigger fires
         public bool OpensExtraction;      // when it fires, the team may extract, whatever the mission's own rule says
+        public string Power = "";         // "off" or "on": the map's breaker box, and the lights wired to it, when it fires
+        public string Message = "";       // shown on every player's screen when it fires
+        public string End = "";           // "success" or "failed": the mission ends when it fires
+
+        public const int MessageLength = 120;
+        public static string OnOff(string v) => v == "off" || v == "on" ? v : "";
+        public static string Ending(string v) => v == "success" || v == "failed" ? v : "";
+        public static string Clean(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            text = text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+            return text.Length > MessageLength ? text.Substring(0, MessageLength) : text;
+        }
 
         public static bool Known(string when) => when == OnZone || when == OnAlert || when == OnIntel || when == OnTime || when == OnAfter;
     }
@@ -94,6 +107,10 @@ namespace MissionLab.Core
         public bool Hvt;                  // the mission's target person stands here (missions that have one)
         public bool Vehicle;              // not a person: one of the game's gun trucks is parked here, facing Yaw
         public bool Prone;                // spawns lying down
+        public int Chance = 100;          // percent: how often this enemy is there at all (rolled when the mission starts)
+        public int Lot;                   // enemies with the same lot share one roll: the whole squad is there, or none of it
+        public int Either;                // an either/or set: of all enemies with this number, only one option is there
+        public int Option;                // which option of the set this enemy belongs to (1 = A, 2 = B ...)
         public string Type;               // enemy type by name; empty = one of the mission's usual types
         public int WanderDistance;        // metres; only used by Wander
         public float PatrolWaitSeconds;
@@ -118,6 +135,7 @@ namespace MissionLab.Core
         public int ExtractionAfter;       // extraction stays shut until this trigger has fired (0: the mission's own rule alone)
         public string Insertion = "";     // the insertion every player gets, by name ("": each player's own choice)
         public WeatherPlan Weather = new WeatherPlan();
+        public string Power = "";         // "off": the breaker box is off when the mission starts ("": left to the game)
         public List<string> Notes = new List<string>();
 
         public static string DoorsJson(List<DoorPlan> doors)
@@ -174,6 +192,9 @@ namespace MissionLab.Core
                 sb.Append(",\"facePlayer\":").Append(z.FacePlayer ? "true" : "false");
                 if (z.Doors.Exists(d => d.Locked.HasValue)) sb.Append(",\"doors\":").Append(DoorsJson(z.Doors));
                 if (z.OpensExtraction) sb.Append(",\"extraction\":\"open\"");
+                if (TriggerPlan.OnOff(z.Power) != "") sb.Append(",\"power\":\"").Append(z.Power).Append('"');
+                if (TriggerPlan.Clean(z.Message) != "") sb.Append(",\"message\":\"").Append(Text(TriggerPlan.Clean(z.Message))).Append('"');
+                if (TriggerPlan.Ending(z.End) != "") sb.Append(",\"end\":\"").Append(z.End).Append('"');
                 sb.Append('}');
             }
             return sb.Append(']').ToString();
@@ -204,6 +225,9 @@ namespace MissionLab.Core
             sb.Append(",\"trigger\":").Append(s.Trigger);
             sb.Append(",\"hvt\":").Append(s.Hvt ? "true" : "false");
             if (s.Vehicle) sb.Append(",\"vehicle\":true");
+            if (s.Chance < 100) sb.Append(",\"chance\":").Append(System.Math.Max(1, s.Chance));
+            if (s.Lot > 0) sb.Append(",\"lot\":").Append(s.Lot);
+            if (s.Either > 0) sb.Append(",\"either\":").Append(s.Either).Append(",\"option\":").Append(System.Math.Max(1, s.Option));
             sb.Append(",\"patrol\":[");
             for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
             sb.Append("]}");
@@ -217,6 +241,7 @@ namespace MissionLab.Core
             var inv = CultureInfo.InvariantCulture;
             if (p.ExtractionAfter != 0) sb.Append(",\"extraction\":{\"after\":").Append(p.ExtractionAfter).Append('}');
             if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(p.Insertion.Replace("\\", "/").Replace("\"", "'")).Append('"');
+            if (TriggerPlan.OnOff(p.Power) != "") sb.Append(",\"power\":\"").Append(p.Power).Append('"');
             if (p.Weather.HasWish)
             {
                 var parts = new List<string>();
@@ -274,6 +299,7 @@ namespace MissionLab.Core
                     Scene = Str(root, "scene"),
                     NavFile = Str(root, "navFile"),
                     Insertion = Str(root, "insertion") ?? "",
+                    Power = TriggerPlan.OnOff(Str(root, "power")),
                 };
                 if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0));
                 if (root.TryGetProperty("weather", out JsonElement we) && we.ValueKind == JsonValueKind.Object)
@@ -306,7 +332,12 @@ namespace MissionLab.Core
                         Trigger = (int)Num(e, "trigger", 0),
                         Hvt = Bool(e, "hvt"),
                         Vehicle = Bool(e, "vehicle"),
+                        Chance = System.Math.Max(1, System.Math.Min(100, (int)Num(e, "chance", 100))),
+                        Lot = System.Math.Max(0, (int)Num(e, "lot", 0)),
+                        Either = System.Math.Max(0, (int)Num(e, "either", 0)),
+                        Option = System.Math.Max(0, (int)Num(e, "option", 0)),
                     };
+                    if (s.Either > 0 && s.Option < 1) s.Option = 1;
                     string role = Str(e, "role") ?? "Guard";
                     if (!System.Enum.TryParse(role, true, out s.Role)) throw new System.FormatException("spawn " + index + ": unknown role \"" + role + "\" (Guard, Wander or Patrol)");
                     if (e.TryGetProperty("patrol", out JsonElement route) && route.ValueKind == JsonValueKind.Array)
@@ -330,6 +361,7 @@ namespace MissionLab.Core
                                                   Delay = System.Math.Min(7200f, System.Math.Max(0f, Num(z, "delay", 0))), Item = Str(z, "item") ?? "", After = (int)Num(z, "after", 0) };
                         if (z.TryGetProperty("doors", out JsonElement zd) && zd.ValueKind == JsonValueKind.Array) ReadDoors(zd, t.Doors);
                         t.OpensExtraction = Str(z, "extraction") == "open";
+                        t.Power = TriggerPlan.OnOff(Str(z, "power")); t.Message = TriggerPlan.Clean(Str(z, "message")); t.End = TriggerPlan.Ending(Str(z, "end"));
                         t.Doors.RemoveAll(d => !d.Locked.HasValue);
                         plan.Triggers.Add(t);
                     }

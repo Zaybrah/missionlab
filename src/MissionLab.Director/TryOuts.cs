@@ -18,6 +18,44 @@ namespace MissionLab
 
         private static List<string> _things;
 
+        // Things placed by hand are looked at again two seconds later: still there, fallen through the floor, visible?
+        private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
+        private static readonly List<Placed> Watch = new List<Placed>();
+
+        internal static void Reset() { Last = ""; Watch.Clear(); }
+
+        internal static void Tick(float now)
+        {
+            for (int i = Watch.Count - 1; i >= 0; i--)
+            {
+                Placed p = Watch[i];
+                if (now - p.When < 2f) continue;
+                Watch.RemoveAt(i);
+                string said;
+                try
+                {
+                    if (p.Go == null) said = "'" + p.Name + "' is gone again, 2 s after it was placed";
+                    else
+                    {
+                        CultureInfo inv = CultureInfo.InvariantCulture;
+                        Vector3 at = p.Go.transform.position;
+                        var parts = p.Go.GetComponentsInChildren<Renderer>(true);
+                        int shown = 0;
+                        for (int k = 0; parts != null && k < parts.Length; k++)
+                            if (parts[k] != null && parts[k].enabled && parts[k].gameObject.activeInHierarchy) shown++;
+                        float moved = Vector3.Distance(at, p.At);
+                        said = "'" + p.Name + "' 2 s later: " + (p.Go.activeInHierarchy ? "still there" : "there but switched off") +
+                               (moved > 0.5f ? ", " + moved.ToString("0.0", inv) + " m from where it was put" + (at.y < p.At.y - 0.5f ? " (it fell to height " + at.y.ToString("0.0", inv) + ")" : "") : ", where it was put") +
+                               ", " + shown + " of " + (parts == null ? 0 : parts.Length) + " parts drawn";
+                    }
+                }
+                catch (Exception e) { said = "'" + p.Name + "' could not be looked at again: " + e.Message; }
+                Last = said;
+                Replay.Event("note", "try-out: " + said);
+                GameMaster.Say(said);
+            }
+        }
+
         // Not for placing by hand: the game's own managers, players, enemies and vehicles (those have their own way in).
         private static readonly string[] NotThese =
         {
@@ -84,7 +122,7 @@ namespace MissionLab
         }
 
         // ------------------------------------------------------------------ lights
-        private static string Power(bool on)
+        internal static string Power(bool on)
         {
             var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<BreakerSwitch>(), true);
             int boxes = 0, lights = 0; bool night = false, says = on;
@@ -104,7 +142,7 @@ namespace MissionLab
         }
 
         // ------------------------------------------------------------------ a message on every screen
-        private static string Message(RaidManager raid, string text)
+        internal static string Message(RaidManager raid, string text)
         {
             if (string.IsNullOrWhiteSpace(text)) text = "MissionLab: test message";
             if (text.Length > 120) text = text.Substring(0, 120);
@@ -199,6 +237,7 @@ namespace MissionLab
             if (Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 8f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
             GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)prefab, pos + Vector3.up * 0.05f, Quaternion.Euler(0f, yaw, 0f)).Cast<GameObject>();
             Mirror.NetworkServer.Spawn(go, (Mirror.NetworkConnection)null);
+            Watch.Add(new Placed { Go = go, Name = name, At = go.transform.position, When = Time.unscaledTime });
             CultureInfo inv = CultureInfo.InvariantCulture;
             string where = "(" + pos.x.ToString("0.0", inv) + ", " + pos.y.ToString("0.0", inv) + ", " + pos.z.ToString("0.0", inv) + ")";
             Replay.Event("appears", "'" + name + "' is placed", pos);
@@ -216,7 +255,7 @@ namespace MissionLab
             return "respawn: the game was asked to bring every player back (respawns were " + (before ? "on" : "off") + ", now " + (g.AllowRespawns ? "on" : "off") + ")";
         }
 
-        private static string End(bool success)
+        internal static string End(bool success)
         {
             GameManagerNetwork g = GameManagerNetwork.instance;
             if (g == null) return "end: the game's mission keeper was not found";

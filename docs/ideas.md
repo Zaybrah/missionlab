@@ -50,28 +50,45 @@ Master), whether the game has shown it works, how much work it is, and whether t
 update can break it. Editor and core features survive V10; anything that touches players is the
 most likely to break.
 
-| Grade | What | Why this grade | Shown in the game so far | Work |
-|---|---|---|---|---|
-| A | Mission check panel | Catches scenario mistakes before a session is spent on them; two test runs were lost to such mistakes. Survives V10. | needs no game | small |
-| A | Chance and either/or groups | A hand-made scenario that differs every time, the core wish. Survives V10. | needs no game | small |
-| A | Messages on screen | Everything with a goal or a story needs it: objectives, timers, Game Master notes. | not clicked yet | small once it works |
-| A | Win and lose rules | With messages it makes real custom missions: hold for ten minutes, fail on the alarm. | forced success ended the mission; "failed" not tried | medium |
-| A | Lights out as a trigger and a setting | Cheap, and it changes how a night mission plays. | the game reports the power off; what it looked like is open | small |
-| B | Things as markers (mines, weapons, intel anywhere) | New kinds of mission; needs a new marker kind in the editor. | three things placed without error; what they looked like is open | medium |
-| B | Trigger logic and "hold the zone" | Defend and multi-stage missions. Survives V10. | needs no game | medium |
-| B | Orders and hunters from behind | The base for adaptive pacing and a stronger Game Master. | not clicked yet | medium |
-| B | Enemy profiles | Conscripts, bodyguards, night-vision sentries; runs on the host only. | class listing only | medium |
-| B | Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | not clicked yet | medium |
-| B | Scaling by team size | One scenario for two or six friends. | needs one read on the host | small |
-| B | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
-| B | Fair-play switch | Should be in before the mod is shared; waits for a decision. | the flag can be set; its effect is unknown | small |
-| C | Factions | Fun, but few missions need it. | not clicked yet | medium |
-| C | Drone strike, custom wave survival | Clean House by night has a drone and a wave-survival object; each needs a try-out first. | class listing and Recon counts | medium |
-| C | Mission type on any map | High value, but the game sets its screens and extraction from the mode at load. After V10. | class listing only | large |
-| C | Weapon rules, radio cues, briefing and after-action pages, chained missions, checkpoint | Nice to have. | mostly class listing | mixed |
+### A: built in 0.18
 
-Order: the two A items that need no game first, then messages, win and lose rules and lights out
-as soon as their try-outs are confirmed by eye.
+| What | State |
+|---|---|
+| Mission check panel | built, tested in the editor |
+| Chance and either/or groups | built; rolls tested in the core, not yet in the game |
+| Messages on screen | built as a trigger action; not yet seen in the game |
+| Win and lose rules | built as a trigger action; success seen in the game (with the game's "cheating detected" notice), failed not yet |
+| Lights out | built as a trigger action and a mission setting; seen in the game |
+
+### B: next
+
+| What | Why this grade | Shown in the game so far | Work |
+|---|---|---|---|
+| Things as markers (mines, weapons, intel anywhere) | New kinds of mission; needs a new marker kind in the editor. | three things placed without error, none seen; the try-out now reports back | medium |
+| Trigger logic and "hold the zone" | Defend and multi-stage missions. Survives V10. | needs no game | medium |
+| Orders and hunters from behind | The base for adaptive pacing and a stronger Game Master. | not clicked yet | medium |
+| Enemy profiles | Conscripts, bodyguards, night-vision sentries; runs on the host only. | class listing only | medium |
+| Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | not clicked yet | medium |
+| Scaling by team size | One scenario for two or six friends. | needs one read on the host | small |
+| Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
+| Fair-play switch | The flag works (seen on the end screen). Whether every modded mission sets it is a decision. | seen | small |
+| Pop-in check | Warns when a trigger's enemies would appear in plain sight of the players. | needs no game | medium |
+| Smarter danger check | Only the insertion the scenario chose; 25 m sight at night. | needs no game | small |
+| Chance for doors and triggers | A door locked half the time, a trigger that only sometimes fires. | needs no game | small |
+| Enemies that sit out, shown in the live page | The Game Master sees what the roll left out and can bring it in. | needs no game | small |
+
+### C: later
+
+| What | Why this grade |
+|---|---|
+| Factions | Fun, but few missions need it; try-out not clicked yet. |
+| Drone strike, custom wave survival | Clean House by night has a drone and a wave-survival object; each needs a try-out first. |
+| Mission type on any map | High value, but the game sets its screens and extraction from the mode at load. After V10. |
+| World states | Doors open or broken at the start, single rooms dark, enemy radio jammed. |
+| Game Master extras | Player hand signals, puppet actions (an enemy throws a grenade), team status board, hand tools. |
+| Pages and campaigns | Briefing page, after-action page and heat map, chained missions, checkpoint. |
+| People and goals | Bystanders and a person to rescue, side objectives and par time, stripped start, intel hunt with a clue. |
+| Weapon rules, radio cues, complications, objective recipes | Nice to have. |
 
 ## Try-outs (0.17)
 

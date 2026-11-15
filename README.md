@@ -172,6 +172,33 @@ The Replay tab lists how a recorded mission went: its length, when and from how 
 players were first noticed, how long the enemy was alerted, enemies down, and how far
 each player walked. A row with a time jumps to that moment.
 
+### Chance and either/or
+A hand-made scenario can leave parts to chance, rolled anew each time the mission starts (or the
+same every time, with `Seed` set in the config):
+- **Chance.** An enemy with `"chance": 60` is there 60 times in 100. Enemies that share a `"lot"`
+  share one roll: the squad is there, or none of it. In the editor: select one or several, set
+  "Chance (%)".
+- **Either/or.** Enemies with the same `"either"` number form a set; each belongs to an
+  `"option"` (1 = A, 2 = B ...), and one option is there each mission. In the editor: "Either/or"
+  in the enemy panel, for everything selected.
+Enemies that lose their roll are kept: saving from the game writes them back. The log names the
+roll and what came of it.
+
+### What a trigger can do
+Besides bringing enemies and working doors, a trigger can switch the lights (`"power": "off"` or
+`"on"`, on maps with a breaker box), show a message on every player's screen (`"message"`, up to
+120 characters) and end the mission (`"end": "success"` or `"failed"`). A mission ended as a success
+this way is marked as modded first, and the game then shows its own notice and gives no
+achievements. `"power": "off"` at the top of the file switches the lights off when the mission starts.
+Tested in the game: lights out, and the ending as a success. Not yet: the message, the ending as failed.
+
+### Mission check
+The Mission tab lists what would go wrong before a mission is spent on it: triggers that can
+never fire or do nothing, an extraction that can never open, an insertion the map does not have,
+enemies off the walkable ground or in view of an insertion point, two enemies on one spot, a target
+person left to chance, either/or sets with one option, door settings that fit no door. Click a
+finding to go to the thing. The tab shows how many need a look.
+
 ### Try-outs
 While a mission runs, the Mission tab of the browser page has a "Try-outs" box: a message on
 every screen, lights out, enemies hunting the nearest player, two enemy sides, placing a thing
