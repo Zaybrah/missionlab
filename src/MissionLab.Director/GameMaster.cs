@@ -1471,6 +1471,8 @@ namespace MissionLab
             sb.Append("],\"types\":[");
             var types = Types(gm);
             for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
+            sb.Append("],\"infilPoints\":[");
+            try { List<V3> pts = Director.CurrentInfils; for (int i = 0; pts != null && i < pts.Count; i++) sb.Append(i > 0 ? "," : "").Append('[').Append(F(pts[i].X)).Append(',').Append(F(pts[i].Y)).Append(',').Append(F(pts[i].Z)).Append(']'); } catch { }
             sb.Append("],\"vehicleTypes\":[");
             try { List<GameObject> trucks = Director.VehiclePrefabs(raid); for (int i = 0; i < trucks.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(trucks[i].name)); } catch { }
             // The page takes the marker list over only when this changes.

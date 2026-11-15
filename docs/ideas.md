@@ -18,6 +18,31 @@ none of it has run in the game unless it says so.
 | Gun trucks | the game's own vehicle spawner, with our parking spots | 0.15 |
 | Replay | positions and events recorded; played back on the 2D map | 0.15 |
 
+## Second round
+
+Built, in the editor only (tested there, no game needed):
+
+| Idea | What it does | Version |
+|---|---|---|
+| Danger check | flags enemies that can see an insertion point, using the 3D map export | 0.16 |
+| Squads | several enemies selected, moved, turned, copied, pasted and saved together | 0.16 |
+| Waves | timed waves that walk in on a spot, for defend missions | 0.16 |
+| Mission stats | first noticed, time alerted, enemies down, distance walked, from the recording | 0.16 |
+
+Waiting for a run of the game, because they need facts only a mission can give (Recon 0.2.3
+collects them: breakers, alarms, mines, weapon racks, teams, everything spawnable):
+
+| Idea | What the game has |
+|---|---|
+| Lights out | `BreakerSwitch` (`PowerOn` synced, `CMD_SetPowerState`), on maps that have one |
+| Orders for enemies | `BrainAI.HeardTarget(position, ...)`, `CalledBackup(position, ...)`, `SetNewAiState` |
+| Win and lose rules | `GameManagerNetwork.ShowMissionCompleteScreen`, the mission-failed popup |
+| Mines and other placeable things | `Landmine`, `ProximityExplosive`, `N_WeaponSpawner`; anything in `NetworkManager.spawnPrefabs` |
+| Factions | `TeamIdentifier.TeamID` (synced) on enemies and players, `TeamManager.GrabAllEnemies` |
+| Weapon rules | `RaidManager.prohibitedWeapons`, `mapSpecificWeapons` |
+| Adaptive pacing | built from triggers and the alert state the mod already reads |
+| Game Master on another device | the browser link opened to the local network behind a password |
+
 ## Parked
 
 - **Arriving by car on a new route.** The game's rides are fixed animations that belong

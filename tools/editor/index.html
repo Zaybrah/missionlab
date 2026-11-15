@@ -77,6 +77,12 @@ input[type="range"] { width: 100%; accent-color: var(--friend); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
 .chip.warn { border-color: var(--warn); color: var(--warn); }
+#warnings { flex-wrap: wrap; }
+#sightNote { flex-basis: 100%; margin: 0; }
+#squadBox { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+#squadBox .row { flex-wrap: wrap; }
+#squadBox .row select, #squadBox .row input { width: auto; flex: 1; min-width: 0; }
+#list li button[data-squad="true"] { box-shadow: inset 3px 0 0 var(--friend); }
 .chip.info { border-color: var(--friend); color: var(--friend); }
 #mapInfo { font: 12px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
@@ -105,7 +111,8 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #zoneList .grp { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 #trigAdd select { width: auto; flex: 1; }
 #doorTrigs { display: flex; flex-direction: column; gap: 6px; }
-#missionBox { display: flex; flex-direction: column; gap: 8px; }
+#missionBox, #waveBox { display: flex; flex-direction: column; gap: 8px; }
+#waveBox { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
 /* The panel shows one part at a time, so it never grows into one long column. */
 #tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 10px 18px; position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
 #tabs button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 5px 4px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
@@ -119,6 +126,11 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #side:not([data-show="replay"]):not([data-show="all"]) section[data-tab="replay"] { display: none !important; }
 #replayBox input[type="range"] { width: 100%; padding: 0; }
 #replayBox select, #replayPick select { width: auto; flex: 1; min-width: 0; }
+#rpStats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+#rpStats li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; }
+#rpStats li span { color: var(--ink-2); }
+#rpStats li b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+#rpStats li button { all: unset; cursor: pointer; text-decoration: underline; font-weight: 600; font-variant-numeric: tabular-nums; }
 #rpEvents { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
 #rpEvents button { all: unset; cursor: pointer; display: block; width: 100%; box-sizing: border-box; padding: 3px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
 #rpEvents button:hover, #rpEvents button:focus-visible { background: var(--line); }
@@ -228,6 +240,9 @@ body.dragging #drop { display: flex; }
     </div>
     <input id="rpTime" type="range" min="0" max="1" step="0.5" value="0" aria-label="Time in the mission">
     <p class="hint" id="rpClock" role="status"></p>
+    <h2>How it went</h2>
+    <ul id="rpStats"></ul>
+    <h2>What happened</h2>
     <ul id="rpEvents"></ul>
     <p class="hint">Blue is a player, red an enemy; a filled red dot has noticed the players. Lines show the last half minute. Click an event to jump to it. The replay is drawn on the 2D map.</p>
   </section>
@@ -237,6 +252,28 @@ body.dragging #drop { display: flex; }
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
+    <div id="squadBox">
+      <h2>Squads</h2>
+      <p class="hint" id="squadInfo"></p>
+      <div class="row" id="sqActs" hidden>
+        <button class="btn" id="sqCopy" type="button">Copy</button>
+        <button class="btn" id="sqTurnL" type="button" aria-label="Turn the squad to the left">↺</button>
+        <button class="btn" id="sqTurnR" type="button" aria-label="Turn the squad to the right">↻</button>
+        <button class="btn" id="sqGroup" type="button">One group</button>
+        <button class="btn danger" id="sqDel" type="button">Delete</button>
+      </div>
+      <div class="field" id="sqTrigRow" hidden><label for="sqTrig">All appear</label><select id="sqTrig"></select></div>
+      <div class="row" id="sqSaveRow" hidden>
+        <input id="sqName" type="text" placeholder="Name for this squad" maxlength="30" aria-label="Name for this squad">
+        <button class="btn" id="sqSave" type="button">Save as squad</button>
+      </div>
+      <div class="row">
+        <select id="sqPick" aria-label="Saved squads"></select>
+        <button class="btn" id="sqPlace" type="button">Place</button>
+        <button class="btn danger" id="sqForget" type="button" hidden>Forget</button>
+      </div>
+      <div class="row"><button class="btn" id="sqPaste" type="button" hidden>Paste the copied enemies</button></div>
+    </div>
   </section>
   <section data-tab="mission" aria-label="Intel items" id="intelSection" hidden>
     <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
@@ -266,6 +303,17 @@ body.dragging #drop { display: flex; }
         </select>
         <button class="btn" id="trigNew" type="button">Add trigger</button>
       </div>
+      <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
+    </div>
+    <div id="waveBox">
+      <h2>Waves</h2>
+      <p class="hint">Enemies that walk in on one spot, wave after wave, for holding a building. The spot is the selected enemy, or else the middle of the map view.</p>
+      <div class="field"><label for="wvCount">Waves</label><input id="wvCount" type="number" min="1" max="10" value="3"></div>
+      <div class="field"><label for="wvSize">Enemies in each</label><input id="wvSize" type="number" min="1" max="12" value="4"></div>
+      <div class="field"><label for="wvFirst">First after, s</label><input id="wvFirst" type="number" min="0" max="3600" step="10" value="60"></div>
+      <div class="field"><label for="wvGap">Then every, s</label><input id="wvGap" type="number" min="10" max="3600" step="10" value="90"></div>
+      <div class="row"><button class="btn" id="wvAdd" type="button">Add waves</button></div>
+    </div>
   </section>
   <section data-tab="mission" aria-label="Mission settings">
     <div id="missionBox">
@@ -277,8 +325,7 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
       <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
     </div>
-      <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
-    </div>
+
   </section>
 
   <section aria-labelledby="h-sel" id="panel" data-tab="enemies" hidden>
@@ -392,6 +439,8 @@ const state = {
   objectives: [],       // the mission's own intel items: { name, label, pos:[x,y,z], yaw, obtained }
   doors: [],            // the map's doors: { name, pos:[hinge], mid:[x,y,z], locked, enemiesCanOpen (true, false, or null = left to the game), known }
   door: -1,             // the selected door
+  squad: [],            // indices of all selected enemies when more than one is selected (the first one clicked stays "selected")
+  placing: null,        // a squad waiting for a click on the map to say where it goes
   extractionAfter: 0,   // the extraction stays shut until this trigger has fired (0: the mission's own rule alone)
   insertion: '',        // the insertion every player gets ('': each player's own choice)
   insertions: [],       // the map's insertions by name, from the game or a recon file
@@ -937,6 +986,15 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // Danger check: a dashed line from an enemy to the insertion spot it can see.
+  dangers().forEach((d, i) => {
+    if (!d) return;
+    const e = state.enemies[i], [x0, y0] = toScreen(e.pos[0], e.pos[2]), [x1, y1] = toScreen(d.at[0], d.at[2]);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.setLineDash([6, 5]);
+    ctx.lineWidth = i === state.selected ? 2.5 : 1.5; ctx.strokeStyle = css.enemy; ctx.globalAlpha = i === state.selected || d.facing ? 0.9 : 0.5; ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
+
   // Doors: a thick line where the leaf is. Grey is left to the game, red is locked, blue is unlocked.
   state.doors.forEach((d, n) => {
     if (d.mid[1] - 1 > state.ceiling + 0.4) return;
@@ -984,6 +1042,7 @@ function draw() {
   state.enemies.forEach((e, i) => {
     const [x, y] = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected, r = 6.5, bad = warningFor(e);
     const yaw = e.yaw * Math.PI / 180;
+    if (state.squad.includes(i)) { ctx.beginPath(); ctx.arc(x, y, 13, 0, 6.2832); ctx.lineWidth = 2; ctx.strokeStyle = css.friend; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]); }
     if (e.role === 'Wander' && !e.fixed && e.wanderDistance > 0) {            // how far it may roam
       ctx.beginPath(); ctx.arc(x, y, e.wanderDistance * v.scale, 0, Math.PI * 2);
       ctx.globalAlpha = sel ? 0.12 : 0.06; ctx.fillStyle = css.enemy; ctx.fill();
@@ -1062,6 +1121,11 @@ function draw() {
       if (ev[1] === 'down') { ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke(); }
       ctx.globalAlpha = 1;
     }
+  }
+
+  if (drag && drag.box && drag.moved) {
+    ctx.fillStyle = css.friend; ctx.globalAlpha = 0.1; ctx.fillRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy);
+    ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeStyle = css.friend; ctx.setLineDash([5, 4]); ctx.strokeRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy); ctx.setLineDash([]);
   }
 
   // Scale bar: this is a map, so say what a length on it means.
@@ -1301,10 +1365,108 @@ const view3d = (() => {
 })();
 
 // ------------------------------------------------------------------ checks
+// ------------------------------------------------------------------ sight
+// Who can see whom, with the walls of the 3D map file in the way. The triangles are sorted into a grid of
+// 4 m squares once, so one look only tests the few that lie under it.
+const sight = { made: null, grid: null, stamp: null, tick: 0, cache: null, key: '' };
+const SEE_THROUGH = new Set(['PlayerBlock', 'Water']);         // invisible walls for players only, and water: neither stops a look
+function sightGrid() {
+  const g = state.geo; if (!g) return null;
+  if (sight.made === g) return sight.grid;
+  const tris = [];
+  for (const grp of g.groups) {
+    if (SEE_THROUGH.has(g.layers[grp.layer] || '')) continue;
+    for (let t = grp.start; t + 2 < grp.start + grp.count; t += 3) if (!g.bad[t / 3]) tris.push(t);
+  }
+  const P = g.positions, I = g.all;
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (const t of tris) for (let k = 0; k < 3; k++) { const v = I[t + k] * 3; if (P[v] < minX) minX = P[v]; if (P[v] > maxX) maxX = P[v]; if (P[v + 2] < minZ) minZ = P[v + 2]; if (P[v + 2] > maxZ) maxZ = P[v + 2]; }
+  const cell = Math.max(4, Math.max(maxX - minX, maxZ - minZ) / 400), nx = Math.max(1, Math.ceil((maxX - minX) / cell)), nz = Math.max(1, Math.ceil((maxZ - minZ) / cell));
+  const span = t => {
+    let ax = Infinity, az = Infinity, bx = -Infinity, bz = -Infinity;
+    for (let k = 0; k < 3; k++) { const v = I[t + k] * 3; ax = Math.min(ax, P[v]); bx = Math.max(bx, P[v]); az = Math.min(az, P[v + 2]); bz = Math.max(bz, P[v + 2]); }
+    return [Math.max(0, Math.floor((ax - minX) / cell)), Math.min(nx - 1, Math.floor((bx - minX) / cell)), Math.max(0, Math.floor((az - minZ) / cell)), Math.min(nz - 1, Math.floor((bz - minZ) / cell))];
+  };
+  const start = new Uint32Array(nx * nz + 1);
+  for (const t of tris) { const [x0, x1, z0, z1] = span(t); for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) start[z * nx + x + 1]++; }
+  for (let c = 0; c < nx * nz; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, nx * nz), list = new Uint32Array(start[nx * nz]);
+  for (const t of tris) { const [x0, x1, z0, z1] = span(t); for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) list[fill[z * nx + x]++] = t; }
+  sight.made = g; sight.stamp = new Uint32Array(Math.ceil(I.length / 3)); sight.tick = 0;
+  return sight.grid = { minX, minZ, nx, nz, cell, start, list };
+}
+// Is the straight line from a to b free of walls? Both are eye positions, [x, y, z]. Without a 3D map nothing is in the way.
+function canSee(a, b) {
+  const G = sightGrid(); if (!G) return true;
+  const P = state.geo.positions, I = state.geo.all, dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+  const len = Math.hypot(dx, dz), steps = Math.max(1, Math.ceil(len / (G.cell * 0.5)));
+  const tick = ++sight.tick; let lastCell = -1;
+  for (let n = 0; n <= steps; n++) {
+    const f = n / steps, cx = Math.floor((a[0] + dx * f - G.minX) / G.cell), cz = Math.floor((a[2] + dz * f - G.minZ) / G.cell);
+    // The line is thin but a square is not: look in the square and its neighbours, so nothing is skipped at a corner.
+    for (let oz = -1; oz <= 1; oz++) for (let ox = -1; ox <= 1; ox++) {
+      const x = cx + ox, z = cz + oz; if (x < 0 || z < 0 || x >= G.nx || z >= G.nz) continue;
+      const c = z * G.nx + x; if (c === lastCell) continue;
+      for (let k = G.start[c]; k < G.start[c + 1]; k++) {
+        const t = G.list[k]; if (sight.stamp[t / 3] === tick) continue; sight.stamp[t / 3] = tick;
+        // Where the line meets the triangle's plane, and whether that point lies inside the triangle.
+        const p0 = I[t] * 3, p1 = I[t + 1] * 3, p2 = I[t + 2] * 3;
+        const e1x = P[p1] - P[p0], e1y = P[p1 + 1] - P[p0 + 1], e1z = P[p1 + 2] - P[p0 + 2], e2x = P[p2] - P[p0], e2y = P[p2 + 1] - P[p0 + 1], e2z = P[p2 + 2] - P[p0 + 2];
+        const hx = dy * e2z - dz * e2y, hy = dz * e2x - dx * e2z, hz = dx * e2y - dy * e2x, det = e1x * hx + e1y * hy + e1z * hz;
+        if (det > -1e-9 && det < 1e-9) continue;
+        const inv = 1 / det, sx = a[0] - P[p0], sy = a[1] - P[p0 + 1], sz = a[2] - P[p0 + 2], u = inv * (sx * hx + sy * hy + sz * hz);
+        if (u < 0 || u > 1) continue;
+        const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x, v = inv * (dx * qx + dy * qy + dz * qz);
+        if (v < 0 || u + v > 1) continue;
+        const along = inv * (e2x * qx + e2y * qy + e2z * qz);
+        if (along > 0.01 && along < 0.99) return false;          // something stands between the two, not at either end
+      }
+    }
+    lastCell = -1;
+  }
+  return true;
+}
+// Insertion points that belong together (one insertion is a dozen spots a few metres apart).
+function insertionGroups() {
+  const pts = state.infils, group = new Array(pts.length).fill(-1); let n = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (group[i] >= 0) continue;
+    const todo = [i]; group[i] = n;
+    while (todo.length) { const a = pts[todo.pop()]; for (let j = 0; j < pts.length; j++) if (group[j] < 0 && Math.hypot(pts[j][0] - a[0], pts[j][2] - a[2]) < 12) { group[j] = n; todo.push(j); } }
+    n++;
+  }
+  return Array.from({ length: n }, (_, g) => pts.filter((p, i) => group[i] === g));
+}
+// For every enemy that is there from the start: can it see players standing on an insertion point?
+// Returns one entry per enemy: null, or { dist, at, facing } for the nearest insertion spot in view and in range.
+const USUAL_SIGHT = 50, USUAL_FOV = 100;
+function dangers() {
+  if (!state.geo || !state.infils.length) return state.enemies.map(() => null);
+  const key = state.geo.name + '|' + state.infils.length + '|' + state.enemies.map(e => [e.pos, e.yaw, e.prone, e.vehicle, e.trigger, e.detectionRange, e.fov].join(',')).join(';');
+  if (sight.key === key) return sight.cache;
+  const groups = insertionGroups();
+  sight.key = key;
+  return sight.cache = state.enemies.map(e => {
+    if (e.trigger) return null;                                   // comes later, when the players are elsewhere
+    const range = e.detectionRange > 0 ? e.detectionRange : USUAL_SIGHT, eye = [e.pos[0], e.pos[1] + (e.vehicle ? 2.2 : e.prone ? 0.35 : 1.6), e.pos[2]];
+    let best = null;
+    for (const g of groups) for (const p of g) {
+      const dist = Math.hypot(p[0] - e.pos[0], p[1] - e.pos[1], p[2] - e.pos[2]);
+      if (dist > range || (best && dist >= best.dist)) continue;
+      if (!canSee(eye, [p[0], p[1] + 1.6, p[2]])) continue;
+      const turn = Math.abs(((Math.atan2(p[0] - e.pos[0], p[2] - e.pos[2]) * 180 / Math.PI - e.yaw) % 360 + 540) % 360 - 180);
+      best = { dist, at: p, facing: turn <= (e.fov > 0 ? e.fov : USUAL_FOV) / 2 };
+    }
+    return best;
+  });
+}
 function warningFor(e) {
-  if (state.map && !e.fixed && !onGround(e.pos)) return 'not on walkable ground; the game will treat it as a fixed sentry';
+  if (state.map && !e.fixed && !e.vehicle && !onGround(e.pos)) return 'not on walkable ground; the game will treat it as a fixed sentry';
   if (e.role === 'Patrol' && !e.fixed && e.patrol.length < 2) return 'needs at least 2 route stops, otherwise it wanders';
-  if (state.infils.some(p => Math.hypot(p[0] - e.pos[0], p[2] - e.pos[2]) < 20)) return 'within 20 m of an insertion point';
+  if (!e.trigger && state.infils.some(p => Math.hypot(p[0] - e.pos[0], p[2] - e.pos[2]) < 20)) return 'within 20 m of an insertion point';
+  const d = dangers()[state.enemies.indexOf(e)];
+  if (d) return (d.facing ? 'looking straight at an insertion point ' : 'in view of an insertion point ') + Math.round(d.dist) + ' m away: players may be noticed as soon as they arrive'
+    + (/bomber/i.test(e.type || '') ? ', and a bomber runs at whoever it sees' : '');
   return '';
 }
 
@@ -1312,7 +1474,7 @@ function warningFor(e) {
 function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut() })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.squad = []; state.selected = Math.min(o.s, o.e.length - 1); changed();
 }
 // Brings a thing into view. In 3D the floors above it are hidden, or the roof would be all there is to see.
 function showAt(p, top) {
@@ -1330,7 +1492,7 @@ function showTab(name, byHand) {
 }
 document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
 function selectDoor(n) { if (n >= 0) showTab('doors'); state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }
-function select(i) { if (i >= 0) showTab('enemies'); state.selected = i; if (i >= 0) state.door = -1; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
+function select(i) { if (i >= 0) showTab('enemies'); state.selected = i; state.squad = []; if (i >= 0) state.door = -1; view3d.syncEnemies(); if (i >= 0) { state.lastRole = state.enemies[i].role; state.lastGroup = state.enemies[i].group; } syncSide(); invalidate(); }
 function setMode(mode) {
   if (mode === '3d' && !view3d.available()) return say('The 3D view could not start. It needs an internet connection to load its 3D library, and a browser with WebGL.');
   state.mode = mode;
@@ -1374,6 +1536,56 @@ function doorAtScreen(sx, sy) {
   });
   return best;
 }
+// ------------------------------------------------------------------ squads
+// Several enemies selected at once: moved, turned, copied and saved together.
+const picked = () => { const all = state.squad.length ? state.squad : state.selected >= 0 ? [state.selected] : []; return all.filter(i => i < state.enemies.length); };
+function setSquad(list, lead) {
+  const all = [...new Set(list)].filter(i => i >= 0 && i < state.enemies.length).sort((a, b) => a - b);
+  state.squad = all.length > 1 ? all : [];
+  state.selected = all.length ? (all.includes(lead) ? lead : all[0]) : -1;
+  if (all.length) { state.door = -1; showTab('enemies'); }
+  view3d.syncEnemies(); syncSide(); invalidate();
+}
+// The nearest floor to a wanted height at a spot; the wanted height itself where nobody can walk.
+function floorNear(x, z, want) { let y = want, best = 2.5; for (const l of levelsAt(x, z)) if (Math.abs(l - want) < best) { best = Math.abs(l - want); y = l; } return y; }
+// Enemies as a file would hold them, but measured from the first one, so they can be put down anywhere.
+function squadData(list) {
+  const o = state.enemies[list[0]].pos, off = p => [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
+  return list.map(i => { const sp = spawnOf(state.enemies[i]); return Object.assign(sp, { pos: off(sp.pos), patrol: sp.patrol.map(off) }); });
+}
+function placeSquad(data, x, z) {
+  const base = groundAt(x, z);
+  if (base === null) return say('Nobody can walk there. Click on the shaded ground.');
+  pushUndo();
+  const first = state.enemies.length, lowest = Math.min(...data.map(d => d.group || 0)), free = state.enemies.reduce((m, e) => Math.max(m, e.group + 1), 0);
+  const at = p => { const X = x + p[0], Z = z + p[2]; return [X, floorNear(X, Z, base + p[1]), Z]; };
+  for (const d of data) state.enemies.push(enemyOf(Object.assign({}, d, { pos: at(d.pos), patrol: d.patrol.map(at), group: (d.group || 0) - lowest + free })));
+  state.placing = null; canvas.style.cursor = 'default';
+  setSquad(Array.from({ length: data.length }, (_, k) => first + k), first); changed();
+  say(data.length + (data.length === 1 ? ' enemy placed.' : ' enemies placed, as a new group. Drag any of them to move all.'));
+}
+function turnSquad(deg) {
+  const list = picked(); if (list.length < 2) return;
+  pushUndo();
+  const cx = list.reduce((t, i) => t + state.enemies[i].pos[0], 0) / list.length, cz = list.reduce((t, i) => t + state.enemies[i].pos[2], 0) / list.length;
+  const a = -deg * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);          // clockwise on the map for a positive turn, like facing
+  const spin = p => { const dx = p[0] - cx, dz = p[2] - cz, X = cx + dx * cos - dz * sin, Z = cz + dx * sin + dz * cos; return [X, floorNear(X, Z, p[1]), Z]; };
+  for (const i of list) { const e = state.enemies[i]; e.pos = spin(e.pos); e.patrol = e.patrol.map(spin); e.yaw = ((e.yaw + deg) % 360 + 360) % 360; }
+  changed();
+}
+let clip = null, pointerAt = null;
+function copySquad() { const list = picked(); if (!list.length) return false; clip = squadData(list); syncSide(); say(list.length + (list.length === 1 ? ' enemy copied.' : ' enemies copied.') + ' Ctrl+V puts them where the pointer is.'); return true; }
+function startPlacing(data, what) { state.placing = data; canvas.style.cursor = 'crosshair'; say('Click the map where ' + what + ' should go. Esc cancels.'); }
+function pasteSquad() { if (!clip) return false; if (pointerAt && state.mode !== '3d') placeSquad(clip, pointerAt[0], pointerAt[1]); else startPlacing(clip, 'the copied enemies'); return true; }
+// Squads kept for later, on this computer. Two come with the editor.
+const BUILT_IN_SQUADS = [
+  { name: 'Pair of guards', fixed: true, data: [0, 2].map(x => Object.assign(spawnOf(newEnemy([x, 0, 0], 'Guard', 0)), { defensive: true })) },
+  { name: 'Fire team of four', fixed: true, data: [[0, 0], [3, 2], [-3, 2], [0, 4]].map(p => Object.assign(spawnOf(newEnemy([p[0], 0, p[1]], 'Wander', 0)), { wanderDistance: 6 })) },
+];
+function savedSquads() { try { const list = JSON.parse(localStorage.getItem('missionlab-squads') || '[]'); return Array.isArray(list) ? list.filter(q => q && typeof q.name === 'string' && Array.isArray(q.data) && q.data.length) : []; } catch (e) { return []; } }
+function storeSquads(list) { try { localStorage.setItem('missionlab-squads', JSON.stringify(list)); } catch (e) { say('This browser will not keep squads between visits.'); } }
+const allSquads = () => BUILT_IN_SQUADS.concat(savedSquads());
+
 let drag = null;
 canvas.addEventListener('pointerdown', ev => {
   canvas.setPointerCapture(ev.pointerId);
@@ -1381,16 +1593,34 @@ canvas.addEventListener('pointerdown', ev => {
   let target = ev.button === 0 ? hit(sx, sy) : null;
   if (target && 'enemy' in target && state.tool === 'route' && state.selected >= 0 && target.enemy !== state.selected) target = null;   // drawing a route past another enemy
   drag = { sx, sy, moved: false, target, pan: !target || ev.button !== 0 || 'door' in target, cx: state.view.cx, cz: state.view.cz, saved: false, button: ev.button };   // a door stays where it is
-  if (target && 'enemy' in target) select(target.enemy);
+  const several = ev.shiftKey && ev.button === 0 && state.tool === 'select';
+  if (several && !target) { drag.box = true; drag.pan = false; }                 // Shift and drag over empty ground: a box around enemies
+  else if (several && 'enemy' in target) {                                         // Shift-click: in or out of the selection
+    const list = picked(); setSquad(list.includes(target.enemy) ? list.filter(i => i !== target.enemy) : list.concat(target.enemy), target.enemy); drag.pan = true; drag.held = true;
+  }
+  else if (target && 'enemy' in target && picked().length > 1 && picked().includes(target.enemy)) {   // grabbing one of several: they all come along
+    drag.squad = picked().map(i => ({ i, pos: state.enemies[i].pos.slice(), patrol: state.enemies[i].patrol.map(q => q.slice()) })); drag.grab = toWorld(sx, sy);
+    state.selected = target.enemy; syncSide(); invalidate();
+  }
+  else if (target && 'enemy' in target) select(target.enemy);
   if (target && 'door' in target) selectDoor(target.door);
 });
 canvas.addEventListener('pointermove', ev => {
   const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top, [wx, wz] = toWorld(sx, sy), y = groundAt(wx, wz);
   const floorsHere = levelsAt(wx, wz).length;
   $('coords').textContent = 'x ' + wx.toFixed(1) + '  z ' + wz.toFixed(1) + (y === null ? '  no ground' : '  height ' + y.toFixed(1)) + (floorsHere > 1 ? '  (' + floorsHere + ' floors here)' : '');
-  if (!drag) { canvas.style.cursor = hit(sx, sy) ? 'grab' : (state.tool === 'select' ? 'default' : 'crosshair'); return; }
+  pointerAt = [wx, wz];
+  if (!drag) { canvas.style.cursor = state.placing ? 'crosshair' : hit(sx, sy) ? 'grab' : (state.tool === 'select' ? 'default' : 'crosshair'); return; }
   if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) < 4) return;
   drag.moved = true;
+  if (drag.held) return;                                  // a Shift-click that slipped a little is still a click
+  if (drag.box) { drag.bx = sx; drag.by = sy; invalidate(); return; }
+  if (drag.squad) {
+    if (!drag.saved) { pushUndo(); drag.saved = true; }
+    const dx = wx - drag.grab[0], dz = wz - drag.grab[1], shift = q => { const X = q[0] + dx, Z = q[2] + dz; return [X, floorNear(X, Z, q[1]), Z]; };
+    for (const m of drag.squad) { const e = state.enemies[m.i]; if (e) { e.pos = shift(m.pos); e.patrol = m.patrol.map(shift); } }
+    invalidate(); syncPos(); return;
+  }
   if (drag.pan) { state.view.cx = drag.cx - (sx - drag.sx) / state.view.scale; state.view.cz = drag.cz + (sy - drag.sy) / state.view.scale; invalidate(); return; }
   if (y === null) return;                                 // keep the last valid spot while over a wall
   if (!drag.saved) { pushUndo(); drag.saved = true; }
@@ -1402,7 +1632,18 @@ canvas.addEventListener('pointermove', ev => {
 canvas.addEventListener('pointerup', ev => {
   const d = drag; drag = null;
   if (!d) return;
+  if (d.box) {
+    if (d.moved) {
+      const x0 = Math.min(d.sx, d.bx), x1 = Math.max(d.sx, d.bx), y0 = Math.min(d.sy, d.by), y1 = Math.max(d.sy, d.by);
+      const inside = state.enemies.map((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]); return x >= x0 && x <= x1 && y >= y0 && y <= y1 && e.pos[1] <= state.ceiling + 0.4 ? i : -1; }).filter(i => i >= 0);
+      setSquad(picked().concat(inside), inside[0]); say(picked().length + (picked().length === 1 ? ' enemy selected.' : ' enemies selected.'));
+    }
+    invalidate(); return;
+  }
+  if (d.held) return;
+  if (d.squad && !d.moved) { select(d.target.enemy); return; }           // a plain click on one of several picks just that one
   if (d.moved) { if (d.saved) changed(); return; }
+  if (state.placing && d.button === 0) { const [px, pz] = toWorld(d.sx, d.sy); placeSquad(state.placing, px, pz); return; }
   if (d.button === 2) { const [lx, lz] = toWorld(d.sx, d.sy); if (lookAt(lx, lz)) say('Enemy ' + (state.selected + 1) + ' now looks that way.'); return; }
   if (d.button !== 0) return;
   const [wx, wz] = toWorld(d.sx, d.sy), y = groundAt(wx, wz);
@@ -1433,15 +1674,25 @@ canvas.addEventListener('pointercancel', () => { drag = null; });
 canvas.addEventListener('contextmenu', ev => ev.preventDefault());
 canvas.addEventListener('wheel', ev => { ev.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(ev.clientX - r.left, ev.clientY - r.top, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
 
-function removeSelected() { if (state.selected < 0) return; pushUndo(); state.enemies.splice(state.selected, 1); state.selected = Math.min(state.selected, state.enemies.length - 1); changed(); }
+function removeSelected() {
+  const list = picked(); if (!list.length) return;
+  pushUndo();
+  for (const i of list.slice().sort((a, b) => b - a)) state.enemies.splice(i, 1);
+  state.squad = []; state.selected = Math.min(list[0], state.enemies.length - 1); changed();
+}
 window.addEventListener('keydown', ev => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) && ev.target.type !== 'range' && ev.target.type !== 'checkbox') return;
   const key = ev.key.toLowerCase();
   if (state.mode === '3d' && !ev.ctrlKey && !ev.metaKey && view3d.key(key, true)) { ev.preventDefault(); return; }   // flying keys
+  const plain = !window.getSelection || window.getSelection().isCollapsed;           // not while text on the page is selected for copying
   if ((ev.ctrlKey || ev.metaKey) && key === 'z') { ev.preventDefault(); undo(); }
+  else if ((ev.ctrlKey || ev.metaKey) && key === 'c' && plain) { if (copySquad()) ev.preventDefault(); }
+  else if ((ev.ctrlKey || ev.metaKey) && key === 'v') { if (pasteSquad()) ev.preventDefault(); }
+  else if ((ev.ctrlKey || ev.metaKey) && key === 'd') { if (picked().length) { ev.preventDefault(); const e0 = state.enemies[picked()[0]]; placeSquad(squadData(picked()), e0.pos[0] + 2, e0.pos[2] + 2); } }
+  else if ((ev.ctrlKey || ev.metaKey) && key === 'a' && state.enemies.length) { ev.preventDefault(); setSquad(state.enemies.map((e, i) => i), state.selected); }
   else if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   else if (key === 'v') setTool('select'); else if (key === 'a') setTool('add'); else if (key === 'r') setTool('route'); else if (key === 'z') setTool('zone');
-  else if (key === 'escape') { setTool('select'); select(-1); }
+  else if (key === 'escape') { state.placing = null; setTool('select'); select(-1); }
   else if (key === 'delete') removeSelected();
   else if (key === 'pagedown') { ev.preventDefault(); stepFloor(-1); } else if (key === 'pageup') { ev.preventDefault(); stepFloor(1); }
   else if (key === 'backspace' && state.tool === 'route') { const e = state.enemies[state.selected]; if (e && e.patrol.length) { ev.preventDefault(); pushUndo(); e.patrol.pop(); changed(); } }
@@ -1467,14 +1718,41 @@ function syncSide() {
   state.enemies.forEach((e, i) => {
     const w = warningFor(e); if (w) warn++;
     const li = document.createElement('li'), b = document.createElement('button');
-    b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
+    b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
     cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0)); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
   const wbox = $('warnings'); wbox.textContent = '';
-  if (warn) { const c = document.createElement('span'); c.className = 'chip warn'; c.textContent = warn + (warn === 1 ? ' enemy to check' : ' enemies to check') + ' (hover a row for the reason)'; wbox.appendChild(c); }
+  if (warn) { const c = document.createElement('span'); c.className = 'chip warn'; c.textContent = warn + (warn === 1 ? ' enemy to check' : ' enemies to check') + ' (hover a row, or select it, for the reason)'; wbox.appendChild(c); }
+  const seen = dangers().filter(Boolean).length;
+  const note = document.createElement('p'); note.className = 'hint'; note.id = 'sightNote';
+  note.textContent = !state.infils.length ? 'Danger check: off. It needs the map\'s insertion points, from the game or a recon file.'
+    : !state.geo ? 'Danger check: only distance so far. With the 3D map file it also finds enemies that can see an insertion point.'
+    : seen ? 'Danger check: ' + seen + (seen === 1 ? ' enemy has' : ' enemies have') + ' an insertion point in view. Red dashed lines on the map show which.'
+    : 'Danger check: no enemy that is there from the start can see an insertion point.';
+  wbox.appendChild(note);
+
+  // Squads: what can be done with several selected, and the squads kept for later.
+  if (state.squad.some(i => i >= state.enemies.length)) state.squad = [];
+  const many = picked(), sq = allSquads();
+  $('squadInfo').textContent = many.length > 1 ? many.length + ' enemies selected. Drag any of them to move all; the panel below is for enemy ' + (state.selected + 1) + '.'
+    : 'Shift-click enemies, or hold Shift and drag a box, to select several. Ctrl+C and Ctrl+V copy them; Ctrl+D doubles them.';
+  $('sqActs').hidden = many.length < 2; $('sqTrigRow').hidden = many.length < 2 || !state.zones.length; $('sqSaveRow').hidden = many.length < 1; $('sqPaste').hidden = !clip;
+  if (many.length > 1 && state.zones.length && document.activeElement !== $('sqTrig')) {
+    const sel = $('sqTrig'), same = many.every(i => state.enemies[i].trigger === state.enemies[many[0]].trigger);
+    sel.textContent = '';
+    [['', 'Not the same for all'], [0, 'From the start'], ...state.zones.map(z => [z.id, trigText(z) + (z.name ? ': ' + z.name : '')])].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+    sel.value = same ? state.enemies[many[0]].trigger : '';
+  }
+  const pick = $('sqPick');
+  if (document.activeElement !== pick && pick.dataset.key !== sq.map(q => q.name).join('|')) {
+    const was = pick.value; pick.dataset.key = sq.map(q => q.name).join('|'); pick.textContent = '';
+    sq.forEach((q, n) => { const o = document.createElement('option'); o.value = n; o.textContent = q.name + ' (' + q.data.length + ')'; pick.appendChild(o); });
+    if (was && +was < sq.length) pick.value = was;
+  }
+  $('sqForget').hidden = !(sq[+pick.value] && !sq[+pick.value].fixed);
 
   const e = state.enemies[state.selected];
   $('panel').hidden = !e;
@@ -1696,6 +1974,72 @@ $('trigNew').addEventListener('click', () => {
   showTab('triggers');
   say('Trigger ' + id + ' added. Select an enemy and set "Appears" to bind it, or select a door to have the trigger lock or unlock it.');
 });
+// Waves: each comes from one side, walks to the spot and stays there. A wave is a trigger with its enemies:
+// the first fires on a timer, each next one a while after the one before.
+function addWaves(count, size, first, gap) {
+  if (!state.map) return say('Open a map first.');
+  const lead = state.enemies[state.selected];
+  const C = lead ? lead.pos.slice() : (() => { const y = groundAt(state.view.cx, state.view.cz); return y === null ? null : [state.view.cx, y, state.view.cz]; })();
+  if (!C) return say('The middle of the view is not walkable ground. Select an enemy at the spot to hold, or move the map.');
+  const far = (x, z, min) => !state.infils.some(p => Math.hypot(p[0] - x, p[2] - z) < min);
+  // A walkable spot at a distance and bearing from the middle, on the ground floor of wherever it lands.
+  const spotAt = (bearing, dist, wantY) => {
+    const x = C[0] + Math.sin(bearing) * dist, z = C[2] + Math.cos(bearing) * dist, levels = levelsAt(x, z);
+    if (!levels.length) return null;
+    return [x, wantY === undefined ? Math.min(...levels) : floorNear(x, z, wantY), z];
+  };
+  pushUndo();
+  let id = state.zones.reduce((m, q) => Math.max(m, q.id), 0), group = state.enemies.reduce((m, e) => Math.max(m, e.group + 1), 0), prev = 0, made = 0, waves = 0;
+  for (let w = 0; w < count; w++) {
+    // The side this wave comes from: tried until enough starting spots are found there, well away from where players arrive.
+    let starts = [], bearing = 0;
+    for (let tries = 0; tries < 40 && starts.length < size; tries++) {
+      bearing = Math.random() * Math.PI * 2; starts = [];
+      for (let n = 0; n < 200 && starts.length < size; n++) {
+        const p = spotAt(bearing + (Math.random() - 0.5) * 0.9, 45 + Math.random() * 50);
+        if (p && far(p[0], p[2], 30) && !starts.some(q => Math.hypot(q[0] - p[0], q[2] - p[2]) < 3)) starts.push(p);
+      }
+    }
+    if (!starts.length) continue;
+    id++;
+    state.zones.push(newTrigger(id, w === 0 ? 'time' : 'after', { name: 'Wave ' + (w + 1), delay: w === 0 ? first : gap, after: w === 0 ? 0 : prev, facePlayer: false }));
+    prev = id; waves++;
+    for (const p of starts) {
+      // Where it walks to: two spots close to the middle on its own side. It goes to the first, waits long, then shifts a little.
+      const stops = [];
+      for (let n = 0; n < 60 && stops.length < 2; n++) { const q = spotAt(bearing + (Math.random() - 0.5) * 2, 5 + Math.random() * 8, C[1]); if (q && Math.abs(q[1] - C[1]) < 1.5) stops.push(q); }
+      const e = newEnemy(p, stops.length === 2 ? 'Patrol' : 'Wander', group);
+      e.trigger = id; e.patrol = stops.length === 2 ? stops : []; e.patrolWaitSeconds = 600; e.wanderDistance = stops.length === 2 ? 0 : 20;
+      e.yaw = ((Math.atan2(C[0] - p[0], C[2] - p[2]) * 180 / Math.PI) % 360 + 360) % 360;
+      state.enemies.push(e); made++;
+    }
+    group++;
+  }
+  showTab('triggers'); changed();
+  say(made ? made + ' enemies in ' + waves + (waves === 1 ? ' wave' : ' waves') + ' added around ' + C[0].toFixed(0) + ', ' + C[2].toFixed(0) + '. The first comes after ' + first + ' s, each next one ' + gap + ' s after the one before.'
+    : 'No room was found for the waves to start from. Try another spot.');
+}
+$('wvAdd').addEventListener('click', () => {
+  const n = id => Math.round(+$(id).value || 0);
+  addWaves(Math.max(1, Math.min(10, n('wvCount'))), Math.max(1, Math.min(12, n('wvSize'))), Math.max(0, Math.min(3600, n('wvFirst'))), Math.max(10, Math.min(3600, n('wvGap'))));
+});
+$('sqCopy').addEventListener('click', copySquad);
+$('sqPaste').addEventListener('click', () => { if (clip) startPlacing(clip, 'the copied enemies'); });
+$('sqTurnL').addEventListener('click', () => turnSquad(-45));
+$('sqTurnR').addEventListener('click', () => turnSquad(45));
+$('sqDel').addEventListener('click', removeSelected);
+$('sqGroup').addEventListener('click', () => { const list = picked(); if (list.length < 2) return; pushUndo(); const g = state.enemies[state.selected >= 0 ? state.selected : list[0]].group; for (const i of list) state.enemies[i].group = g; changed(); say('All ' + list.length + ' are group ' + (g + 1) + ' now.'); });
+$('sqTrig').addEventListener('change', ev => { if (ev.target.value === '') return; const list = picked(); pushUndo(); for (const i of list) { const e = state.enemies[i]; if (!e.hvt && !e.vehicle) e.trigger = +ev.target.value || 0; } changed(); });
+$('sqSave').addEventListener('click', () => {
+  const list = picked(), name = $('sqName').value.trim();
+  if (!list.length) return;
+  if (!name) { $('sqName').focus(); return say('Give the squad a name first.'); }
+  const mine = savedSquads().filter(q => q.name !== name); mine.push({ name, data: squadData(list).map(d => Object.assign(d, { trigger: 0 })) });
+  storeSquads(mine); $('sqName').value = ''; syncSide(); say('Squad "' + name + '" saved on this computer. Pick it under Squads and press Place.');
+});
+$('sqPick').addEventListener('change', syncSide);
+$('sqPlace').addEventListener('click', () => { const q = allSquads()[+$('sqPick').value]; if (q) startPlacing(q.data, 'the squad "' + q.name + '"'); });
+$('sqForget').addEventListener('click', () => { const q = allSquads()[+$('sqPick').value]; if (!q || q.fixed) return; storeSquads(savedSquads().filter(x => x.name !== q.name)); syncSide(); say('Squad "' + q.name + '" forgotten.'); });
 const missionEdit = fn => { pushUndo(); fn(); changed(); };
 $('extractAfter').addEventListener('change', ev => missionEdit(() => { state.extractionAfter = +ev.target.value || 0; }));
 $('insertion').addEventListener('change', ev => missionEdit(() => { state.insertion = ev.target.value; }));
@@ -1814,6 +2158,33 @@ function loadReplay(obj, name) {
   syncReplay(); invalidate();
   return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events. Press Play.';
 }
+// The mission in a few numbers, worked out from the recording. A row with a time can be jumped to.
+function replayStats(d) {
+  const fr = d.frames, rows = [], alert = q => !!q[5] && q[5] !== 'I';
+  rows.push(['Length', mmss(d.end - d.start)]);
+  let first = null, contact = 0, most = 0; const seen = new Set();
+  fr.forEach((f, i) => {
+    most = Math.max(most, f[2].length); for (const q of f[2]) seen.add(q[0]);
+    const who = f[2].find(alert);
+    if (who && !first) { let near = Infinity; for (const p of f[1]) near = Math.min(near, Math.hypot(p[1] - who[1], p[2] - who[2], p[3] - who[3])); first = { t: f[0], id: who[0], dist: near, at: [who[1], who[2], who[3]] }; }
+    if (who && i > 0) contact += f[0] - fr[i - 1][0];
+  });
+  rows.push(['Players first noticed', first ? mmss(first.t) + ', by enemy ' + first.id + (isFinite(first.dist) ? ' from ' + Math.round(first.dist) + ' m' : '') : 'never', first ? first.t : null, first ? first.at : null]);
+  rows.push(['Time with the enemy alerted', mmss(contact)]);
+  const downs = d.events.filter(e => e[1] === 'down'), minutes = Math.max(1 / 60, (d.end - d.start) / 60);
+  rows.push(['Enemies seen in all', String(seen.size)]);
+  rows.push(['Most at one time', String(most)]);
+  rows.push(['Enemies down', downs.length + (downs.length ? ' (' + (downs.length / minutes).toFixed(1) + ' a minute)' : '')]);
+  if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]), downs[0][0], downs[0][3]]);
+  d.players.forEach((name, who) => {
+    let dist = 0, last = null, lastT = null;
+    for (const f of fr) { const p = f[1].find(q => q[0] === who); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
+    if (lastT === null) return;
+    rows.push([name + ' walked', Math.round(dist) + ' m']);
+    if (lastT < d.end - 3) rows.push([name + ' last seen', mmss(lastT), lastT, [last[1], last[2], last[3]]]);
+  });
+  return rows;
+}
 function closeReplay() { replay.data = null; replay.playing = false; $('tabReplay').hidden = true; if ($('side').dataset.show === 'replay') showTab('map'); syncReplay(); invalidate(); }
 // The recorded moment at or before a time, the one after it, and how far along we are between them.
 function replayFrame(t) {
@@ -1840,6 +2211,14 @@ function syncReplay() {
   $('rpClock').textContent = mmss(replay.t) + ' of ' + mmss(d.end) + ' · ' + now.players.length + (now.players.length === 1 ? ' player, ' : ' players, ') + now.enemies.length + (now.enemies.length === 1 ? ' enemy' : ' enemies');
   const ul = $('rpEvents'), key = replay.name + '/' + d.events.length;
   if (ul.dataset.key !== key) {
+    const jump = (t, at) => { replay.t = Math.max(d.start, Math.min(d.end, t - 2)); if (Array.isArray(at)) { state.view.cx = at[0]; state.view.cz = at[2]; } syncReplay(); invalidate(); };
+    const st = $('rpStats'); st.textContent = '';
+    for (const [label, value, t, at] of replayStats(d)) {
+      const li = document.createElement('li'), a = document.createElement('span'); a.textContent = label; li.appendChild(a);
+      if (typeof t === 'number') { const b = document.createElement('button'); b.type = 'button'; b.textContent = value; b.title = 'Go to this moment'; b.addEventListener('click', () => jump(t, at)); li.appendChild(b); }
+      else { const b = document.createElement('b'); b.textContent = value; li.appendChild(b); }
+      st.appendChild(li);
+    }
     ul.dataset.key = key; ul.textContent = '';
     d.events.forEach(ev => {
       const li = document.createElement('li'), b = document.createElement('button');
@@ -1935,6 +2314,7 @@ async function applyLive(s) {
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
     settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather });
+    if (Array.isArray(s.infilPoints) && s.infilPoints.length) state.infils = s.infilPoints.filter(isVec).map(p => p.slice(0, 3));     // where players arrive: for the danger check
     state.insertions = Array.isArray(s.insertions) ? s.insertions.filter(n => typeof n === 'string' && n) : []; state.weatherNow = s.weather || null;
     const doorWas = state.doors[state.door] ? state.doors[state.door].pos : null;
     state.doors = doorsIn(s.doors); state.door = doorWas ? nearDoor(doorWas, state.doors) : -1;
@@ -1991,7 +2371,7 @@ if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 { let tab = 'map'; try { tab = localStorage.getItem('missionlab-tab') || (served ? 'enemies' : 'map'); } catch (e) { /* storage unavailable */ } showTab(window.__mlAllTabs ? 'all' : ['map', 'enemies', 'triggers', 'doors', 'mission'].includes(tab) ? tab : 'map'); }
 requestAnimationFrame(fit);
-window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab };   // for automated tests
+window.missionlabEditor = { state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

@@ -142,6 +142,7 @@ namespace MissionLab
             // 2. Where players come in, and the map's walkable surface.
             int laptopCount = gm != null ? gm.botAmount : 0;
             var infils = CollectInfils(raid, out string infilInfo);
+            CurrentInfils = infils;
             NavMesh nav = NavPicker.Pick(scene, authored, ReadLiveGraph(), out string navInfo);
 
             // Remember this mission for the Game Master tools, whatever happens next.
@@ -492,6 +493,7 @@ namespace MissionLab
         /// Replaces the mission's target-person spawn points with the planned ones. The game spawns
         /// the target on one of these about two seconds after the start, the same way it does enemies.
         /// </summary>
+        internal static List<V3> CurrentInfils = new List<V3>();     // where players can arrive, for the browser page's danger check
         internal static int VehiclesWanted;
         internal static bool VehiclesAsked;
 

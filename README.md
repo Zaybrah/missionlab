@@ -146,6 +146,32 @@ editor open the file. It plays on the 2D map with a timeline and a list of event
 
 All of the above is built from the game's class listing and has not run in the game yet.
 
+### Danger check
+With the 3D map file open, the editor tests every enemy that is there from the start
+against every insertion point: is the point within the enemy's sight range, and is the
+line between them free of walls? Those that can see one are marked "check" in the list
+and joined to the point with a red dashed line. It counts walls as the game's colliders
+have them, so it errs on the side of warning: an enemy it flags may still take a while
+to notice anyone.
+
+### Squads
+Shift-click enemies, or hold Shift and drag a box, to select several. Drag one to move
+all; Ctrl+C / Ctrl+V copy them to where the pointer is, Ctrl+D doubles them, Delete
+removes them. The Squads box on the Enemies tab turns the selection, puts it in one
+group, binds it to one trigger, and saves it as a named squad that can be placed again
+on any map. Squads are kept in the browser on this computer.
+
+### Waves
+"Add waves" on the Triggers tab makes enemies that come in wave after wave: each wave is
+a trigger with its own enemies, the first on a timer and every next one a set time after
+the one before. A wave starts 45 to 95 m out on one side, away from insertion points,
+walks to the chosen spot and stays there.
+
+### Mission stats
+The Replay tab lists how a recorded mission went: its length, when and from how far the
+players were first noticed, how long the enemy was alerted, enemies down, and how far
+each player walked. A row with a time jumps to that moment.
+
 ### Target person
 In missions with a target person, an enemy marked `"hvt": true` is where the target stands;
 the game spawns its own target type there at the start. A generated layout also moves the

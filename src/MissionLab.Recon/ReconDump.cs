@@ -43,6 +43,13 @@ namespace MissionLab
             Section(root, "playerSlots", PlayerSlots);
             Section(root, "timeOfDay", TimeOfDay);
             Section(root, "doors", Doors);
+            // What the next round of features needs to know about a map and about the game.
+            Section(root, "breakers", j => Things<BreakerSwitch>(j, (o, b) => { o.V("powerOn", b.PowerOn); o.V("isNight", b.isNight); o.V("lights", b.effectedLights == null ? 0 : b.effectedLights.Count); }));
+            Section(root, "alarms", j => Things<AlarmSystem>(j, (o, a) => { o.V("state", a.currentState.ToString()); }));
+            Section(root, "landmines", j => Things<Landmine>(j, (o, m) => { o.V("distanceToExplode", m.distanceToExplode); }));
+            Section(root, "weaponSpawners", j => Things<N_WeaponSpawner>(j, (o, w) => { o.V("weapons", w.weapons == null ? 0 : w.weapons.Count); o.V("allWeapons", w.AllWeapons); o.V("spawnAmount", w.SpawnAmount); }));
+            Section(root, "teams", Teams);
+            if (phase == "early") Section(root, "spawnables", Spawnables);
             Section(root, "navGraphs", NavGraphs);
             if (phase != "early") Section(root, "bots", Bots);
             if (phase == "manual") Section(root, "boards", Boards);
@@ -589,6 +596,90 @@ namespace MissionLab
                     j.V("canSpawnPlayer", sp.CanSpawnPlayer);
                     j.EndObj();
                 }
+            j.EndArr();
+        }
+
+        /// <summary>Every object of one kind in the scene: where it is, plus whatever the caller adds about it.</summary>
+        private static void Things<T>(J j, Action<J, T> more) where T : Component
+        {
+            var found = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<T>(), true);
+            j.Arr();
+            for (int i = 0; found != null && i < found.Length && i < 200; i++)
+            {
+                T t = found[i] == null ? null : found[i].TryCast<T>();
+                if (t == null) continue;
+                j.Obj();
+                Tf(j, t.transform);
+                try { more(j, t); } catch { }
+                j.EndObj();
+            }
+            j.EndArr();
+        }
+
+        /// <summary>Which team everybody is on: the players, and every enemy alive.</summary>
+        private static void Teams(J j)
+        {
+            j.Obj();
+            j.Arr("players");
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerMaster pm = players[i];
+                if (pm == null) continue;
+                j.Obj(); j.V("name", pm.thisPlayerName);
+                try { TeamIdentifier t = pm.MyTeamIdentifier; if (t != null) j.V("team", t.TeamID); } catch { }
+                j.EndObj();
+            }
+            j.EndArr();
+            j.Arr("enemies");
+            GameManager g = GameManager.instance;
+            var ai = g == null ? null : g.allAI;
+            for (int i = 0; ai != null && i < ai.Count && i < 200; i++)
+            {
+                BrainAI b = ai[i];
+                if (b == null) continue;
+                j.Obj(); j.V("name", b.gameObject.name);
+                try { TeamIdentifierReference r = b.MyTeamIdentifierReference; if (r != null) j.V("team", r.TeamId); } catch { }
+                j.EndObj();
+            }
+            j.EndArr();
+            try
+            {
+                TeamManager tm = TeamManager.instance;
+                var all = tm == null ? null : tm.AllTeams;
+                j.Arr("known");
+                for (int i = 0; all != null && i < all.Length; i++) j.Obj().V("index", i).V("name", all[i] == null ? null : all[i].name).EndObj();
+                j.EndArr();
+            }
+            catch { }
+            j.EndObj();
+        }
+
+        /// <summary>
+        /// Everything the game can put into a mission while it runs, with the parts each thing is made of.
+        /// This is the list of what could be placed from a scenario: vehicles, mines, weapon racks and the like.
+        /// </summary>
+        private static void Spawnables(J j)
+        {
+            Mirror.NetworkManager net = Mirror.NetworkManager.singleton;
+            var all = net == null ? null : net.spawnPrefabs;
+            j.Arr();
+            for (int i = 0; all != null && i < all.Count && i < 1500; i++)
+            {
+                GameObject go = all[i];
+                if (go == null) continue;
+                j.Obj(); j.V("name", go.name);
+                try
+                {
+                    var parts = go.GetComponents<MonoBehaviour>();
+                    var names = new System.Text.StringBuilder();
+                    for (int k = 0; parts != null && k < parts.Length && k < 14; k++)
+                        if (parts[k] != null) names.Append(names.Length > 0 ? "," : "").Append(parts[k].GetIl2CppType().Name);
+                    j.V("parts", names.ToString());
+                }
+                catch { }
+                j.EndObj();
+            }
             j.EndArr();
         }
 
