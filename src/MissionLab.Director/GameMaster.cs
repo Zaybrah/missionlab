@@ -163,7 +163,7 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Vehicles.Clear(); TryOuts.Reset(); InsideSince.Clear(); EverAlive.Clear();
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); InsideSince.Clear(); EverAlive.Clear();
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
@@ -459,7 +459,31 @@ namespace MissionLab
         private static string TriggerName(TriggerPlan t) =>
             (t.When == TriggerPlan.OnZone ? "zone " : "trigger ") + (string.IsNullOrEmpty(t.Name) ? t.Id.ToString() : "'" + t.Name + "'");
 
-        private struct Seen { public float Since; public bool Settled; public BrainAI.States Rest; }
+        private struct Seen { public float Since; public bool Settled; public BrainAI.States Rest; public bool Crew; public float LookAgainAt; }
+        private static readonly HashSet<IntPtr> Crew = new HashSet<IntPtr>();
+
+        /// <summary>
+        /// Is this the gunner of a gun truck? He cannot walk, and what he reports at rest differs from run to run
+        /// ("Evade" in two recordings, "WasSighted" in a third), so his state is never read; the truck's own target is.
+        /// </summary>
+        private static bool IsCrew(BrainAI b)
+        {
+            if (Crew.Contains(b.Pointer)) return true;
+            try
+            {
+                AgentController legs = b.agent;
+                if (legs != null && legs.entityExists) return false;
+                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<VehicleAI>(), true);
+                for (int i = 0; found != null && i < found.Length; i++)
+                {
+                    VehicleAI v = found[i] == null ? null : found[i].TryCast<VehicleAI>();
+                    BrainAI gunner = v == null ? null : v.turrentBot;
+                    if (gunner != null) Crew.Add(gunner.Pointer);
+                }
+            }
+            catch { }
+            return Crew.Contains(b.Pointer);
+        }
         private static readonly Dictionary<IntPtr, Seen> Known = new Dictionary<IntPtr, Seen>();
         private static readonly List<VehicleAI> Vehicles = new List<VehicleAI>();
 
@@ -479,9 +503,14 @@ namespace MissionLab
                 if (now - s.Since < 2f) return false;
                 s.Settled = true;
                 s.Rest = state == BrainAI.States.Evade ? BrainAI.States.Evade : BrainAI.States.Idle;
+                s.Crew = IsCrew(b); s.LookAgainAt = now + 1f;
                 Known[key] = s;
             }
-            if (state == s.Rest) state = BrainAI.States.Idle;
+            if (!s.Crew && now >= s.LookAgainAt && now - s.Since < 15f)      // a truck may get its gunner a little later
+            {
+                s.Crew = IsCrew(b); s.LookAgainAt = now + 1f; Known[key] = s;
+            }
+            if (s.Crew || state == s.Rest) state = BrainAI.States.Idle;
             return true;
         }
 

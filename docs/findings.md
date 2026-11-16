@@ -193,6 +193,19 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   (`ExfilZone.RPCHint` works as a message to players). `SERVER_FailOperation()` shows the failed
   screen for a moment and closes it again while a player is alive; `GameManagerNetwork` also has
   `CloseAllFailScreens()`, `EndOperation()` and `RestartOperation()`, not tried yet.
+- Fifth run (0.20.0, solo, Clean House by night, 5:30):
+  - From a scenario: a rifle lay at its spot from the start; "hold the zone" fired after 15 s in
+    the doorway and placed its weapon; "enemies down" fired when two were down; the two enemies
+    it brought were put on team 4 as they appeared and a firefight between the sides followed.
+  - `GameManager.ShotFired` moved nobody either: four enemies 21 to 28 m away kept their state
+    and their distance. 0.20.1 gives enemies a one-stop patrol route instead (`BrainAI.aiPatrol`,
+    `idleStates = Patrol`).
+  - `GameManagerNetwork.EndOperation()` takes the player back to the lobby with no result screen.
+    0.20.1 uses it for the failed ending: a red "Mission failed." and, 5 s later, the end.
+  - The gunner reported `WasSighted` at rest this time (`Evade` before), so the alert trigger
+    fired falsely once more. `VehicleAI.turrentBot` is the gunner; from 0.20.1 his state is never read.
+  - No "cheated" mark in this run, which used none of: respawns on, the failed call, the forced
+    extraction. One of those three sets it.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

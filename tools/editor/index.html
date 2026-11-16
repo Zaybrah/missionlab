@@ -369,8 +369,7 @@ body.dragging #drop { display: flex; }
         <option value="message">Message on every screen</option>
         <option value="power:off">Lights out</option>
         <option value="power:on">Lights back on</option>
-        <option value="hunt">Enemies hunt the nearest player</option>
-        <option value="noise">A shot is heard where you stand</option>
+        <option value="walk">Enemies walk to where you stand</option>
         <option value="sides">Split the enemies into two sides</option>
         <option value="thing">Place a thing</option>
         <option value="respawn">Bring every player back</option>
@@ -2624,7 +2623,7 @@ function missionCheck() {
   state.things.forEach((t, n) => { if (t.trigger && !byId(t.trigger)) add('warning', 'The ' + t.name.trim() + ' at ' + t.pos[0].toFixed(0) + ', ' + t.pos[2].toFixed(0) + ' waits for a trigger that is gone, so it lies there from the start.', () => selectThing(n)); });
   if (state.things.some(t => !THING_GROUPS[0][1].includes(t.name))) add('note', 'Only weapons have been seen to work as placed things. Other things may do nothing or be hard to see.', () => showTab('doors', true));
   if (state.enemies.some(e => e.team === 1)) add('note', 'Enemies on the players\' side have not been tried in the game yet.', () => showTab('enemies', true));
-  if (state.zones.some(z => z.end === 'failed')) add('note', 'A mission ended as failed tells the players so, but the game only keeps its failed screen up when nobody is alive: the mission goes on.', toTriggers);
+  if (state.zones.some(z => z.end === 'failed')) add('note', 'A mission ended as failed shows "Mission failed." on every screen and takes everyone back to the lobby five seconds later. The game has no result screen for it.', toTriggers);
   for (let i = 0; i < state.enemies.length; i++) for (let j = i + 1; j < state.enemies.length; j++) {
     const a = state.enemies[i], b = state.enemies[j];
     if (a.either && b.either === a.either && a.option !== b.option) continue;            // never there together
@@ -2657,13 +2656,12 @@ const TRY_HINTS = {
   message: 'Shows a yellow notice on every player\'s screen. It tells us whether the mod can talk to friends who have no mod.',
   'power:off': 'Switches off the map\'s breaker box and the lights wired to it. Clean House has one; it shows best at night.',
   'power:on': 'Switches the breaker box back on.',
-  hunt: 'Tells every enemy where the nearest player is, as if they had heard a noise there. In the last run nobody moved.',
-  noise: 'Tells the game that a shot was fired where you stand, to be heard within 80 m. Another way to make the enemies come.',
+  walk: 'Gives every enemy that can walk a route of one stop: the spot where you stand. Telling them a sound was heard moved nobody in two runs; this uses the game\'s own patrol.',
   sides: 'Moves every second enemy to another team. Watch whether the two sides start to fight each other.',
   thing: 'Places it where the selected enemy marker is, or 6 m in front of you when no marker is selected. Two seconds later the game reports whether it is still there. A rifle or the chair is the easiest to see; the flashbang and the landmine of the last run could not be seen.',
   respawn: 'Asks the game to bring every player back. It may also send living players back to the start.',
-  fail: 'Tells every player the mission has failed. The game\'s own failed screen closes again while someone is alive.',
-  endop: 'Calls the game\'s own "end operation". What it does is not known yet: it may take everyone back to the lobby. Keep it for last.',
+  fail: 'Tells every player the mission has failed and, five seconds later, ends the operation: everyone goes back to the lobby, without a result screen.',
+  endop: 'Calls the game\'s own "end operation": everyone goes back to the lobby, with no win and no loss shown.',
   complete: 'Ends the mission as if the team had extracted. Whether that run is marked as cheated is the FairPlay setting in the config. Keep it for last.',
 };
 const THINGS_FIRST = ['AKM', 'Chair_Leather_Interactable', 'Hard Drive', 'Landmine', 'Proximity Explosive_IED '];

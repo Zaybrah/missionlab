@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using UnityEngine;
+using Il2Generic = Il2CppSystem.Collections.Generic;
 
 namespace MissionLab
 {
@@ -22,7 +23,11 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; }
+        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); }
+
+        // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
+        private static float _endAt = -1f;
+        private static readonly List<GameObject> Orders = new List<GameObject>();
 
         // The game marks a run as cheated by itself after some calls. Which ones is found out by watching the flag.
         private static bool _marked;
@@ -45,6 +50,12 @@ namespace MissionLab
         internal static void Tick(float now)
         {
             WatchFlag();
+            if (_endAt >= 0f && now >= _endAt)
+            {
+                _endAt = -1f;
+                try { GameManagerNetwork g = GameManagerNetwork.instance; if (g != null) g.EndOperation(); DirectorPlugin.L.LogInfo("end: the operation was ended after the failed message"); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the operation could not be ended: " + e.Message); }
+            }
             for (int i = Watch.Count - 1; i >= 0; i--)
             {
                 Placed p = Watch[i];
@@ -125,8 +136,7 @@ namespace MissionLab
                 {
                     case "power": said = Power((arg ?? "") == "on"); break;
                     case "message": said = Message(raid, arg); break;
-                    case "hunt": said = Hunt(gm); break;
-                    case "noise": said = Noise(gm); break;
+                    case "walk": said = Walk(gm); break;
                     case "thing": said = Thing(arg, hasPos, pos); break;
                     case "sides": said = Sides(gm); break;
                     case "respawn": said = Respawn(); break;
@@ -204,6 +214,49 @@ namespace MissionLab
                 try { b.HeardTarget(who.position, Vector3.Distance(at, who.position), who); told++; } catch { }
             }
             return told == 0 ? "hunt: no enemy could be told (" + all + " alive)" : "hunt: " + told + " of " + all + " enemies were told where the nearest player is";
+        }
+
+        /// <summary>
+        /// Every enemy that can walk gets a route of one stop: a spot around the first player. The game's own patrol
+        /// takes them there. (Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody in two runs.)
+        /// </summary>
+        private static string Walk(GameManager gm)
+        {
+            Vector3 to = Vector3.zero; bool have = false;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count && !have; i++)
+            {
+                PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                if (body != null) { to = body.transform.position; have = true; }
+            }
+            if (!have) return "walk: no player to walk to";
+            foreach (GameObject old in Orders) try { if (old != null) UnityEngine.Object.Destroy(old); } catch { }
+            Orders.Clear();
+            int told = 0, all = 0;
+            var ai = gm.allAI;
+            for (int i = 0; ai != null && i < ai.Count; i++)
+            {
+                BrainAI b = ai[i];
+                if (b == null) continue;
+                all++;
+                try
+                {
+                    AgentController legs = b.agent;
+                    if (legs == null || !legs.entityExists) continue;                      // a gunner, or someone told to stand still
+                    float turn = told * 2.4f;                                             // spread around the spot, 2 m out
+                    var stop = new GameObject("MissionLab order " + told);
+                    stop.transform.position = to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f);
+                    Orders.Add(stop);
+                    AIPatrol route = b.aiPatrol;
+                    if (route == null) { route = new AIPatrol(); b.aiPatrol = route; }
+                    var stops = new Il2Generic.List<Transform>(); stops.Add(stop.transform);
+                    route.patrolPoints = stops; route.currentWayPointIndex = 0; route.Looping = false;
+                    b.idleStates = BrainAI.IdleStates.Patrol;
+                    told++;
+                }
+                catch { }
+            }
+            return told == 0 ? "walk: no enemy could be sent (" + all + " alive)" : "walk: " + told + " of " + all + " enemies were given a one-stop route to " + P(to);
         }
 
         /// <summary>A shot that was never fired: the game is told one was heard where the first player stands.</summary>
@@ -313,7 +366,8 @@ namespace MissionLab
                 // The game's failed screen closes again at once while a player is alive (seen in a run), so the players are told in words too.
                 try { RaidManager raid = RaidManager.singleton; if (raid != null) Message(raid, "Mission failed.", true); } catch { }
                 g.SERVER_FailOperation();
-                return "end: the players were told the mission has failed; the game's own failed screen only stays when nobody is alive";
+                _endAt = Time.unscaledTime + 5f;
+                return "end: the players were told the mission has failed; the operation ends in 5 seconds";
             }
             // Whether a success the mod asked for counts is the host's choice (General/FairPlay); the studio leaves it to the mod.
             string flag = FairPlayIs("Off") ? "the run is not marked (FairPlay is Off)" : Mark();
