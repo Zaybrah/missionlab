@@ -34,6 +34,8 @@ namespace MissionLab
         internal static string CurrentScenarioPath;         // the file it came from, or null for a generated layout
         /// <summary>Enemies of the scenario that lost their roll this time (chance, either/or). A save puts them back.</summary>
         internal static readonly List<SpawnPlan> SatOut = new List<SpawnPlan>();
+        internal static readonly List<DoorPlan> DoorsOut = new List<DoorPlan>();
+        internal static readonly List<ThingPlan> ThingsOut = new List<ThingPlan>();
         internal static string CurrentScenarioScene;        // that file's own "scene" value
         private static string _lastScenarioPath;
 
@@ -151,7 +153,7 @@ namespace MissionLab
 
             // Remember this mission for the Game Master tools, whatever happens next.
             CurrentRaidPtr = raid.Pointer; CurrentTemplate = template; CurrentNav = nav;
-            CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null; SatOut.Clear();
+            CurrentPlan = null; CurrentScenarioPath = null; CurrentScenarioScene = null; SatOut.Clear(); DoorsOut.Clear(); ThingsOut.Clear();
             CurrentDetect = tDetect; CurrentHear = tHear; CurrentFov = tFov;
 
             // The lobby choice "Empty map": nobody spawns; you build the mission yourself and save it.
@@ -178,8 +180,12 @@ namespace MissionLab
                 long roll = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
                 var rolls = new List<string>();
                 int before = plan.Spawns.Count;
-                SatOut.AddRange(Variants.Resolve(plan, new Rng(roll ^ 0x5EED), rolls));
-                log.LogInfo("left to chance: " + string.Join("; ", rolls) + " | " + plan.Spawns.Count + " of " + before + " enemies are in this mission (roll " + roll + ")");
+                int players = 0;
+                try { var all = PlayerMaster.AllPlayerMasters; for (int i = 0; all != null && i < all.Count; i++) if (all[i] != null) players++; } catch { }
+                Variants.Out gone = Variants.Resolve(plan, new Rng(roll ^ 0x5EED), rolls, players);
+                SatOut.AddRange(gone.Spawns); DoorsOut.AddRange(gone.Doors); ThingsOut.AddRange(gone.Things);
+                log.LogInfo("left to chance: " + string.Join("; ", rolls) + " | " + plan.Spawns.Count + " of " + before + " enemies are in this mission, " + players + " player(s)" +
+                            (gone.Doors.Count + gone.Things.Count > 0 ? ", " + gone.Doors.Count + " door setting(s) and " + gone.Things.Count + " thing(s) left out" : "") + " (roll " + roll + ")");
             }
             if (fromFile)
             {

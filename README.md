@@ -211,6 +211,23 @@ in the enemy panel, for everything selected.
   Leaving starts the count again. In the editor it is a zone with "and stay" set.
 - `"when": "down"` with `"count": 3`: that many enemies have gone down; `0` means all of them.
 
+### What else a scenario can say (0.21)
+- **Briefing.** `"briefing": ["line", ...]`, up to four lines, each shown on every player's screen
+  when the mission starts, one after another. Mission tab in the editor.
+- **Trigger logic.** `"when": "all"` or `"any"` with `"of": [1, 2]` fires when all, or one, of
+  those triggers have fired. `"chance": 40` on a trigger makes it part of only 40 missions in 100;
+  one that sits out takes its enemies, things and actions with it ("Fire now" still works).
+  `"warn": true` tells the players when one minute and when ten seconds are left of its wait.
+- **Chance for doors and things.** `"chance"` on a door setting or a thing: how often it applies.
+- **Players needed.** `"minPlayers": 3` on an enemy: only there with three or more players.
+- **Skill and night vision** (not tried in the game yet). `"skill": "recruit"` or `"veteran"`
+  scales the enemy's reaction time, inaccuracy and hit chance from what the game gave it;
+  `"nvg": true` gives it night vision.
+With the game connected, the Map tab has a Game Master box: a message for every player, and the
+lights. In the editor the danger check now looks only at the insertion the scenario chose and
+knows that enemies see 25 m at night; the mission check also flags enemies that would appear in
+plain view of the zone that brings them.
+
 ### Mission check
 The Mission tab lists what would go wrong before a mission is spent on it: triggers that can
 never fire or do nothing, an extraction that can never open, an insertion the map does not have,

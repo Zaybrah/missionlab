@@ -196,6 +196,43 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     if (!ok) { Console.WriteLine("  FAIL: things, sides or the hold and down triggers do not survive save and load: " + back.ToJson()); failures++; }
     else Console.WriteLine("  things, sides, hold and down triggers: survive save and load");
 }
+{   // 0.21: trigger logic, chance on doors, things and triggers, players needed, skill, name and briefing
+    string src = "{\"name\":\" Night raid \",\"briefing\":[\"Get  the phone.\",\"\",\"Leave by the east gate.\",\"3\",\"4\",\"5\"]," +
+                 "\"doors\":[{\"name\":\"A\",\"pos\":[1,0,1],\"locked\":true,\"chance\":50},{\"name\":\"B\",\"pos\":[2,0,2],\"locked\":true}]," +
+                 "\"things\":[{\"name\":\"AKM\",\"pos\":[1,2,3],\"chance\":50},{\"name\":\"MP5\",\"pos\":[4,5,6]}]," +
+                 "\"triggers\":[{\"id\":1,\"when\":\"time\",\"delay\":120,\"warn\":true},{\"id\":2,\"when\":\"alert\",\"chance\":50},{\"id\":3,\"when\":\"all\",\"of\":[1,2,3,2,0]},{\"id\":4,\"when\":\"any\",\"of\":[1,2]}]," +
+                 "\"spawns\":[{\"pos\":[0,0,0]},{\"pos\":[1,0,0],\"minPlayers\":3,\"skill\":\"veteran\",\"nvg\":true},{\"pos\":[2,0,0],\"skill\":\"hero\",\"minPlayers\":2}]}";
+    var np = MissionPlan.FromJson(src);
+    var back = MissionPlan.FromJson(np.ToJson());
+    bool ok = back.Title == "Night raid" && back.Briefing.Count == 4 && back.Briefing[0] == "Get  the phone." && back.Briefing[1] == "Leave by the east gate."
+        && back.Doors.Count == 2 && back.Doors[0].Chance == 50 && back.Doors[1].Chance == 100 && back.Things[0].Chance == 50 && back.Things[1].Chance == 100
+        && back.Triggers.Count == 4 && back.Triggers[0].Warn && !back.Triggers[1].Warn && back.Triggers[1].Chance == 50
+        && back.Triggers[2].When == TriggerPlan.OnAll && back.Triggers[2].Of.Count == 2 && back.Triggers[2].Of[0] == 1 && back.Triggers[2].Of[1] == 2 && back.Triggers[3].When == TriggerPlan.OnAny
+        && back.Spawns[1].MinPlayers == 3 && back.Spawns[1].Skill == "veteran" && back.Spawns[1].Nvg && back.Spawns[2].Skill == "" && back.Spawns[2].MinPlayers == 2 && !back.Spawns[0].Nvg
+        && back.ToJson() == np.ToJson() && !MissionPlan.SpawnJson(back.Spawns[0]).Contains("minPlayers") && !MissionPlan.SpawnJson(back.Spawns[0]).Contains("skill");
+    if (!ok) { Console.WriteLine("  FAIL: the 0.21 fields do not survive save and load: " + back.ToJson()); failures++; }
+
+    int doorIn = 0, thingIn = 0, trigOn = 0; const int runs = 3000; bool sound = true;
+    for (int r = 0; r < runs && sound; r++)
+    {
+        var p = MissionPlan.FromJson(src);
+        var notes = new List<string>();
+        Variants.Out gone = Variants.Resolve(p, new Rng(500 + r), notes, 2);
+        sound = p.Spawns.Count == 2 && gone.Spawns.Count == 1 && gone.Spawns[0].MinPlayers == 3            // two players: the one who needs three stays home
+             && p.Doors.Exists(d => d.Name == "B") && p.Things.Exists(t => t.Name == "MP5") && p.Triggers.Count == 4 && !p.Triggers[0].Off && !p.Triggers[2].Off
+             && p.Doors.Count + gone.Doors.Count == 2 && p.Things.Count + gone.Things.Count == 2;
+        if (p.Doors.Count == 2) doorIn++;
+        if (p.Things.Count == 2) thingIn++;
+        if (!p.Triggers[1].Off) trigOn++;
+    }
+    var solo = MissionPlan.FromJson(src); Variants.Resolve(solo, new Rng(1), null, 1);
+    var crowd = MissionPlan.FromJson(src); Variants.Resolve(crowd, new Rng(1), null, 4);
+    var unknown = MissionPlan.FromJson(src); Variants.Resolve(unknown, new Rng(1), null, 0);
+    bool fair = Math.Abs(doorIn - runs / 2) < runs / 16 && Math.Abs(thingIn - runs / 2) < runs / 16 && Math.Abs(trigOn - runs / 2) < runs / 16;
+    if (!sound || !fair || solo.Spawns.Count != 1 || crowd.Spawns.Count != 3 || unknown.Spawns.Count != 3)
+    { Console.WriteLine("  FAIL: rolls for doors, things, triggers or players: sound " + sound + ", door " + doorIn + ", thing " + thingIn + ", trigger " + trigOn + " of " + runs + "; enemies with 1/4/unknown players " + solo.Spawns.Count + "/" + crowd.Spawns.Count + "/" + unknown.Spawns.Count); failures++; }
+    else Console.WriteLine("  0.21: door there " + doorIn + ", thing there " + thingIn + ", trigger on " + trigOn + " of " + runs + " | enemies with 1, 2, 4 players: 1, 2, 3");
+}
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {

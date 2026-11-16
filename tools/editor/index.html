@@ -143,6 +143,9 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #list li button[aria-current="true"] .xy { color: inherit; opacity: .75; }
 #list .flag { color: var(--warn); font-weight: 600; }
 #checkSum { margin: 6px 0 8px; }
+#briefing { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: inherit; resize: vertical; }
+#zoneList .of { display: flex; flex-wrap: wrap; gap: 4px 10px; grid-column: 1 / -1; font-size: 12px; }
+#zoneList .of label { display: inline-flex; gap: 4px; align-items: center; }
 #thingList { list-style: none; margin: 8px 0 0; padding: 0; }
 #thingList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
 #thingList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
@@ -218,6 +221,14 @@ body.dragging #drop { display: flex; }
       <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
       <div class="field"><label for="nextMission">Next mission uses</label><select id="nextMission" title="What the next mission you host will load. In the game lobby, F8 steps through the same list."></select></div>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
+      <div id="gmBox" hidden>
+        <div class="field"><label for="gmText">Tell players</label><input id="gmText" type="text" maxlength="120" placeholder="A message on every screen"></div>
+        <div class="row">
+          <button class="btn" id="gmSend" type="button">Send message</button>
+          <button class="btn" id="gmDark" type="button">Lights out</button>
+          <button class="btn" id="gmLight" type="button">Lights on</button>
+        </div>
+      </div>
       <div class="row">
         <button class="btn" id="liveSpawn" type="button">Spawn waiting</button>
         <button class="btn danger" id="liveClear" type="button">Remove all live enemies</button>
@@ -305,6 +316,7 @@ body.dragging #drop { display: flex; }
     <div id="thingPanel" hidden>
       <div class="field"><label for="thingYaw">Turned</label><input id="thingYaw" type="number" min="0" max="359" step="15"></div>
       <div class="field"><label for="thingTrigger">Appears</label><select id="thingTrigger"></select></div>
+      <div class="field"><label for="thingChance">Chance (%)</label><input id="thingChance" type="number" min="1" max="100" step="5"></div>
       <div class="row"><button class="btn danger" id="thingDel" type="button">Delete thing</button></div>
     </div>
   </section>
@@ -328,6 +340,8 @@ body.dragging #drop { display: flex; }
           <option value="time">After a set time</option>
           <option value="after">After another trigger</option>
           <option value="down">When enemies are down</option>
+          <option value="all">When all of several triggers have fired</option>
+          <option value="any">When one of several triggers has fired</option>
         </select>
         <button class="btn" id="trigNew" type="button">Add trigger</button>
       </div>
@@ -359,6 +373,7 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="power">Lights</label><select id="power"><option value="">Leave to the game</option><option value="off">Off when the mission starts</option><option value="on">On when the mission starts</option></select></div>
       <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
       <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
+      <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
       <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
       <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
     </div>
@@ -404,6 +419,9 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="hvt" type="checkbox"><span>This is the target person (in missions that have one). Takes effect at the next mission start.</span></label>
     <label class="check"><input id="vehicle" type="checkbox"><span>This is a gun truck, not a person. It is parked here, facing this way. Takes effect at the next mission start.</span></label>
     <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
+    <div class="field"><label for="minPlayers">Players needed</label><input id="minPlayers" type="number" min="1" max="8" step="1" title="Only there when at least this many players are in the mission. 1: always."></div>
+    <div class="field"><label for="skill">Skill</label><select id="skill"><option value="">As the game makes it</option><option value="recruit">Recruit: slower, wilder (not tried yet)</option><option value="veteran">Veteran: quicker, surer (not tried yet)</option></select></div>
+    <label class="check"><input id="nvg" type="checkbox"><span>Sees in the dark (not tried yet)</span></label>
     <div class="field"><label for="team">Side</label><select id="team"><option value="0">The enemy</option><option value="4">A second enemy side</option><option value="1">The players' side (not tried yet)</option></select></div>
     <div class="field"><label for="chance">Chance (%)</label><input id="chance" type="number" min="1" max="100" step="5" title="How often it is there at all. Rolled anew each time the mission starts."></div>
     <div class="field"><label for="either">Either/or</label><select id="either"></select></div>
@@ -421,6 +439,7 @@ body.dragging #drop { display: flex; }
     <p class="hint" id="doorNow"></p>
     <div class="field"><label for="doorLock">Lock</label><select id="doorLock"><option value="">Leave to the game</option><option value="1">Locked</option><option value="0">Unlocked</option></select></div>
     <div class="field"><label for="doorAi">Enemies</label><select id="doorAi"><option value="">Leave to the game</option><option value="1">Can open it</option><option value="0">Cannot open it</option></select></div>
+    <div class="field"><label for="doorChance">Chance (%)</label><input id="doorChance" type="number" min="1" max="100" step="5" title="How often this setting applies. Otherwise the door is left to the game."></div>
     <div class="row">
       <button class="btn" id="doorClear" type="button">Leave both to the game</button>
     </div>
@@ -512,6 +531,9 @@ const state = {
   things: [],                // weapons and other things the game can place: {name, pos, yaw, trigger}
   thing: -1,                 // the selected one
   thingName: 'AKM',          // what the Add thing tool places
+  briefing: [],              // up to four lines shown on every screen when the mission starts
+  night: false,              // a night mission: enemies see 25 m, not 50
+  insertionSpots: [],        // the map's insertions by name: {name, pos}
   weatherNow: null,     // live: what the map has and shows
   mode: '2d',
 };
@@ -697,7 +719,7 @@ function facePlayers(e) {
   return e;
 }
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false, chance: 100, lot: 0, either: 0, option: 0, team: 0,
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false, chance: 100, lot: 0, either: 0, option: 0, team: 0, minPlayers: 0, skill: '', nvg: false,
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -727,6 +749,7 @@ function spawnOf(e) {
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
     prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt, ...(e.vehicle ? { vehicle: true } : {}),
     ...(e.chance < 100 ? { chance: e.chance } : {}), ...(e.chance < 100 && e.lot ? { lot: e.lot } : {}), ...(e.either ? { either: e.either, option: e.option || 1 } : {}), ...(e.team ? { team: e.team } : {}),
+    ...(e.minPlayers > 1 ? { minPlayers: e.minPlayers } : {}), ...(e.skill ? { skill: e.skill } : {}), ...(e.nvg ? { nvg: true } : {}),
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
@@ -741,12 +764,13 @@ const doorsOut = () => state.doors.filter(doorSet).map(d => {
   const o = { name: d.name || '', pos: r3(d.pos) };
   if (d.locked !== null) o.locked = d.locked;
   if (d.enemiesCanOpen !== null) o.enemiesCanOpen = d.enemiesCanOpen;
+  if (d.chance < 100) o.chance = d.chance;
   return o;
 });
 // The map's doors as the game or a recon file lists them.
 const doorsIn = list => (Array.isArray(list) ? list : []).filter(d => d && d.active !== false && (isVec(d.hinge) || isVec(d.pos))).map(d => {
   const pos = (isVec(d.hinge) ? d.hinge : d.pos).slice(0, 3);
-  return { name: typeof d.name === 'string' ? d.name : '', pos, mid: isVec(d.mid) ? d.mid.slice(0, 3) : pos.slice(), locked: tri(d.locked), enemiesCanOpen: tri(d.enemiesCanOpen),
+  return { name: typeof d.name === 'string' ? d.name : '', pos, mid: isVec(d.mid) ? d.mid.slice(0, 3) : pos.slice(), locked: tri(d.locked), enemiesCanOpen: tri(d.enemiesCanOpen), chance: Math.max(1, Math.min(100, Math.round(num(d.chance, 100)))),
     isLocked: tri(d.isLocked), enemiesKeptOut: tri(d.enemiesKeptOut), broken: !!d.broken, known: true };
 });
 function nearDoor(pos, list) {
@@ -759,13 +783,14 @@ function applyDoorWishes(wishes) {
   for (const w of (Array.isArray(wishes) ? wishes : [])) {
     if (!w || !isVec(w.pos) || (tri(w.locked) === null && tri(w.enemiesCanOpen) === null)) continue;
     const i = nearDoor(w.pos, state.doors);
-    if (i >= 0) { state.doors[i].locked = tri(w.locked); state.doors[i].enemiesCanOpen = tri(w.enemiesCanOpen); }
-    else state.doors.push({ name: typeof w.name === 'string' ? w.name : '', pos: w.pos.slice(0, 3), mid: w.pos.slice(0, 3), locked: tri(w.locked), enemiesCanOpen: tri(w.enemiesCanOpen), isLocked: null, enemiesKeptOut: null, broken: false, known: false });
+    const ch = Math.max(1, Math.min(100, Math.round(num(w.chance, 100))));
+    if (i >= 0) { state.doors[i].locked = tri(w.locked); state.doors[i].enemiesCanOpen = tri(w.enemiesCanOpen); state.doors[i].chance = ch; }
+    else state.doors.push({ name: typeof w.name === 'string' ? w.name : '', pos: w.pos.slice(0, 3), mid: w.pos.slice(0, 3), locked: tri(w.locked), enemiesCanOpen: tri(w.enemiesCanOpen), chance: ch, isLocked: null, enemiesKeptOut: null, broken: false, known: false });
   }
 }
 function setDoorWishes(wishes) {
   state.doors = state.doors.filter(d => d.known);
-  for (const d of state.doors) { d.locked = null; d.enemiesCanOpen = null; }
+  for (const d of state.doors) { d.locked = null; d.enemiesCanOpen = null; d.chance = 100; }
   applyDoorWishes(wishes); state.door = -1;
 }
 function setKnownDoors(list) { const wishes = doorsOut(); state.doors = list; applyDoorWishes(wishes); state.door = -1; }
@@ -775,6 +800,7 @@ function settingsOut() {
   if (state.extractionAfter && state.zones.some(z => z.id === state.extractionAfter)) o.extraction = { after: state.extractionAfter };
   if (state.insertion) o.insertion = state.insertion;
   if (state.power) o.power = state.power;
+  if (state.briefing.length) o.briefing = state.briefing.slice(0, 4);
   if (state.weather.hour !== null) w.hour = r2(state.weather.hour);
   if (state.weather.rain !== null) w.rain = state.weather.rain;
   if (state.weather.sandstorm !== null) w.sandstorm = state.weather.sandstorm;
@@ -786,17 +812,23 @@ function settingsIn(root) {
   state.extractionAfter = ex && typeof ex === 'object' ? Math.max(0, num(ex.after, 0) | 0) : 0;
   state.insertion = root && typeof root.insertion === 'string' ? root.insertion : '';
   state.power = root && (root.power === 'off' || root.power === 'on') ? root.power : '';
+  state.briefing = briefingIn(root && root.briefing);
   state.weather = { hour: Number.isFinite(w.hour) ? Math.max(0, Math.min(24, w.hour)) : null, rain: tri(w.rain), sandstorm: tri(w.sandstorm) };
 }
-const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down'];
+const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any'];
 // What the game can place, by its own names. Rifles were seen to work; the rest is offered as found in the game's list.
 const THING_GROUPS = [['Weapons', ["AK-74M", "AKM", "B&T APC9", "BLACKHAWK DE-MS", "Benelli M2", "F2000", "FN FNX-45", "Glock 17", "Glock 18C", "Glock 19x", "Glock 45 Legacy", "HK416A5", "HK416D", "M&P 9 2.0", "M320", "M45A1", "M4A1", "M72 LAW", "M9A1", "MCX", "MCX SPEAR", "MK16", "MK17", "MK46 MOD 2", "MP5", "MP7A1", "MP7A2", "MP9-N", "Noveske N4", "R700", "Remington M870", "SIG M17", "SIG MG338", "SIG P226", "SIG P320x", "SPR300", "SR-25", "STACCATO 2011", "SVD", "TT 2011 PitViper", "USP 45", "USP45 Tactical", "VKS"]], ['Intel items (not tried yet)', ["CIA Contacts Phone", "Cell Phone", "Encrypted Walkie Talkie", "Golden Watch", "HVI'S Classified Document", "HVT's Log Book", "Hard Drive", "Mexico_Contents", "Mexico_Document", "Mexico_Document Logs", "Mexico_Phone Numbers", "Mexico_Routes Document", "RFID Card", "Sim cards", "Tactical Encryption Unit", "Thumbdrive"]], ['Explosives (not tried yet)', ["Landmine", "Proximity Explosive_IED ", "Slap Charge"]], ['Other (not tried yet)', ["Chair_Leather_Interactable"]]];
-const thingsIn = list => (Array.isArray(list) ? list : []).filter(t => t && typeof t.name === 'string' && t.name && isVec(t.pos)).map(t => ({ name: t.name, pos: t.pos.slice(0, 3), yaw: num(t.yaw, 0), trigger: Math.max(0, num(t.trigger, 0) | 0) }));
-const thingsOut = () => state.things.map(t => ({ name: t.name, pos: r3(t.pos), yaw: r2(t.yaw), ...(t.trigger && state.zones.some(z => z.id === t.trigger) ? { trigger: t.trigger } : {}) }));
+const pct = v => Math.max(1, Math.min(100, Math.round(num(v, 100))));
+const thingsIn = list => (Array.isArray(list) ? list : []).filter(t => t && typeof t.name === 'string' && t.name && isVec(t.pos)).map(t => ({ name: t.name, pos: t.pos.slice(0, 3), yaw: num(t.yaw, 0), trigger: Math.max(0, num(t.trigger, 0) | 0), chance: pct(t.chance) }));
+const thingsOut = () => state.things.map(t => ({ name: t.name, pos: r3(t.pos), yaw: r2(t.yaw), ...(t.trigger && state.zones.some(z => z.id === t.trigger) ? { trigger: t.trigger } : {}), ...(t.chance < 100 ? { chance: t.chance } : {}) }));
+const briefingIn = list => (Array.isArray(list) ? list : []).map(cleanMessage).filter(Boolean).slice(0, 4);
 const zonesOut = () => state.zones.map(z => {
   const o = { id: z.id, name: z.name || '', when: z.when || 'zone' };
   if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } }
   if (o.when === 'down') o.count = Math.max(0, z.count | 0);
+  if (o.when === 'all' || o.when === 'any') o.of = (z.of || []).filter(id => id !== z.id && state.zones.some(q => q.id === id));
+  if (z.chance < 100) o.chance = Math.max(1, z.chance | 0);
+  if (z.warn) o.warn = true;
   if (o.when === 'intel') o.item = z.item || '';
   if (o.when === 'after') o.after = z.after | 0;
   if (z.delay > 0) o.delay = r2(z.delay);
@@ -809,15 +841,16 @@ const zonesOut = () => state.zones.map(z => {
   if (z.end === 'success' || z.end === 'failed') o.end = z.end;
   return o;
 });
-const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0 }, more || {});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false }, more || {});
 const cleanMessage = t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 // What a trigger waits for, in a few words.
 const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
-const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'down' ? 'When enemies are down' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
+const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'down' ? 'When enemies are down' : z.when === 'all' ? 'When all of these have fired' : z.when === 'any' ? 'When one of these has fired' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
 const trigTag = id => { const z = state.zones.find(q => q.id === id); return (z && z.when !== 'zone' ? 'trigger ' : 'zone ') + id; };
 // A file from before there were other kinds has only zones; a zone needs a place, the other kinds do not.
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id > 0 && (isVec(z.pos) || (WHENS.includes(z.when) && z.when !== 'zone'))).map(z => newTrigger(z.id | 0, WHENS.includes(z.when) ? z.when : 'zone', {
   hold: z.when === 'hold' ? Math.max(1, Math.min(3600, num(z.hold, 30))) : 0, count: Math.max(0, num(z.count, 0) | 0),
+  of: (Array.isArray(z.of) ? z.of : []).map(v => v | 0).filter(v => v > 0), chance: Math.max(1, Math.min(100, Math.round(num(z.chance, 100)))), warn: z.warn === true,
   name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
   delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
   power: z.power === 'off' || z.power === 'on' ? z.power : '', message: cleanMessage(z.message), end: z.end === 'success' || z.end === 'failed' ? z.end : '',
@@ -831,6 +864,7 @@ function enemyOf(s, i) {
     prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt, vehicle: !!s.vehicle,
     chance: Math.max(1, Math.min(100, Math.round(num(s.chance, 100)))), lot: Math.max(0, num(s.lot, 0) | 0), either: Math.max(0, num(s.either, 0) | 0), option: num(s.either, 0) > 0 ? Math.max(1, num(s.option, 1) | 0) : 0,
     team: Math.max(0, Math.min(8, num(s.team, 0) | 0)),
+    minPlayers: Math.max(0, Math.min(16, num(s.minPlayers, 0) | 0)), skill: s.skill === 'recruit' || s.skill === 'veteran' ? s.skill : '', nvg: s.nvg === true,
     detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
     wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
     patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -918,6 +952,10 @@ function loadRecon(obj, name) {
   const pts = [], add = p => { if (isVec(p) && Math.abs(p[0]) + Math.abs(p[2]) > 0.01 && !pts.some(q => Math.hypot(q[0] - p[0], q[2] - p[2]) < 1)) pts.push(p.slice(0, 3)); };
   const walk = node => { if (!node || typeof node !== 'object') return; if (node.pos) add(node.pos); (node.children || []).forEach(walk); };
   ((obj.infiltration || {}).infilMethods || []).forEach(m => { if (!m) return; walk(m.infilObject); (m.children || []).forEach(walk); });
+  const spots = ((obj.infiltration || {}).infilMethods || []).filter(m => m && typeof m.infilName === 'string' && m.infilObject && isVec(m.infilObject.pos)).map(m => ({ name: m.infilName, pos: m.infilObject.pos.slice(0, 3) }));
+  if (spots.length) state.insertionSpots = spots;
+  const sceneName = (obj.operations && obj.operations.currentScene) || obj.scene || '';
+  if (typeof sceneName === 'string' && sceneName && Array.isArray(obj.doors)) state.night = /night/i.test(sceneName);
   state.infils = pts;
   const spawns = (obj.raid || {}).botSpawnPoints;
   state.authored = (Array.isArray(spawns) ? spawns : []).filter(s => s && isVec(s.pos)).map(s => s.pos.slice(0, 3));
@@ -1538,16 +1576,18 @@ function insertionGroups() {
 }
 // For every enemy that is there from the start: can it see players standing on an insertion point?
 // Returns one entry per enemy: null, or { dist, at, facing } for the nearest insertion spot in view and in range.
-const USUAL_SIGHT = 50, USUAL_FOV = 100;
+const USUAL_SIGHT = 50, NIGHT_SIGHT = 25, USUAL_FOV = 100;
 function dangers() {
   if (!state.geo || !state.infils.length) return state.enemies.map(() => null);
-  const key = state.geo.name + '|' + state.infils.length + '|' + state.enemies.map(e => [e.pos, e.yaw, e.prone, e.vehicle, e.trigger, e.detectionRange, e.fov].join(',')).join(';');
+  const key = state.geo.name + '|' + state.infils.length + '|' + state.night + '|' + state.insertion + '|' + state.insertionSpots.length + '|' + state.enemies.map(e => [e.pos, e.yaw, e.prone, e.vehicle, e.trigger, e.detectionRange, e.fov].join(',')).join(';');
   if (sight.key === key) return sight.cache;
-  const groups = insertionGroups();
+  // Only the insertion the scenario chose counts, when it chose one and the editor knows where that is.
+  const spot = state.insertion && state.insertionSpots.find(q => q.name === state.insertion);
+  const groups = insertionGroups().filter(g => !spot || g.some(p => Math.hypot(p[0] - spot.pos[0], p[2] - spot.pos[2]) < 15));
   sight.key = key;
   return sight.cache = state.enemies.map(e => {
     if (e.trigger) return null;                                   // comes later, when the players are elsewhere
-    const range = e.detectionRange > 0 ? e.detectionRange : USUAL_SIGHT, eye = [e.pos[0], e.pos[1] + (e.vehicle ? 2.2 : e.prone ? 0.35 : 1.6), e.pos[2]];
+    const range = e.detectionRange > 0 ? e.detectionRange : (state.night && !e.nvg ? NIGHT_SIGHT : USUAL_SIGHT), eye = [e.pos[0], e.pos[1] + (e.vehicle ? 2.2 : e.prone ? 0.35 : 1.6), e.pos[2]];
     let best = null;
     for (const g of groups) for (const p of g) {
       const dist = Math.hypot(p[0] - e.pos[0], p[1] - e.pos[1], p[2] - e.pos[2]);
@@ -1765,7 +1805,7 @@ canvas.addEventListener('pointerup', ev => {
     addZone(wx, y, wz);
   } else if (state.tool === 'thing' && !d.target) {
     if (y === null) return say('Lay it on the shaded ground.');
-    pushUndo(); state.things.push({ name: state.thingName, pos: [wx, y + 0.02, wz], yaw: 0, trigger: 0 });
+    pushUndo(); state.things.push({ name: state.thingName, pos: [wx, y + 0.02, wz], yaw: 0, trigger: 0, chance: 100 });
     selectThing(state.things.length - 1); changed(); say(state.thingName.trim() + ' placed.');
   } else if (state.tool === 'select' && !d.target) { select(-1); if (state.thing >= 0) { state.thing = -1; syncSide(); invalidate(); } }
 });
@@ -1826,13 +1866,16 @@ function syncSide() {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '')); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
   const wbox = $('warnings'); wbox.textContent = '';
   if (warn) { const c = document.createElement('span'); c.className = 'chip warn'; c.textContent = warn + (warn === 1 ? ' enemy to check' : ' enemies to check') + ' (hover a row, or select it, for the reason)'; wbox.appendChild(c); }
   const seen = dangers().filter(Boolean).length;
+  const nl = document.createElement('label'), nb = document.createElement('input'); nl.className = 'check'; nl.style.flexBasis = '100%'; nb.type = 'checkbox'; nb.id = 'night'; nb.checked = !!state.night;
+  nb.addEventListener('change', () => { state.night = nb.checked; changed(); });
+  const ns = document.createElement('span'); ns.textContent = 'Night mission: enemies see 25 m instead of 50' + (state.insertion && state.insertionSpots.some(q => q.name === state.insertion) ? '. Checked against ' + state.insertion + ' only.' : ''); nl.append(nb, ns); wbox.appendChild(nl);
   const note = document.createElement('p'); note.className = 'hint'; note.id = 'sightNote';
   note.textContent = !state.infils.length ? 'Danger check: off. It needs the map\'s insertion points, from the game or a recon file.'
     : !state.geo ? 'Danger check: only distance so far. With the 3D map file it also finds enemies that can see an insertion point.'
@@ -1872,6 +1915,7 @@ function syncSide() {
     setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
     $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone; $('hvt').checked = !!e.hvt; $('vehicle').checked = !!e.vehicle;
     setVal($('chance'), e.chance || 100); syncEither(e); setVal($('team'), String(e.team || 0));
+    setVal($('minPlayers'), Math.max(1, e.minPlayers || 1)); setVal($('skill'), e.skill || ''); $('nvg').checked = !!e.nvg;
     $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
     $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
     syncPos();
@@ -1888,6 +1932,7 @@ function syncSide() {
   $('doorPanel').hidden = !dr;
   if (dr) {
     setVal($('doorLock'), dr.locked === null ? '' : dr.locked ? '1' : '0'); setVal($('doorAi'), dr.enemiesCanOpen === null ? '' : dr.enemiesCanOpen ? '1' : '0');
+    setVal($('doorChance'), dr.chance || 100);
     $('doorNow').textContent = (dr.name || 'Door') + ' at ' + dr.mid[0].toFixed(0) + ', ' + dr.mid[2].toFixed(0) + ' · height ' + dr.mid[1].toFixed(1)
       + (dr.broken ? ' · broken open' : dr.isLocked === true ? ' · locked right now' : dr.isLocked === false ? ' · unlocked right now' : '')
       + (dr.enemiesKeptOut === true ? ' · enemies cannot open it right now' : '')
@@ -1944,6 +1989,7 @@ function syncSide() {
       else if (z.when === 'down') what.append(grp('Enemies down:', numIn(z.count | 0, 0, 200, 1, 'How many enemies must be down for trigger ' + z.id, v => { z.count = v | 0; })), z.count > 0 ? '' : ' (0: all of them)');
       else if (z.when === 'alert') what.append('An enemy notices the players');
       else if (z.when === 'time') what.append('The mission has started');
+      else if (z.when === 'all' || z.when === 'any') what.append(z.when === 'all' ? 'All of the ticked triggers have fired' : 'One of the ticked triggers has fired');
       else if (z.when === 'intel') {
         const sel = mk('select'); sel.setAttribute('aria-label', 'Which intel item');
         const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
@@ -1965,6 +2011,20 @@ function syncSide() {
       const sum = mk('div', { className: 'sum hint' });
       const act = mk('div', { className: 'what' });
       const pick = (label, options, value, set) => { const sel = mk('select'); sel.setAttribute('aria-label', label + ' of ' + trigTitle(z)); options.forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t }))); sel.value = value || ''; sel.addEventListener('change', () => { pushUndo(); set(sel.value); changed(); }); return sel; };
+      let ofBox = null;
+      if (z.when === 'all' || z.when === 'any') {
+        ofBox = mk('div', { className: 'of' });
+        const others = state.zones.filter(q => q.id !== z.id);
+        if (!others.length) ofBox.append('Add other triggers first, then tick them here.');
+        for (const q of others) {
+          const lab = mk('label'), cb = mk('input', { type: 'checkbox', checked: (z.of || []).includes(q.id) }); cb.setAttribute('aria-label', trigTitle(q) + ' counts for ' + trigTitle(z));
+          cb.addEventListener('change', () => { pushUndo(); z.of = (z.of || []).filter(id => id !== q.id); if (cb.checked) z.of.push(q.id); changed(); });
+          lab.append(cb, trigTitle(q) + (q.name ? ' (' + q.name + ')' : '')); ofBox.appendChild(lab);
+        }
+      }
+      const odds = mk('div', { className: 'what' });
+      odds.append(grp('Chance', numIn(z.chance || 100, 1, 100, 5, 'Chance in percent that ' + trigTitle(z) + ' is part of the mission', v => { z.chance = Math.round(v); }), '%'));
+      if (z.delay >= 20) { const wl = mk('label'), wb = mk('input', { type: 'checkbox', checked: !!z.warn }); wb.setAttribute('aria-label', 'Warn players before ' + trigTitle(z)); wb.addEventListener('change', () => { pushUndo(); z.warn = wb.checked; changed(); }); wl.append(wb, ' tell players when time is nearly up'); odds.append(wl); }
       act.append(grp('Lights', pick('Lights', [['', 'stay as they are'], ['off', 'go out'], ['on', 'come back on']], z.power, v => { z.power = v; })),
                  grp('Mission', pick('End of the mission', [['', 'goes on'], ['success', 'ends as a success'], ['failed', 'ends as failed']], z.end, v => { z.end = v; })));
       const msg = mk('input', { type: 'text', className: 'msg', value: z.message || '', placeholder: 'Message on every player\'s screen (optional)', maxLength: 120 }); msg.setAttribute('aria-label', 'Message of ' + trigTitle(z));
@@ -1973,7 +2033,7 @@ function syncSide() {
       const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
       exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
       exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
-      li.append(title, name, fire, del, what, face, exf, act, msg, sum); zl.appendChild(li);
+      li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, sum); zl.appendChild(li);
     });
   }
   // Settings for the whole mission.
@@ -1988,6 +2048,7 @@ function syncSide() {
   setVal($('wxRain'), state.weather.rain === null ? '' : state.weather.rain ? '1' : '0'); setVal($('wxStorm'), state.weather.sandstorm === null ? '' : state.weather.sandstorm ? '1' : '0');
   setVal($('wxHour'), state.weather.hour === null ? '' : state.weather.hour);
   setVal($('power'), state.power || '');
+  if (document.activeElement !== $('briefing')) $('briefing').value = state.briefing.join('\n');
   const wn = state.weatherNow;
   $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. Lights work on maps with a breaker box; Clean House has one. '
     + (wn ? (wn.has ? 'This map has weather' + (wn.fixedTime ? ', but its time of day is fixed.' : ' and a time of day.') : 'This map has no weather or time of day, so rain, sandstorm and hour do nothing here.')
@@ -2091,6 +2152,17 @@ $('chance').addEventListener('change', ev => editPicked(list => {
   for (const e of list) { e.chance = c; e.lot = lot; }
 }));
 $('team').addEventListener('change', ev => editPicked(list => { const t = +ev.target.value || 0; for (const e of list) e.team = t; }));
+$('minPlayers').addEventListener('change', ev => editPicked(list => { const n = Math.max(1, Math.min(8, Math.round(+ev.target.value || 1))); for (const e of list) e.minPlayers = n > 1 ? n : 0; }));
+$('skill').addEventListener('change', ev => editPicked(list => { const v = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; for (const e of list) e.skill = v; }));
+$('nvg').addEventListener('change', ev => editPicked(list => { for (const e of list) e.nvg = ev.target.checked; }));
+$('briefing').addEventListener('change', ev => missionEdit(() => { state.briefing = briefingIn(ev.target.value.split('\n')); }));
+$('doorChance').addEventListener('change', ev => doorEdit(d => { d.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
+$('thingChance').addEventListener('change', ev => editThing(t => { t.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
+// Game Master, while a mission runs: words for the players, and the lights.
+$('gmSend').addEventListener('click', () => { const text = cleanMessage($('gmText').value); if (!text) return say('Type the message first.'); liveCommand('try', { what: 'message', arg: text }).then(() => { $('gmText').value = ''; say('Message sent to every player.'); }); });
+$('gmText').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); $('gmSend').click(); } });
+$('gmDark').addEventListener('click', () => liveCommand('try', { what: 'power', arg: 'off' }));
+$('gmLight').addEventListener('click', () => liveCommand('try', { what: 'power', arg: 'on' }));
 
 // Things: weapons and the like, laid on the ground.
 function selectThing(i) { state.thing = i; if (i >= 0) { showTab('doors'); state.door = -1; } syncSide(); invalidate(); }
@@ -2122,6 +2194,7 @@ function syncThings() {
       ts.textContent = ''; [[0, 'From the start'], ...state.zones.map(z => [z.id, trigText(z)])].forEach(([v, text]) => { const o = document.createElement('option'); o.value = v; o.textContent = text; ts.appendChild(o); });
       ts.value = String(state.zones.some(z => z.id === t.trigger) ? t.trigger : 0);
     }
+    setVal($('thingChance'), t.chance || 100);
   }
 }
 const editThing = fn => { const t = state.things[state.thing]; if (!t) return; pushUndo(); fn(t); changed(); };
@@ -2500,6 +2573,7 @@ async function applyLive(s) {
     let tried = ''; try { tried = sessionStorage.getItem('ml-reloaded') || ''; } catch (e) { /* no storage */ }
     if (tried !== s.page) { try { sessionStorage.setItem('ml-reloaded', s.page); } catch (e) { /* no storage */ } location.reload(); return; }
   }
+  if ($('gmBox')) $('gmBox').hidden = !(live.on && s && s.mission);
   live.mission = !!(s && s.mission); live.things = s && Array.isArray(s.things) ? s.things : []; live.tried = (s && s.tried) || '';
   syncTry();
   if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
@@ -2520,7 +2594,9 @@ async function applyLive(s) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
-    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power });
+    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing });
+    if (typeof s.night === 'boolean') state.night = s.night;
+    if (Array.isArray(s.insertionSpots)) state.insertionSpots = s.insertionSpots.filter(q => q && q.name && isVec(q.pos));
     live.satOut = s.satOut | 0;
     if (Array.isArray(s.infilPoints) && s.infilPoints.length) state.infils = s.infilPoints.filter(isVec).map(p => p.slice(0, 3));     // where players arrive: for the danger check
     state.insertions = Array.isArray(s.insertions) ? s.insertions.filter(n => typeof n === 'string' && n) : []; state.weatherNow = s.weather || null;
@@ -2593,16 +2669,20 @@ function missionCheck() {
     let ok = true;
     if (z.when === 'zone') ok = isVec(z.pos);
     else if (z.when === 'after') { const p = byId(z.after); ok = !!p && p.id !== z.id && !trail.includes(p.id) && canFire(p, trail.concat(z.id)); }
+    else if (z.when === 'all' || z.when === 'any') {
+      const list = (z.of || []).map(byId).filter(q => q && q.id !== z.id), can = q => !trail.includes(q.id) && canFire(q, trail.concat(z.id));
+      ok = list.length > 0 && list.length === (z.of || []).filter(id => id !== z.id).length ? (z.when === 'all' ? list.every(can) : list.some(can)) : (z.when === 'any' && list.some(can));
+    }
     if (!trail.length) memo.set(z.id, ok);
     return ok;
   };
   const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
   for (const z of state.zones) {
     const n = state.enemies.filter(e => e.trigger === z.id).length;
-    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked !== null) || z.opensExtraction || z.power || z.message || z.end || state.extractionAfter === z.id || state.zones.some(q => q.when === 'after' && q.after === z.id);
+    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked !== null) || z.opensExtraction || z.power || z.message || z.end || state.extractionAfter === z.id || state.zones.some(q => (q.when === 'after' && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
     const byHand = z.when === 'after' && !z.after;
     if (byHand) { if (does) add('note', name(z) + ' fires only when the Game Master presses Fire now.', toTriggers); }
-    else if (!canFire(z, [])) add('problem', name(z) + ' can never fire: ' + (z.when === 'zone' ? 'it has no place on the map' : byId(z.after) ? 'it waits for a trigger that in turn waits for it' : 'the trigger it waits for is gone') + '.', toTriggers);
+    else if (!canFire(z, [])) add('problem', name(z) + ' can never fire: ' + (z.when === 'zone' ? 'it has no place on the map' : z.when === 'all' || z.when === 'any' ? ((z.of || []).length ? 'the triggers it waits for can never fire, or wait for it' : 'no triggers are ticked for it') : byId(z.after) ? 'it waits for a trigger that in turn waits for it' : 'the trigger it waits for is gone') + '.', toTriggers);
     if (!does) add('warning', name(z) + ' does nothing: no enemy, door, message or other action belongs to it.', toTriggers);
     if (z.when === 'intel' && z.item && z.item !== 'all' && kinds.length && !kinds.includes(z.item)) add('warning', name(z) + ' waits for "' + z.item + '", which is not among this map\'s intel (' + kinds.join(', ') + ').', toTriggers);
     if (z.end && z.when === 'time' && !(z.delay > 0)) add('problem', name(z) + ' ends the mission the moment it starts. Give it a wait.', toTriggers);
@@ -2629,6 +2709,18 @@ function missionCheck() {
     if (a.either && b.either === a.either && a.option !== b.option) continue;            // never there together
     if (Math.hypot(a.pos[0] - b.pos[0], a.pos[2] - b.pos[2]) < 0.4 && Math.abs(a.pos[1] - b.pos[1]) < 1.5) add('warning', 'Enemies ' + (i + 1) + ' and ' + (j + 1) + ' stand on the same spot.', toEnemy(j));
   }
+  // Enemies that a zone brings should not pop up in front of the players who set it off.
+  for (const z of state.zones) {
+    if (z.when !== 'zone' || !isVec(z.pos)) continue;
+    state.enemies.forEach((e, i) => {
+      if (e.trigger !== z.id || e.vehicle) return;
+      const d = Math.hypot(e.pos[0] - z.pos[0], e.pos[2] - z.pos[2]), sameFloor = Math.abs(e.pos[1] - z.pos[1]) < 2;
+      if (d < z.radius && sameFloor) add('warning', 'Enemy ' + (i + 1) + ' appears inside ' + lower(z) + ', where the players are when it fires.', toEnemy(i));
+      else if (state.geo && d < 60 && canSee([z.pos[0], z.pos[1] + 1.6, z.pos[2]], [e.pos[0], e.pos[1] + 1.6, e.pos[2]])) add('warning', 'Enemy ' + (i + 1) + ' appears in plain view of ' + lower(z) + ', ' + Math.round(d) + ' m from its middle.', toEnemy(i));
+    });
+  }
+  if (state.enemies.some(e => e.skill || e.nvg)) add('note', 'Skill and night vision have not been tried in the game yet.', () => showTab('enemies', true));
+  if (state.zones.some(z => z.chance < 100)) add('note', 'A trigger that is left to chance takes its enemies, things and actions with it when it sits a mission out.', toTriggers);
   for (const [k, o] of eitherSets()) if (o.size < 2) add('warning', 'Either/or set ' + k + ' has only one option, so it is there every time.', toEnemy(state.enemies.findIndex(e => e.either === k)));
   if (state.doors.some(d => d.known)) for (const d of state.doors) if (!d.known && doorSet(d)) add('warning', 'A door setting' + (d.name ? ' ("' + d.name + '")' : '') + ' fits no door of this map.', () => showTab('doors', true));
   const rank = { problem: 0, warning: 1, note: 2 };

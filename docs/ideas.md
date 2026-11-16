@@ -69,22 +69,26 @@ most likely to break.
 | "Hold the zone" and "enemies down" triggers | built; not yet in the game |
 | Messages on screen | seen in the game |
 
+### Built in 0.21 (tested in the editor and the core, not yet in the game)
+
+Briefing on screen; triggers that wait for all or one of several others; chance for triggers,
+doors and things; a countdown warning; players needed per enemy; skill and night vision per
+enemy; Game Master box (message, lights) in the live page; danger check for the chosen insertion
+and for night; pop-in check.
+
 ### B: next
 
 | What | Why this grade | Shown in the game so far | Work |
 |---|---|---|---|
-| A way to fail a mission | The game's failed screen closes while someone is alive. `EndOperation()` is the next thing to try. | failed popup seen for a moment | small once it works |
-| Orders and hunters from behind | The base for adaptive pacing and a stronger Game Master. | `HeardTarget` moved nobody; a heard shot is the next try | medium |
-| Enemy profiles | Conscripts, bodyguards, night-vision sentries; runs on the host only. | class listing only | medium |
+| Orders for enemies | The base for hunters and adaptive pacing. | two "sound" calls moved nobody; a one-stop patrol route is the next try | medium |
+| A way to fail a mission | Red message, then the game's end operation: built in 0.20.1. | end operation seen; the pair not yet | done once seen |
+| Which call marks a run as cheated | Decides whether a mod-ended win can look clean. | one of respawns on, failed, forced extraction | small |
 | Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | the call did nothing to a living player | medium |
-| Trigger logic (AND, OR, counters) | Multi-stage missions. Survives V10. | needs no game | medium |
-| Scaling by team size | One scenario for two or six friends. | needs one read on the host | small |
+| Hunters from behind, adaptive pacing | Needs orders that work. | waits for orders | medium |
 | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
-| Pop-in check | Warns when a trigger's enemies would appear in plain sight of the players. | needs no game | medium |
-| Smarter danger check | Only the insertion the scenario chose; 25 m sight at night. | needs no game | small |
-| Chance for doors, triggers and things | A door locked half the time, a rifle that is only sometimes there. | needs no game | small |
 | Enemies that sit out, shown in the live page | The Game Master sees what the roll left out and can bring it in. | needs no game | small |
 | Things in the 3D view, by hand | Things show in 3D but can only be placed and moved in 2D. | needs no game | small |
+| Repeating triggers | A wave every two minutes from one trigger. | needs no game | medium |
 
 ### C: later
 

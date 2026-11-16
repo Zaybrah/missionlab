@@ -70,6 +70,11 @@ namespace MissionLab
         private static string _power = "";
         private static float _vehicleCheckAt = -1f;
         private static float _noticeAt = -1f;
+        private static string _title = "";
+        private static List<string> _briefing = new List<string>();
+        private static readonly Queue<string> BriefQueue = new Queue<string>();
+        private static float _briefAt = -1f;
+        private static readonly HashSet<long> Warned = new HashSet<long>();
         private static List<DoorV2> _doorList;
         private static float _doorScanAt;
         private static string _doorError;
@@ -119,6 +124,9 @@ namespace MissionLab
             _weather = plan.Weather ?? new WeatherPlan();
             _power = plan.Power ?? "";
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
+            _title = plan.Title ?? ""; _briefing = new List<string>(plan.Briefing);
+            BriefQueue.Clear(); Warned.Clear();
+            foreach (string line in _briefing) BriefQueue.Enqueue(line);
             _insertion = plan.Insertion ?? "";
             if (_insertion != "")
             {
@@ -164,7 +172,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); InsideSince.Clear(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f;
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); Warned.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -368,7 +376,26 @@ namespace MissionLab
             bool open = ExtractionOpen(raid);
             sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
               .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
-            sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count);
+            sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count + Director.DoorsOut.Count + Director.ThingsOut.Count);
+            sb.Append(",\"title\":").Append(Q(_title)).Append(",\"briefing\":[");
+            for (int i = 0; i < _briefing.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(_briefing[i]));
+            sb.Append(']'); rev.Append('B').Append(_title).Append(string.Join("|", _briefing));
+            bool night = false; try { night = (raid.gameObject.scene.name ?? "").IndexOf("Night", StringComparison.OrdinalIgnoreCase) >= 0; } catch { }
+            sb.Append(",\"night\":").Append(night ? "true" : "false").Append(",\"insertionSpots\":[");
+            try
+            {
+                InfiltrationManager im = InfiltrationManager.instance;
+                var methods = im == null ? null : im.infilMethods; bool first = true;
+                for (int i = 0; methods != null && i < methods.Length; i++)
+                {
+                    if (methods[i] == null || methods[i].infilObject == null) continue;
+                    Vector3 at = methods[i].infilObject.transform.position;
+                    sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(methods[i].infilName ?? "")).Append(",\"pos\":[").Append(F(at.x)).Append(',').Append(F(at.y)).Append(',').Append(F(at.z)).Append("]}");
+                    first = false;
+                }
+            }
+            catch { }
+            sb.Append(']');
             rev.Append('P').Append(_power);
             sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
             List<string> names = Insertions();
@@ -593,7 +620,7 @@ namespace MissionLab
                 bool any = false;
                 foreach (TriggerPlan t in _zones)
                 {
-                    if (Fired.Contains(t.Id)) continue;
+                    if (Fired.Contains(t.Id) || t.Off) continue;
                     if (!MetAt.TryGetValue(t.Id, out float met))
                     {
                         Vector3 who = Vector3.zero;
@@ -606,13 +633,28 @@ namespace MissionLab
                             case TriggerPlan.OnAfter: yes = t.After != 0 && t.After != t.Id && Fired.Contains(t.After); break;
                             case TriggerPlan.OnHold: yes = Held(t, now, out who); break;
                             case TriggerPlan.OnDown: yes = EnemiesDown(gm, t.Count); break;
+                            case TriggerPlan.OnAll: yes = t.Of.Count > 0 && t.Of.TrueForAll(Fired.Contains); break;
+                            case TriggerPlan.OnAny: yes = t.Of.Exists(Fired.Contains); break;
                             default: yes = PlayerInside(t, out who); break;
                         }
                         if (!yes) continue;
                         MetAt[t.Id] = met = t.When == TriggerPlan.OnTime ? Director.HandledAt : now;     // a timer counts from the start of the mission
                         if (TriggerPlan.Placed(t.When)) MetWhere[t.Id] = who;
                     }
-                    if (now < met + t.Delay) continue;
+                    if (now < met + t.Delay)
+                    {
+                        if (t.Warn)
+                        {
+                            float left = met + t.Delay - now; string what = string.IsNullOrEmpty(t.Name) ? "" : t.Name + ": ";
+                            try
+                            {
+                                if (t.Delay >= 90f && left <= 60f && left > 50f && Warned.Add(t.Id * 10L + 1)) TryOuts.Message(raid, what + "one minute left.");
+                                if (t.Delay >= 20f && left <= 10f && Warned.Add(t.Id * 10L + 2)) TryOuts.Message(raid, what + "ten seconds left.", true);
+                            }
+                            catch { }
+                        }
+                        continue;
+                    }
                     Fire(t, now);
                     any = true;
                 }
@@ -671,28 +713,45 @@ namespace MissionLab
             foreach (int id in new List<int>(Fired)) PlaceThings(id);
         }
 
-        /// <summary>An enemy whose marker names a side is put on it, once for each live enemy made from the marker.</summary>
+        /// <summary>What a marker says about its enemy beyond where it stands: its side, its skill, night vision. Applied once to each live enemy.</summary>
         private static void ApplySides(GameManager gm)
         {
             if (_markers == null) return;
             for (int i = 0; i < _markers.Count; i++)
             {
                 Marker m = _markers[i];
-                if (m.Plan.Team <= 0 || m.Bot == IntPtr.Zero || m.SideFor == m.Bot) continue;
+                SpawnPlan p = m.Plan;
+                if ((p.Team <= 0 && p.Skill == "" && !p.Nvg) || m.Bot == IntPtr.Zero || m.SideFor == m.Bot) continue;
                 BrainAI b = Find(gm, m.Bot);
                 if (b == null) continue;
                 m.SideFor = m.Bot;
-                try
-                {
-                    TeamIdentifier t = b.GetComponent<TeamIdentifier>();
-                    if (t == null) t = b.GetComponentInParent<TeamIdentifier>();
-                    if (t == null) t = b.GetComponentInChildren<TeamIdentifier>(true);
-                    if (t == null) { DirectorPlugin.L.LogWarning("side: enemy #" + (i + 1) + " has nothing to carry a team"); continue; }
-                    int before = t.TeamID;
-                    if (before != m.Plan.Team) t.NetworkTeamID = m.Plan.Team;
-                    DirectorPlugin.L.LogInfo("side: enemy #" + (i + 1) + " is on team " + m.Plan.Team + " (was " + before + ")");
-                }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("side: enemy #" + (i + 1) + " could not be moved: " + e.Message); }
+                var said = new List<string>();
+                if (p.Team > 0)
+                    try
+                    {
+                        TeamIdentifier t = b.GetComponent<TeamIdentifier>();
+                        if (t == null) t = b.GetComponentInParent<TeamIdentifier>();
+                        if (t == null) t = b.GetComponentInChildren<TeamIdentifier>(true);
+                        if (t == null) said.Add("nothing to carry a team");
+                        else { int before = t.TeamID; if (before != p.Team) t.NetworkTeamID = p.Team; said.Add("team " + p.Team + " (was " + before + ")"); }
+                    }
+                    catch (Exception e) { said.Add("team not set: " + e.Message); }
+                if (p.Skill == "recruit" || p.Skill == "veteran")
+                    try
+                    {
+                        // Relative to what the game gave this enemy, so the mission's difficulty setting still counts.
+                        bool vet = p.Skill == "veteran";
+                        float slow = vet ? 0.6f : 1.6f, wild = vet ? 0.6f : 1.6f, sure = vet ? 1.35f : 0.6f;
+                        float r0 = b.ReactionTime, w0 = b.WeaponInaccuracy, h0 = b.baseHitChance;
+                        b.ReactionTime = r0 * slow; b._baseReactionTime = b._baseReactionTime * slow; b.WeaponInaccuracy = w0 * wild; b.baseHitChance = h0 * sure;
+                        said.Add(p.Skill + ": reaction " + r0.ToString("0.00", Inv) + " to " + b.ReactionTime.ToString("0.00", Inv) + ", inaccuracy " + w0.ToString("0.00", Inv) + " to " + b.WeaponInaccuracy.ToString("0.00", Inv) +
+                                 ", hit chance " + h0.ToString("0.00", Inv) + " to " + b.baseHitChance.ToString("0.00", Inv));
+                    }
+                    catch (Exception e) { said.Add("skill not set: " + e.Message); }
+                if (p.Nvg)
+                    try { bool had = b.HasNVG; b.HasNVG = true; said.Add("night vision " + (had ? "(had it)" : "on")); }
+                    catch (Exception e) { said.Add("night vision not set: " + e.Message); }
+                DirectorPlugin.L.LogInfo("enemy #" + (i + 1) + ": " + string.Join("; ", said));
             }
         }
 
@@ -741,7 +800,8 @@ namespace MissionLab
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the message of " + TriggerName(t) + " could not be shown: " + e.Message); }
             int placedNow = PlaceThings(t.Id);
             if (placedNow > 0) more += ", " + placedNow + (placedNow == 1 ? " thing is placed" : " things are placed");
-            string why = t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
+            string why = t.When == TriggerPlan.OnAll ? "(all of triggers " + string.Join(", ", t.Of) + ")" : t.When == TriggerPlan.OnAny ? "(one of triggers " + string.Join(", ", t.Of) + ")" :
+                         t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
                          t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
                        : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
             Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more);
@@ -874,7 +934,7 @@ namespace MissionLab
                     string we = w != null && w.EnemiesCanOpen.HasValue ? (w.EnemiesCanOpen.Value ? "true" : "false") : "null";
                     sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(d.gameObject.name)).Append(",\"pos\":").Append(P(hinge)).Append(",\"mid\":").Append(P(Middle(d)))
                       .Append(",\"isLocked\":").Append(locked ? "true" : "false").Append(",\"enemiesKeptOut\":").Append(cant ? "true" : "false").Append(",\"broken\":").Append(dead ? "true" : "false")
-                      .Append(",\"locked\":").Append(wl).Append(",\"enemiesCanOpen\":").Append(we).Append('}');
+                      .Append(",\"locked\":").Append(wl).Append(",\"enemiesCanOpen\":").Append(we).Append(w != null && w.Chance < 100 ? ",\"chance\":" + w.Chance : "").Append('}');
                     rev.Append('D').Append(P(hinge)).Append(locked ? 'l' : 'u').Append(cant ? 'c' : 'o').Append(dead ? 'x' : '-').Append(wl[0]).Append(we[0]);
                     first = false;
                 }
@@ -1065,6 +1125,7 @@ namespace MissionLab
                 catch { }
                 _vehicleCheckAt = now + 2f;
                 if (DirectorPlugin.TellPlayers.Value) _noticeAt = now + 8f;
+                if (BriefQueue.Count > 0) _briefAt = now + 14f;
                 int thingsNow = PlaceThings(0);
                 if (_things.Count > 0) DirectorPlugin.L.LogInfo("things: " + thingsNow + " placed at the start, " + (_things.Count - thingsNow) + " wait for a trigger or could not be placed");
                 if (TryOuts.FairPlayIs("Always")) DirectorPlugin.L.LogInfo("fair play: " + TryOuts.Mark());
@@ -1084,6 +1145,17 @@ namespace MissionLab
                     int stay = 0;
                     foreach (ObjectiveObject o in Objectives(raid)) if (Moved(o)) stay++;
                     DirectorPlugin.L.LogInfo("objectives: " + stay + " of " + Objectives(raid).Count + " item(s) lie where the scenario says (" + plan.Objectives.Count + " named, " + late + " moved late); in the map: " + Describe(raid));
+                }
+            }
+            if (_briefAt >= 0f && now >= _briefAt)
+            {
+                // The mission's name and its briefing, one line at a time: the game drops messages that come too close together.
+                if (BriefQueue.Count == 0) _briefAt = -1f;
+                else
+                {
+                    string line = BriefQueue.Dequeue(); _briefAt = BriefQueue.Count > 0 ? now + 7f : -1f;
+                    try { TryOuts.Message(raid, line); Replay.Event("note", "briefing: " + line); }
+                    catch (Exception e) { DirectorPlugin.L.LogWarning("the briefing could not be shown: " + e.Message); }
                 }
             }
             if (_noticeAt >= 0f && now >= _noticeAt)
@@ -1777,6 +1849,7 @@ namespace MissionLab
             var have = new HashSet<int>();
             foreach (TriggerPlan z in sent.Triggers) { have.Add(z.Id); if (!had.Contains(z.Id) && z.When == TriggerPlan.OnTime) MetAt[z.Id] = now; }
             foreach (int id in had) if (!have.Contains(id)) { MetAt.Remove(id); MetWhere.Remove(id); Fired.Remove(id); }
+            foreach (TriggerPlan nt in sent.Triggers) { TriggerPlan was = _zones.Find(z => z.Id == nt.Id); if (was != null) nt.Off = was.Off; }   // a trigger that lost its roll stays out
             _zones = sent.Triggers;
             _wanted = sent.Objectives; PlaceObjectives(raid);
             if (settings != null)
@@ -1785,6 +1858,8 @@ namespace MissionLab
                 _insertion = settings.Insertion ?? "";
                 bool weatherChanged = MissionPlan.SettingsJson(new MissionPlan { Weather = settings.Weather }) != MissionPlan.SettingsJson(new MissionPlan { Weather = _weather });
                 _weather = settings.Weather;
+                if (!string.IsNullOrEmpty(settings.Title)) _title = settings.Title;
+                _briefing = new List<string>(settings.Briefing);
                 if ((settings.Power ?? "") != _power)
                 {
                     _power = settings.Power ?? "";
@@ -1847,6 +1922,8 @@ namespace MissionLab
             plan.Triggers.AddRange(_zones);
             plan.Doors.AddRange(_doorPlans);
             foreach (LiveThing lt in _things) plan.Things.Add(lt.Plan);
+            plan.Doors.AddRange(Director.DoorsOut); plan.Things.AddRange(Director.ThingsOut);            // what lost its roll this time is still part of the scenario
+            plan.Title = _title; plan.Briefing = new List<string>(_briefing);
             foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
             plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power;
             RaidManager raidNow = RaidManager.singleton;

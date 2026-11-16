@@ -67,7 +67,8 @@
    "delay": 300,
    "facePlayer": true,
    "message": "Out of time.",
-   "end": "failed"
+   "end": "failed",
+   "warn": true
   },
   {
    "id": 7,
@@ -90,6 +91,17 @@
    "hold": 15,
    "facePlayer": true,
    "message": "Position held."
+  },
+  {
+   "id": 9,
+   "name": "Both done",
+   "when": "all",
+   "of": [
+    4,
+    7
+   ],
+   "facePlayer": true,
+   "message": "Intel taken and two down: both goals met."
   }
  ],
  "objectives": [],
@@ -102,7 +114,8 @@
     -2.67
    ],
    "locked": true,
-   "enemiesCanOpen": false
+   "enemiesCanOpen": false,
+   "chance": 50
   }
  ],
  "extraction": {
@@ -112,13 +125,17 @@
  "weather": {
   "rain": true
  },
+ "briefing": [
+  "Clean House, feature test.",
+  "Take the intel. Once you hold it you have five minutes."
+ ],
  "things": [
   {"name": "AKM", "pos": [-21.0, 0.5, -21.5], "yaw": 90},
   {"name": "MP5", "pos": [-20.6, 0.68, -18.0], "yaw": 0, "trigger": 8}
  ],
  "spawns": [
-  {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-  {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+  {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "skill": "veteran", "nvg": true},
+  {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "skill": "recruit"},
   {"group": 1, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "BOT V2 Insurgent Afghan 1 Suicide Bomber Variant", "trigger": 5, "hvt": false, "patrol": []},
   {"group": 2, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": []},
   {"group": 2, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []},
@@ -128,6 +145,7 @@
   {"group": 3, "role": "Guard", "yaw": 170, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "pos": [-15.4, 3.68, 3.9], "either": 1, "option": 2},
   {"group": 3, "role": "Wander", "yaw": 90, "indoor": false, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "pos": [-28.5, 0.51, -11.0], "chance": 50},
   {"group": 4, "role": "Guard", "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "hvt": false, "patrol": [], "pos": [-26.5, 0.5, 12.5], "trigger": 7, "team": 4},
-  {"group": 4, "role": "Wander", "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "hvt": false, "patrol": [], "pos": [-28.5, 0.51, 10], "trigger": 7, "team": 4}
+  {"group": 4, "role": "Wander", "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "hvt": false, "patrol": [], "pos": [-28.5, 0.51, 10], "trigger": 7, "team": 4},
+  {"group": 1, "role": "Guard", "pos": [-10.7, 0.2, -3.5], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "skill": "", "minPlayers": 2}
  ]
 }
