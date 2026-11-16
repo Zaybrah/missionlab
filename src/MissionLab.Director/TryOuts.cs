@@ -22,10 +22,29 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { Last = ""; Watch.Clear(); }
+        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; }
+
+        // The game marks a run as cheated by itself after some calls. Which ones is found out by watching the flag.
+        private static bool _marked;
+        private static string _lastAction = "the start of the mission";
+        internal static void Did(string what) { _lastAction = what; }
+
+        private static void WatchFlag()
+        {
+            bool now;
+            try { OperationsManager ops = OperationsManager.singleton; if (ops == null) return; now = ops.HasCheated; } catch { return; }
+            if (now == _marked) return;
+            _marked = now;
+            string said = now ? "the game now marks this run as cheated; the last thing MissionLab did was: " + _lastAction
+                              : "the game no longer marks this run as cheated";
+            DirectorPlugin.L.LogInfo("cheated flag: " + said);
+            Replay.Event("note", "cheated flag: " + said);
+            GameMaster.Say(said);
+        }
 
         internal static void Tick(float now)
         {
+            WatchFlag();
             for (int i = Watch.Count - 1; i >= 0; i--)
             {
                 Placed p = Watch[i];
@@ -107,6 +126,7 @@ namespace MissionLab
                     case "power": said = Power((arg ?? "") == "on"); break;
                     case "message": said = Message(raid, arg); break;
                     case "hunt": said = Hunt(gm); break;
+                    case "noise": said = Noise(gm); break;
                     case "thing": said = Thing(arg, hasPos, pos); break;
                     case "sides": said = Sides(gm); break;
                     case "respawn": said = Respawn(); break;
@@ -116,7 +136,7 @@ namespace MissionLab
                 }
             }
             catch (Exception e) { said = "try-out '" + what + "' failed: " + e.Message; }
-            Last = said;
+            Last = said; Did("the try-out '" + what + "'");
             Replay.Event("note", "try-out: " + said);
             return said;
         }
@@ -183,6 +203,27 @@ namespace MissionLab
                 try { b.HeardTarget(who.position, Vector3.Distance(at, who.position), who); told++; } catch { }
             }
             return told == 0 ? "hunt: no enemy could be told (" + all + " alive)" : "hunt: " + told + " of " + all + " enemies were told where the nearest player is";
+        }
+
+        /// <summary>A shot that was never fired: the game is told one was heard where the first player stands.</summary>
+        private static string Noise(GameManager gm)
+        {
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                if (body == null) continue;
+                Vector3 at = body.transform.position;
+                gm.ShotFired(at, 80f, body.netId, false);
+                return "noise: the game was told a shot was heard within 80 m of " + P(at);
+            }
+            return "noise: no player to make it at";
+        }
+
+        private static string P(Vector3 p)
+        {
+            CultureInfo inv = CultureInfo.InvariantCulture;
+            return "(" + p.x.ToString("0.0", inv) + ", " + p.y.ToString("0.0", inv) + ", " + p.z.ToString("0.0", inv) + ")";
         }
 
         private static string Sides(GameManager gm)

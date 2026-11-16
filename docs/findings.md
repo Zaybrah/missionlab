@@ -168,6 +168,27 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   reports whether it is still there, where, and how many of its parts are drawn. After
   `ServerCompleteExfil()` with `HasCheated` set, the end screen says that cheating was detected and
   that there are no achievements: the flag does what its name says.
+- Fourth run (0.19.0, solo, Clean House by night, two missions):
+  - **Placed weapons work.** An `AKM` and an `AK-74M` spawned from the network prefab list lay
+    where they were put, were drawn, and the player could pick one up and use it.
+  - **Two sides fight.** After `TeamIdentifier.NetworkTeamID = 4` on every second enemy, a guard
+    shot the guard next to him within 2 s and the gun truck's gunner shot two more. The end
+    screen counted 4 kills, 1 by the player.
+  - `BrainAI.HeardTarget` did nothing that could be seen: no enemy changed state or moved towards
+    the player in the 12 s after it. 0.19.1 adds `GameManager.ShotFired` as another way.
+  - `UserCode_SERVER_RespawnALL()` did nothing to a living player. `SERVER_FailOperation()` did
+    not end the mission (it ran on for 10 s until the forced success did).
+  - **The game marks a run as cheated by itself.** With `FairPlay = Off` the mod set no flag, yet
+    the end screen said "cheating detected, not saving score". One of the calls above makes the
+    game set `HasCheated` (respawns on, the failed call or the forced extraction). 0.19.1 watches
+    the flag and logs what the mod did last when it flips. `OperationsManager.DevCheatBypass` and
+    `GameManager.DevBypassCheatCheck()` exist; not used.
+  - Chance and either/or rolled differently in the two missions (option B, then option A).
+  - The gun truck fallback works: the game's spawner brought none both times, the plugin placed it.
+  - A false alert again in the first mission, 1 s after the first enemies appeared: an enemy can
+    report "Idle" for a moment before its "Evade", so "differs from the first state" was not
+    enough. 0.19.1 trusts nothing for 2 s and takes the state then as the enemy's state of rest.
+  - Trigger messages were sent twice ("a message is shown"); whether they appeared is not known yet.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

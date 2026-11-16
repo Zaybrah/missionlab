@@ -157,7 +157,7 @@ namespace MissionLab
             _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; BornAs.Clear(); Changed.Clear(); Vehicles.Clear(); TryOuts.Reset();
+            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Vehicles.Clear(); TryOuts.Reset();
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
@@ -452,23 +452,29 @@ namespace MissionLab
         private static string TriggerName(TriggerPlan t) =>
             (t.When == TriggerPlan.OnZone ? "zone " : "trigger ") + (string.IsNullOrEmpty(t.Name) ? t.Id.ToString() : "'" + t.Name + "'");
 
-        private static readonly Dictionary<IntPtr, BrainAI.States> BornAs = new Dictionary<IntPtr, BrainAI.States>();
-        private static readonly HashSet<IntPtr> Changed = new HashSet<IntPtr>();
+        private struct Seen { public float Since; public bool Settled; public BrainAI.States Rest; }
+        private static readonly Dictionary<IntPtr, Seen> Known = new Dictionary<IntPtr, Seen>();
         private static readonly List<VehicleAI> Vehicles = new List<VehicleAI>();
 
         /// <summary>
-        /// Is this enemy's state worth reading yet? Every enemy is born reporting "Evade" (seen in two recordings: half
-        /// a second on a soldier, the whole mission on a gun truck's gunner, who has no legs to stand on and never
-        /// leaves it). So a state only counts once it has differed from the one the enemy was first seen in.
+        /// What state an enemy is really in. Recordings show that a state read off a new enemy is not to be trusted:
+        /// a soldier reports "Evade" for about half a second (sometimes after one first moment of "Idle"), and a gun
+        /// truck's gunner reports "Evade" for as long as nothing happens. So for two seconds nothing counts; what the
+        /// enemy reports then is taken as its state of rest and read as idle, and only something else is news.
         /// </summary>
-        internal static bool StateCounts(BrainAI b, out BrainAI.States state)
+        internal static bool StateCounts(BrainAI b, float now, out BrainAI.States state)
         {
             state = b.CurrentState;
             IntPtr key = b.Pointer;
-            if (Changed.Contains(key)) return true;
-            if (!BornAs.TryGetValue(key, out BrainAI.States first)) { BornAs[key] = state; return false; }
-            if (state == first) return false;
-            Changed.Add(key);
+            if (!Known.TryGetValue(key, out Seen s)) { Known[key] = new Seen { Since = now }; return false; }
+            if (!s.Settled)
+            {
+                if (now - s.Since < 2f) return false;
+                s.Settled = true;
+                s.Rest = state == BrainAI.States.Evade ? BrainAI.States.Evade : BrainAI.States.Idle;
+                Known[key] = s;
+            }
+            if (state == s.Rest) state = BrainAI.States.Idle;
             return true;
         }
 
@@ -481,7 +487,7 @@ namespace MissionLab
             for (int i = 0; ai != null && i < ai.Count; i++)
             {
                 BrainAI b = ai[i];
-                try { if (b != null && StateCounts(b, out BrainAI.States state) && state != BrainAI.States.Idle) yes = true; } catch { }
+                try { if (b != null && StateCounts(b, now, out BrainAI.States state) && state != BrainAI.States.Idle) yes = true; } catch { }
             }
             foreach (VehicleAI v in Vehicles)
                 try { if (v != null && v.CurrentTarget != null) yes = true; } catch { }
@@ -611,6 +617,7 @@ namespace MissionLab
                 if (t.OpensExtraction) OpenExtraction(raidNow, TriggerName(t) + " opens it");
                 else if (wasHeld && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
             }
+            TryOuts.Did("trigger " + t.Id + (string.IsNullOrEmpty(t.Name) ? "" : " '" + t.Name + "'"));
             string more = "";
             if (t.Power == "off" || t.Power == "on")
                 try { TryOuts.Power(t.Power == "on"); more += ", the lights go " + t.Power; }
