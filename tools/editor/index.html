@@ -2510,7 +2510,6 @@ function missionCheck() {
     if (z.when === 'intel' && z.item && z.item !== 'all' && kinds.length && !kinds.includes(z.item)) add('warning', name(z) + ' waits for "' + z.item + '", which is not among this map\'s intel (' + kinds.join(', ') + ').', toTriggers);
     if (z.end && z.when === 'time' && !(z.delay > 0)) add('problem', name(z) + ' ends the mission the moment it starts. Give it a wait.', toTriggers);
   }
-  if (state.zones.some(z => z.end === 'success')) add('note', 'A mission that a trigger ends as a success is marked as modded by the game: it shows a notice and gives no achievements.', toTriggers);
   if (state.power || state.zones.some(z => z.power)) add('note', 'Lights only change on maps with a breaker box. Clean House has one; other maps are not checked yet.', toMission);
   if (state.zones.some(z => z.message)) add('note', 'Messages on screen have not been tried in the game yet.', toTriggers);
   if (state.extractionAfter) {
@@ -2562,7 +2561,7 @@ const TRY_HINTS = {
   thing: 'Places it where the selected enemy marker is, or 6 m in front of you when no marker is selected. Two seconds later the game reports whether it is still there. A rifle or the chair is the easiest to see; the flashbang and the landmine of the last run could not be seen.',
   respawn: 'Asks the game to bring every player back. It may also send living players back to the start.',
   fail: 'Ends the mission with the game\'s own failed screen. Keep it for last.',
-  complete: 'Ends the mission as if the team had extracted. The run is marked as modded first, so it should earn nothing. Keep it for last.',
+  complete: 'Ends the mission as if the team had extracted. Whether that run is marked as cheated is the FairPlay setting in the config. Keep it for last.',
 };
 const THINGS_FIRST = ['AKM', 'Chair_Leather_Interactable', 'Hard Drive', 'Landmine', 'Proximity Explosive_IED '];
 function syncTry() {

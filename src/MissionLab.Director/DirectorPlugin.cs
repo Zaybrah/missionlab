@@ -20,7 +20,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.18.1";
+        public const string Version = "0.19.0";
 
         internal static ManualLogSource L;
         internal static ConfigEntry<bool> Enabled;
@@ -29,6 +29,8 @@ namespace MissionLab
         internal static ConfigEntry<int> EnemyCount;
         internal static ConfigEntry<string> Scenes;
         internal static ConfigEntry<string> Scenario;
+        internal static ConfigEntry<string> FairPlay;
+        internal static ConfigEntry<bool> TellPlayers;
         internal static ConfigEntry<bool> GmEnabled;
         internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget, RandomExtras, ReplayEnabled;
         internal static ConfigEntry<int> ReplayKeep;
@@ -87,6 +89,12 @@ namespace MissionLab
                 "In missions with a target person, a generated layout also picks a new place for the target. false = the game's own places.");
             RandomExtras = Config.Bind("General", "RandomExtras", true,
                 "A random layout also gets a wave of enemies that comes once the enemy is alerted, an ambush where players walk into a building, a few locked doors, and the intel laid somewhere else. false = positions only.");
+            FairPlay = Config.Bind("General", "FairPlay", "Off",
+                "Whether missions played with the mod are marked with the game's own 'cheated' flag (the end screen then says cheating was detected, and there are no achievements). " +
+                "Off = never. ModEndedWins = only when a trigger or the Game Master ends a mission as a success. Always = every mission the mod sets up. " +
+                "The game may keep the mark until it is restarted. The studio leaves this choice to the mod.");
+            TellPlayers = Config.Bind("General", "TellPlayers", true,
+                "When others are in the mission, a notice on every player's screen a few seconds in says that the host runs MissionLab. false = no notice.");
             Scenario = Config.Bind("General", "Scenario", "*",
                 "What the next mission uses. * = any scenario file in BepInEx/MissionLab/scenarios made for the map being played (a random one if several fit); maps without one get a generated layout. A file name = only that file. Nothing = always a random layout. (empty) = an empty map to build your own. In the lobby, F8 steps through these.");
             ReplayEnabled = Config.Bind("Replay", "Enabled", true,

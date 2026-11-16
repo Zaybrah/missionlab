@@ -199,6 +199,19 @@ enemies off the walkable ground or in view of an insertion point, two enemies on
 person left to chance, either/or sets with one option, door settings that fit no door. Click a
 finding to go to the thing. The tab shows how many need a look.
 
+### Fair play and other players
+The studio allows the mod on two conditions (see "Permission" below), and two settings in the
+config (`BepInEx/config/missionlab.director.cfg`, section `General`) go with them:
+- `TellPlayers = true`: when others are in the mission, a notice on every screen a few seconds in
+  says that the host runs MissionLab. The notice uses the same call as trigger messages, which has
+  not been seen in the game yet.
+- `FairPlay = Off`: whether missions are marked with the game's own "cheated" flag (the end screen
+  then says cheating was detected, and there are no achievements). `Off` never marks,
+  `ModEndedWins` marks a mission that a trigger or the Game Master ends as a success, `Always`
+  marks every mission the mod sets up. The studio leaves this choice to the mod.
+The plugin only acts in PvE raids the player hosts (standard, target person, find intel, destroy
+asset). PvP, wave survival and any other mode are left alone.
+
 ### Try-outs
 While a mission runs, the Mission tab of the browser page has a "Try-outs" box: a message on
 every screen, lights out, enemies hunting the nearest player, two enemy sides, placing a thing
@@ -242,3 +255,14 @@ set `OPERATOR_REFS` to a folder containing those). Built for Unity 6000.3.8f1,
 BepInEx 6.0.0-be.785, game code dated 7 July 2026.
 
 Install: copy both DLLs to `BepInEx/plugins/MissionLab/`. Remove: delete that folder.
+
+## Permission
+In November 2026 the maker of MissionLab sent Vector Interactive a video of the mod and asked
+whether a mod that only the host installs fits the mod policy. The studio's answer by email
+(16 November 2026), in short: it looks good to them as long as it does not interfere with PvP
+or cause griefing in PvE; a server-side mod that only the host needs is fine; and whether modded
+missions carry the "cheated" flag is up to the mod.
+
+This is permission to make and use the mod on those conditions. It is not an endorsement:
+MissionLab is unofficial and is not made or endorsed by Vector Interactive. If you host with it,
+do so for people who know the lobby is modded.

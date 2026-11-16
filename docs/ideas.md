@@ -71,7 +71,7 @@ most likely to break.
 | Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | not clicked yet | medium |
 | Scaling by team size | One scenario for two or six friends. | needs one read on the host | small |
 | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
-| Fair-play switch | The flag works (seen on the end screen). Whether every modded mission sets it is a decision. | seen | small |
+| Fair-play switch | Built in 0.19 as the `FairPlay` setting (Off, ModEndedWins, Always), off by default: the studio leaves it to the mod. With it, a notice to other players (`TellPlayers`). | flag seen; notice not yet | done |
 | Pop-in check | Warns when a trigger's enemies would appear in plain sight of the players. | needs no game | medium |
 | Smarter danger check | Only the insertion the scenario chose; 25 m sight at night. | needs no game | small |
 | Chance for doors and triggers | A door locked half the time, a trigger that only sometimes fires. | needs no game | small |

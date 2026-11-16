@@ -264,12 +264,34 @@ namespace MissionLab
                 g.SERVER_FailOperation();
                 return "end: the game was told the mission has failed";
             }
-            // A success the mod asked for must not earn anything: the game has a flag for that, set first.
-            string flag;
-            try { OperationsManager ops = OperationsManager.singleton; ops.NetworkHasCheated = true; flag = "the game's 'modded run' flag is set"; }
-            catch (Exception e) { flag = "the 'modded run' flag could not be set (" + e.Message + ")"; }
+            // Whether a success the mod asked for counts is the host's choice (General/FairPlay); the studio leaves it to the mod.
+            string flag = FairPlayIs("Off") ? "the run is not marked (FairPlay is Off)" : Mark();
             g.ServerCompleteExfil();
             return "end: the game was told the extraction is complete; " + flag;
+        }
+
+        internal static bool FairPlayIs(string what)
+        {
+            string v = (DirectorPlugin.FairPlay.Value ?? "").Trim();
+            if (v.Length == 0) v = "Off";
+            return string.Equals(v, what, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Sets the game's own 'cheated' flag, so that this run earns nothing.</summary>
+        internal static string Mark()
+        {
+            try { OperationsManager.singleton.NetworkHasCheated = true; return "the game's 'cheated' flag is set, so this run earns nothing"; }
+            catch (Exception e) { return "the 'cheated' flag could not be set (" + e.Message + ")"; }
+        }
+
+        /// <summary>Tells the others in the mission that the host runs the mod. Nobody else there: nothing is shown.</summary>
+        internal static string Notice(RaidManager raid)
+        {
+            int players = 0;
+            var all = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; all != null && i < all.Count; i++) if (all[i] != null) players++;
+            if (players < 2) return "no notice: nobody else is in the mission";
+            return Message(raid, "The host runs MissionLab, an unofficial mod, in this mission.") + " (" + players + " players)";
         }
     }
 }

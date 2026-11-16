@@ -64,6 +64,7 @@ namespace MissionLab
         private static WeatherPlan _weather = new WeatherPlan();
         private static string _power = "";
         private static float _vehicleCheckAt = -1f;
+        private static float _noticeAt = -1f;
         private static List<DoorV2> _doorList;
         private static float _doorScanAt;
         private static string _doorError;
@@ -157,7 +158,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; BornAs.Clear(); Changed.Clear(); Vehicles.Clear(); TryOuts.Reset();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f;
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f;
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -939,6 +940,8 @@ namespace MissionLab
                 }
                 catch { }
                 _vehicleCheckAt = now + 2f;
+                if (DirectorPlugin.TellPlayers.Value) _noticeAt = now + 8f;
+                if (TryOuts.FairPlayIs("Always")) DirectorPlugin.L.LogInfo("fair play: " + TryOuts.Mark());
                 if (_power == "off" || _power == "on")
                     try { DirectorPlugin.L.LogInfo("lights at the start: " + TryOuts.Power(_power == "on")); }
                     catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set at the start: " + e.Message); }
@@ -956,6 +959,12 @@ namespace MissionLab
                     foreach (ObjectiveObject o in Objectives(raid)) if (Moved(o)) stay++;
                     DirectorPlugin.L.LogInfo("objectives: " + stay + " of " + Objectives(raid).Count + " item(s) lie where the scenario says (" + plan.Objectives.Count + " named, " + late + " moved late); in the map: " + Describe(raid));
                 }
+            }
+            if (_noticeAt >= 0f && now >= _noticeAt)
+            {
+                _noticeAt = -1f;
+                try { DirectorPlugin.L.LogInfo("notice to the other players: " + TryOuts.Notice(raid)); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the notice to the other players could not be shown: " + e.Message); }
             }
             try { CheckVehicles(raid, now); } catch (Exception e) { DirectorPlugin.L.LogWarning("gun trucks could not be checked: " + e.Message); _vehicleCheckAt = -1f; }
             if (HoldExtraction) KeepExtractionShut(raid);
