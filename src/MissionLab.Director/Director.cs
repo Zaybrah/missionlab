@@ -82,15 +82,17 @@ namespace MissionLab
             string scene = raid.gameObject.scene.name ?? "";
             if (!SceneAllowed(scene)) { log.LogInfo("scene '" + scene + "' is not listed in General/Scenes; mission left unchanged"); return true; }
 
+            // Only the PvE raids this was written for. Everything else is left alone: PvP in the first place (the studio's
+            // condition for allowing the mod), wave survival, and any mode a later game version adds.
             OperationsManager om = OperationsManager.singleton;
-            if (om != null)
+            if (om == null) { log.LogInfo("the game mode could not be read; mission left unchanged"); return true; }
+            var mode = om.CurrentGameMode;
+            bool pveRaid = mode == OperationsManager.GameMode.StandardPVE || mode == OperationsManager.GameMode.PVE_HVTKILL ||
+                           mode == OperationsManager.GameMode.PVE_FINDINTEL || mode == OperationsManager.GameMode.PVE_ASSETDESTROY;
+            if (!pveRaid)
             {
-                var mode = om.CurrentGameMode;
-                if (mode == OperationsManager.GameMode.PVE_WAVESURVIVAL || mode == OperationsManager.GameMode.StandardPVP || mode == OperationsManager.GameMode.FFAPVP)
-                {
-                    log.LogInfo("game mode " + mode + " is not handled; mission left unchanged");
-                    return true;
-                }
+                log.LogInfo("game mode " + mode + " is not a PvE raid; MissionLab stays out of it and the mission is left unchanged");
+                return true;
             }
 
             var sw = Stopwatch.StartNew();
