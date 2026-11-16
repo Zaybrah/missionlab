@@ -23,7 +23,7 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); }
+        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
@@ -50,6 +50,13 @@ namespace MissionLab
         internal static void Tick(float now)
         {
             WatchFlag();
+            if (Pending.Count > 0 && now >= _nextMessageAt)
+                try { RaidManager raid = RaidManager.singleton; string next = Pending.Dequeue(); if (raid != null) Show(raid, next, false); } catch { }
+            if (_respawnsOffAt >= 0f && now >= _respawnsOffAt)
+            {
+                _respawnsOffAt = -1f;
+                try { GameManagerNetwork g = GameManagerNetwork.instance; if (g != null) { g.SERVER_SetRespawns(false); DirectorPlugin.L.LogInfo("respawn: the game's respawn switch is off again"); } } catch { }
+            }
             if (_endAt >= 0f && now >= _endAt)
             {
                 _endAt = -1f;
@@ -179,12 +186,57 @@ namespace MissionLab
             if (string.IsNullOrWhiteSpace(text)) text = "MissionLab: test message";
             text = Fill(text);
             if (text.Length > 120) text = text.Substring(0, 120);
+            // One message would push the other off the screen: yellow ones wait their turn, red ones go at once.
+            if (!red && (Pending.Count > 0 || Time.unscaledTime < _nextMessageAt))
+            {
+                if (Pending.Count >= 8) return "message dropped, eight are already waiting: \"" + text + "\"";
+                Pending.Enqueue(text);
+                return "message waits its turn: \"" + text + "\"";
+            }
+            return Show(raid, text, red);
+        }
+
+        private static readonly Queue<string> Pending = new Queue<string>();
+        private static float _nextMessageAt, _respawnsOffAt = -1f;
+        private const float MessageGap = 4.5f;
+        private static readonly HashSet<IntPtr> Hurried = new HashSet<IntPtr>();
+        private static bool _speedLogged;
+
+        private static string Show(RaidManager raid, string text, bool red)
+        {
             ExfilZone zone = null;
             var zones = raid.exfilZones;
             for (int i = 0; zones != null && i < zones.Count && zone == null; i++) zone = zones[i];
             if (zone == null) return "message: this map has no extraction zone to send it through";
             zone.RPCHint(text, red ? Popup.PopupType.RedWarning : Popup.PopupType.YellowWarning);
+            _nextMessageAt = Time.unscaledTime + MessageGap;
             return "message sent to every player's screen: \"" + text + "\"";
+        }
+
+        internal static Vector3 NearestPlayer(Vector3 from)
+        {
+            Vector3 best = Vector3.zero; float bd = float.MaxValue;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                if (body == null) continue;
+                float d = (body.transform.position - from).sqrMagnitude;
+                if (d < bd) { bd = d; best = body.transform.position; }
+            }
+            return best;
+        }
+
+        /// <summary>Brings dead players back. With restore, the game's own respawn switch goes back to what it was a few seconds later.</summary>
+        internal static string RespawnNow(bool restore)
+        {
+            GameManagerNetwork g = GameManagerNetwork.instance;
+            if (g == null) return "respawn: the game's mission keeper was not found";
+            bool before = g.AllowRespawns;
+            g.SERVER_SetRespawns(true);
+            g.UserCode_SERVER_RespawnALL();
+            if (restore && !before) _respawnsOffAt = Time.unscaledTime + 5f;
+            return "respawn: the game was asked to bring every player back (respawns were " + (before ? "on" : "off") + (restore && !before ? ", and go off again in 5 s)" : ", now " + (g.AllowRespawns ? "on" : "off") + ")");
         }
 
         /// <summary>{enemies}, {players} and {time} in a message become the numbers of the moment.</summary>
@@ -259,7 +311,7 @@ namespace MissionLab
         /// Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody.)
         /// within: only enemies this close to the spot (0: any distance). only: just these enemies (null: all).
         /// </summary>
-        internal static int WalkTo(GameManager gm, Vector3 to, float within, HashSet<IntPtr> only)
+        internal static int WalkTo(GameManager gm, Vector3 to, float within, HashSet<IntPtr> only, bool hurry = false)
         {
             if (gm == null) return 0;
             int told = 0;
@@ -275,7 +327,17 @@ namespace MissionLab
                     if (within > 0f && (b.transform.position - to).sqrMagnitude > within * within) continue;
                     float turn = told * 2.4f;                                             // spread around the spot, 2 m out
                     var stop = new GameObject("MissionLab order " + Orders.Count);
-                    stop.transform.position = to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f);
+                    Vector3 spot = to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f);
+                    // A door's hinge or a spot by a wall is not ground anyone can stand on: take the nearest that is.
+                    try { AstarPath paths = AstarPath.active; if (paths != null) { var near = paths.GetNearest(spot); if (near != null && near.node != null) spot = near.position; } } catch { }
+                    stop.transform.position = spot;
+                    if (hurry && Hurried.Add(b.Pointer))
+                        try
+                        {
+                            float was = b.PatrolSpeed; b.PatrolSpeed = was * 2f;
+                            if (!_speedLogged) { _speedLogged = true; DirectorPlugin.L.LogInfo("hurry: patrol speed " + was.ToString("0.##", CultureInfo.InvariantCulture) + " to " + b.PatrolSpeed.ToString("0.##", CultureInfo.InvariantCulture)); }
+                        }
+                        catch { }
                     Orders.Add(stop);
                     AIPatrol route = b.aiPatrol;
                     if (route == null) { route = new AIPatrol(); b.aiPatrol = route; }
@@ -401,15 +463,7 @@ namespace MissionLab
         }
 
         // ------------------------------------------------------------------ players and the mission's end
-        private static string Respawn()
-        {
-            GameManagerNetwork g = GameManagerNetwork.instance;
-            if (g == null) return "respawn: the game's mission keeper was not found";
-            bool before = g.AllowRespawns;
-            g.SERVER_SetRespawns(true);
-            g.UserCode_SERVER_RespawnALL();
-            return "respawn: the game was asked to bring every player back (respawns were " + (before ? "on" : "off") + ", now " + (g.AllowRespawns ? "on" : "off") + ")";
-        }
+        private static string Respawn() => RespawnNow(false);
 
         internal static string End(bool success)
         {

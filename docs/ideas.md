@@ -75,7 +75,13 @@ doors and things; a countdown warning; players needed per enemy; skill and night
 enemy; Game Master box (message, lights) in the live page; danger check for the chosen insertion
 and for night; pop-in check.
 
-### Built in 0.22 (tested in the editor and the core, not yet in the game)
+### Built in 0.23 (tested in the editor and the core, not yet in the game)
+
+Messages that take turns; a respawn rule and a respawn trigger action; doors open or closed at the
+start and by trigger; hunters (a trigger's enemies walk to the nearest player); order targets
+moved to walkable ground; orders and calls in the recording.
+
+### Built in 0.22 (seen in the game on 16 November, see findings)
 
 Countdown told at its start, at five minutes, one minute and ten seconds, each logged; tags on
 enemies and a "tagged enemies down" trigger; door trigger; "every player" for zones; repeating
@@ -91,7 +97,6 @@ try-out "every door opens". Orders: the one-stop patrol route moved enemies in t
 | Orders for enemies | The base for hunters and adaptive pacing. | two "sound" calls moved nobody; a one-stop patrol route is the next try | medium |
 | A way to fail a mission | Red message, then the game's end operation: built in 0.20.1. | end operation seen; the pair not yet | done once seen |
 | Which call marks a run as cheated | Decides whether a mod-ended win can look clean. | one of respawns on, failed, forced extraction | small |
-| Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | the call did nothing to a living player | medium |
 | Hunters from behind, adaptive pacing | Orders work (0.22: send, rally). Next: enemies sent to a spot behind the players, and more or fewer by how the players fare. | orders seen once, late | medium |
 | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
 | Enemies that sit out, shown in the live page | The Game Master sees what the roll left out and can bring it in. | needs no game | small |

@@ -385,6 +385,9 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="power">Lights</label><select id="power"><option value="">Leave to the game</option><option value="off">Off when the mission starts</option><option value="on">On when the mission starts</option></select></div>
       <div class="field"><label for="allSkill">Enemies</label><select id="allSkill"><option value="">Skill as the game makes it</option><option value="recruit">All recruits: slower, wilder</option><option value="veteran">All veterans: quicker, surer</option></select></div>
       <label class="check"><input id="allNvg" type="checkbox"><span>All enemies see in the dark</span></label>
+      <div class="field"><label for="respawnAfter">Dead players</label><input id="respawnAfter" type="number" min="0" max="600" step="5" title="Seconds a player stays dead before the scenario brings them back. 0 leaves it to the game."></div>
+      <div class="field"><label for="respawnTimes">How often</label><input id="respawnTimes" type="number" min="0" max="50" step="1" title="How many times in one mission. 0 is no limit."></div>
+      <p class="hint" id="respawnHint"></p>
       <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
       <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
       <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
@@ -456,6 +459,7 @@ body.dragging #drop { display: flex; }
     <p class="hint" id="doorNow"></p>
     <div class="field"><label for="doorLock">Lock</label><select id="doorLock"><option value="">Leave to the game</option><option value="1">Locked</option><option value="0">Unlocked</option></select></div>
     <div class="field"><label for="doorAi">Enemies</label><select id="doorAi"><option value="">Leave to the game</option><option value="1">Can open it</option><option value="0">Cannot open it</option></select></div>
+    <div class="field"><label for="doorOpen">At the start</label><select id="doorOpen"><option value="">Leave to the game</option><option value="1">Stands open</option><option value="0">Closed</option></select></div>
     <div class="field"><label for="doorChance">Chance (%)</label><input id="doorChance" type="number" min="1" max="100" step="5" title="How often this setting applies. Otherwise the door is left to the game."></div>
     <div class="row">
       <button class="btn" id="doorClear" type="button">Leave both to the game</button>
@@ -544,6 +548,7 @@ const state = {
   insertion: '',        // the insertion every player gets ('': each player's own choice)
   insertions: [],       // the map's insertions by name, from the game or a recon file
   weather: { hour: null, rain: null, sandstorm: null },     // null: left to the game
+  respawnAfter: 0, respawnTimes: 0,   // the scenario's respawn rule: seconds a player stays dead (0: the game's rule), and how often
   allSkill: '', allNvg: false,   // every enemy of the scenario: 'recruit' or 'veteran', and night vision
   order: null,               // ids of live enemies waiting for a click on the map that tells them where to go
   power: '',                 // 'off' or 'on': the breaker box when the mission starts ('': left to the game)
@@ -778,18 +783,19 @@ const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && 
   home: isVec(o.home) ? o.home.slice(0, 3) : null, homeYaw: num(o.homeYaw, 0), moved: o.moved !== false }));
 // Doors. A door is known by where its hinge is. Only doors somebody set are written; null means "left to the game".
 const tri = v => v === true ? true : v === false ? false : null;
-const doorSet = d => d.locked !== null || d.enemiesCanOpen !== null;
+const doorSet = d => d.locked !== null || d.enemiesCanOpen !== null || d.open != null;
 const doorsOut = () => state.doors.filter(doorSet).map(d => {
   const o = { name: d.name || '', pos: r3(d.pos) };
   if (d.locked !== null) o.locked = d.locked;
   if (d.enemiesCanOpen !== null) o.enemiesCanOpen = d.enemiesCanOpen;
+  if (d.open != null) o.open = d.open;
   if (d.chance < 100) o.chance = d.chance;
   return o;
 });
 // The map's doors as the game or a recon file lists them.
 const doorsIn = list => (Array.isArray(list) ? list : []).filter(d => d && d.active !== false && (isVec(d.hinge) || isVec(d.pos))).map(d => {
   const pos = (isVec(d.hinge) ? d.hinge : d.pos).slice(0, 3);
-  return { name: typeof d.name === 'string' ? d.name : '', pos, mid: isVec(d.mid) ? d.mid.slice(0, 3) : pos.slice(), locked: tri(d.locked), enemiesCanOpen: tri(d.enemiesCanOpen), chance: Math.max(1, Math.min(100, Math.round(num(d.chance, 100)))),
+  return { name: typeof d.name === 'string' ? d.name : '', pos, mid: isVec(d.mid) ? d.mid.slice(0, 3) : pos.slice(), locked: tri(d.locked), enemiesCanOpen: tri(d.enemiesCanOpen), open: tri(d.open), isOpen: tri(d.isOpen), chance: Math.max(1, Math.min(100, Math.round(num(d.chance, 100)))),
     isLocked: tri(d.isLocked), enemiesKeptOut: tri(d.enemiesKeptOut), broken: !!d.broken, known: true };
 });
 function nearDoor(pos, list) {
@@ -800,16 +806,16 @@ function nearDoor(pos, list) {
 // Settings go onto the doors we know. One for a door we have not seen is kept as it is, so nothing is lost before the map's doors are known.
 function applyDoorWishes(wishes) {
   for (const w of (Array.isArray(wishes) ? wishes : [])) {
-    if (!w || !isVec(w.pos) || (tri(w.locked) === null && tri(w.enemiesCanOpen) === null)) continue;
+    if (!w || !isVec(w.pos) || (tri(w.locked) === null && tri(w.enemiesCanOpen) === null && tri(w.open) === null)) continue;
     const i = nearDoor(w.pos, state.doors);
     const ch = Math.max(1, Math.min(100, Math.round(num(w.chance, 100))));
-    if (i >= 0) { state.doors[i].locked = tri(w.locked); state.doors[i].enemiesCanOpen = tri(w.enemiesCanOpen); state.doors[i].chance = ch; }
-    else state.doors.push({ name: typeof w.name === 'string' ? w.name : '', pos: w.pos.slice(0, 3), mid: w.pos.slice(0, 3), locked: tri(w.locked), enemiesCanOpen: tri(w.enemiesCanOpen), chance: ch, isLocked: null, enemiesKeptOut: null, broken: false, known: false });
+    if (i >= 0) { state.doors[i].locked = tri(w.locked); state.doors[i].enemiesCanOpen = tri(w.enemiesCanOpen); state.doors[i].open = tri(w.open); state.doors[i].chance = ch; }
+    else state.doors.push({ name: typeof w.name === 'string' ? w.name : '', pos: w.pos.slice(0, 3), mid: w.pos.slice(0, 3), locked: tri(w.locked), enemiesCanOpen: tri(w.enemiesCanOpen), open: tri(w.open), chance: ch, isLocked: null, enemiesKeptOut: null, broken: false, known: false });
   }
 }
 function setDoorWishes(wishes) {
   state.doors = state.doors.filter(d => d.known);
-  for (const d of state.doors) { d.locked = null; d.enemiesCanOpen = null; d.chance = 100; }
+  for (const d of state.doors) { d.locked = null; d.enemiesCanOpen = null; d.open = null; d.chance = 100; }
   applyDoorWishes(wishes); state.door = -1;
 }
 function setKnownDoors(list) { const wishes = doorsOut(); state.doors = list; applyDoorWishes(wishes); state.door = -1; }
@@ -821,6 +827,7 @@ function settingsOut() {
   if (state.power) o.power = state.power;
   if (state.allSkill) o.skill = state.allSkill;
   if (state.allNvg) o.nvg = true;
+  if (state.respawnAfter > 0) o.respawn = { after: r2(state.respawnAfter), ...(state.respawnTimes > 0 ? { times: state.respawnTimes } : {}) };
   if (state.briefing.length) o.briefing = state.briefing.slice(0, 4);
   if (state.weather.hour !== null) w.hour = r2(state.weather.hour);
   if (state.weather.rain !== null) w.rain = state.weather.rain;
@@ -835,6 +842,8 @@ function settingsIn(root) {
   state.power = root && (root.power === 'off' || root.power === 'on') ? root.power : '';
   state.briefing = briefingIn(root && root.briefing);
   state.allSkill = root && (root.skill === 'recruit' || root.skill === 'veteran') ? root.skill : ''; state.allNvg = !!(root && root.nvg === true);
+  const rs = root && root.respawn && typeof root.respawn === 'object' ? root.respawn : {};
+  state.respawnAfter = num(rs.after, 0) > 0 ? Math.max(3, Math.min(600, num(rs.after, 0))) : 0; state.respawnTimes = Math.max(0, Math.min(50, num(rs.times, 0) | 0));
   state.weather = { hour: Number.isFinite(w.hour) ? Math.max(0, Math.min(24, w.hour)) : null, rain: tri(w.rain), sandstorm: tri(w.sandstorm) };
 }
 const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
@@ -859,11 +868,13 @@ const zonesOut = () => state.zones.map(z => {
   if (z.repeat > 0) { o.repeat = r2(z.repeat); if (z.times > 0) o.times = z.times | 0; }
   if (z.rally > 0) o.rally = r2(z.rally);
   if (z.red && cleanMessage(z.message)) o.red = true;
+  if (z.hunt) o.hunt = true;
+  if (z.respawn) o.respawn = true;
   if (o.when === 'intel') o.item = z.item || '';
   if (o.when === 'after') o.after = z.after | 0;
   if (z.delay > 0) o.delay = r2(z.delay);
   o.facePlayer = z.facePlayer !== false;
-  const doors = (z.doors || []).filter(d => d.locked !== null).map(d => ({ name: d.name || '', pos: r3(d.pos), locked: d.locked }));
+  const doors = (z.doors || []).filter(d => d.locked != null || d.open != null).map(d => ({ name: d.name || '', pos: r3(d.pos), ...(d.locked != null ? { locked: d.locked } : {}), ...(d.open != null ? { open: d.open } : {}) }));
   if (doors.length) o.doors = doors;
   if (z.opensExtraction) o.extraction = 'open';
   if (z.power === 'off' || z.power === 'on') o.power = z.power;
@@ -871,7 +882,7 @@ const zonesOut = () => state.zones.map(z => {
   if (z.end === 'success' || z.end === 'failed') o.end = z.end;
   return o;
 });
-const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false }, more || {});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false, hunt: false, respawn: false }, more || {});
 const cleanMessage = t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 // What a trigger waits for, in a few words.
 const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
@@ -881,11 +892,11 @@ const trigTag = id => { const z = state.zones.find(q => q.id === id); return (z 
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id > 0 && (isVec(z.pos) || (WHENS.includes(z.when) && z.when !== 'zone'))).map(z => newTrigger(z.id | 0, WHENS.includes(z.when) ? z.when : 'zone', {
   hold: z.when === 'hold' ? Math.max(1, Math.min(3600, num(z.hold, 30))) : 0, count: Math.max(0, num(z.count, 0) | 0),
   of: (Array.isArray(z.of) ? z.of : []).map(v => v | 0).filter(v => v > 0), chance: Math.max(1, Math.min(100, Math.round(num(z.chance, 100)))), warn: z.warn === true,
-  everyone: z.everyone === true, tag: cleanTag(z.tag), repeat: Math.max(0, Math.min(3600, num(z.repeat, 0))), times: Math.max(0, Math.min(100, num(z.times, 0) | 0)), rally: Math.max(0, Math.min(300, num(z.rally, 0))), red: z.red === true,
+  everyone: z.everyone === true, tag: cleanTag(z.tag), repeat: Math.max(0, Math.min(3600, num(z.repeat, 0))), times: Math.max(0, Math.min(100, num(z.times, 0) | 0)), rally: Math.max(0, Math.min(300, num(z.rally, 0))), red: z.red === true, hunt: z.hunt === true, respawn: z.respawn === true,
   name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
   delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
   power: z.power === 'off' || z.power === 'on' ? z.power : '', message: cleanMessage(z.message), end: z.end === 'success' || z.end === 'failed' ? z.end : '',
-  doors: (Array.isArray(z.doors) ? z.doors : []).filter(d => d && isVec(d.pos) && tri(d.locked) !== null).map(d => ({ name: typeof d.name === 'string' ? d.name : '', pos: d.pos.slice(0, 3), locked: d.locked })) }));
+  doors: (Array.isArray(z.doors) ? z.doors : []).filter(d => d && isVec(d.pos) && (tri(d.locked) !== null || tri(d.open) !== null)).map(d => ({ name: typeof d.name === 'string' ? d.name : '', pos: d.pos.slice(0, 3), locked: tri(d.locked), open: tri(d.open) })) }));
 function enemyOf(s, i) {
   if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
   const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
@@ -1968,7 +1979,7 @@ function syncSide() {
   const dr = state.doors[state.door];
   $('doorPanel').hidden = !dr;
   if (dr) {
-    setVal($('doorLock'), dr.locked === null ? '' : dr.locked ? '1' : '0'); setVal($('doorAi'), dr.enemiesCanOpen === null ? '' : dr.enemiesCanOpen ? '1' : '0');
+    setVal($('doorLock'), dr.locked === null ? '' : dr.locked ? '1' : '0'); setVal($('doorAi'), dr.enemiesCanOpen === null ? '' : dr.enemiesCanOpen ? '1' : '0'); setVal($('doorOpen'), dr.open == null ? '' : dr.open ? '1' : '0');
     setVal($('doorChance'), dr.chance || 100);
     $('doorNow').textContent = (dr.name || 'Door') + ' at ' + dr.mid[0].toFixed(0) + ', ' + dr.mid[2].toFixed(0) + ' · height ' + dr.mid[1].toFixed(1)
       + (dr.broken ? ' · broken open' : dr.isLocked === true ? ' · locked right now' : dr.isLocked === false ? ' · unlocked right now' : '')
@@ -1983,7 +1994,7 @@ function syncSide() {
   state.doors.forEach((d, n) => {
     if (!doorSet(d)) return;
     const li = document.createElement('li'), what = document.createElement('b'), at = document.createElement('span'), show = document.createElement('button');
-    what.textContent = [d.locked === true ? 'Locked' : d.locked === false ? 'Unlocked' : '', d.enemiesCanOpen === false ? 'enemies kept out' : d.enemiesCanOpen === true ? 'enemies can open' : ''].filter(Boolean).join(', ').replace(/^e/, 'E');
+    what.textContent = [d.locked === true ? 'Locked' : d.locked === false ? 'Unlocked' : '', d.enemiesCanOpen === false ? 'enemies kept out' : d.enemiesCanOpen === true ? 'enemies can open' : '', d.open === true ? 'open' : d.open === false ? 'closed' : ''].filter(Boolean).join(', ').replace(/^e/, 'E');
     at.textContent = d.mid[0].toFixed(0) + ', ' + d.mid[2].toFixed(0) + ' · height ' + d.mid[1].toFixed(1); at.className = 'hint';
     show.type = 'button'; show.className = 'btn'; show.textContent = 'Show'; show.style.padding = '3px 8px';
     show.addEventListener('click', () => { selectDoor(n); showAt(d.mid, d.mid[1] + 1.4); });
@@ -2044,7 +2055,7 @@ function syncSide() {
       const face = mk('label'), box = mk('input', { type: 'checkbox', checked: z.facePlayer !== false });
       box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
       face.append(box, 'Its enemies appear looking at ' + (z.when === 'zone' ? 'the player who walks in' : 'the nearest player'));
-      const n = state.enemies.filter(en => en.trigger === z.id).length, locks = (z.doors || []).filter(d => d.locked === true).length, opens = (z.doors || []).filter(d => d.locked === false).length;
+      const n = state.enemies.filter(en => en.trigger === z.id).length, locks = (z.doors || []).filter(d => d.locked === true).length, opens = (z.doors || []).filter(d => d.locked === false).length, moves = (z.doors || []).filter(d => d.open != null).length;
       const sum = mk('div', { className: 'sum hint' });
       const act = mk('div', { className: 'what' });
       const pick = (label, options, value, set) => { const sel = mk('select'); sel.setAttribute('aria-label', label + ' of ' + trigTitle(z)); options.forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t }))); sel.value = value || ''; sel.addEventListener('change', () => { pushUndo(); set(sel.value); changed(); }); return sel; };
@@ -2070,13 +2081,15 @@ function syncSide() {
       act.append(grp('Lights', pick('Lights', [['', 'stay as they are'], ['off', 'go out'], ['on', 'come back on']], z.power, v => { z.power = v; })),
                  grp('Mission', pick('End of the mission', [['', 'goes on'], ['success', 'ends as a success'], ['failed', 'ends as failed']], z.end, v => { z.end = v; })));
       const rg = grp('Enemies within', numIn(Math.round(z.rally || 0), 0, 300, 10, 'Metres within which enemies walk to the place of ' + trigTitle(z), v => { z.rally = v; }), 'm walk there');
+      const tick = (text, label, key) => { const l = mk('label'), c = mk('input', { type: 'checkbox', checked: !!z[key] }); c.setAttribute('aria-label', label + ' ' + trigTitle(z)); c.addEventListener('change', () => { pushUndo(); z[key] = c.checked; changed(); }); l.append(c, ' ' + text); return l; };
+      act.append(tick('its enemies come to the players', 'Enemies come to the players for', 'hunt'), tick('dead players come back', 'Dead players come back on', 'respawn'));
       rg.title = 'There: where the player stood who set off a zone, the door of a door trigger, and otherwise where the first player is.'; act.append(rg);
       const msg = mk('input', { type: 'text', className: 'msg', value: z.message || '', placeholder: 'Message on every player\'s screen (optional)', maxLength: 120 }); msg.setAttribute('aria-label', 'Message of ' + trigTitle(z));
       msg.addEventListener('change', () => { pushUndo(); z.message = cleanMessage(msg.value); changed(); });
       msg.title = '{enemies}, {players} and {time} become the numbers of the moment';
       const redL = mk('label'), redB = mk('input', { type: 'checkbox', checked: !!z.red }); redB.setAttribute('aria-label', 'Show the message of ' + trigTitle(z) + ' in red');
       redB.addEventListener('change', () => { pushUndo(); z.red = redB.checked; changed(); }); redL.append(redB, ' in red'); redL.hidden = !z.message;
-      sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), z.power ? (z.power === 'off' ? 'lights out' : 'lights on') : '', z.message ? 'shows a message' : '', z.end ? 'ends the mission' : '', z.rally > 0 ? 'calls enemies' : '', z.repeat > 0 ? 'repeats' : '', locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
+      sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), z.power ? (z.power === 'off' ? 'lights out' : 'lights on') : '', z.message ? 'shows a message' : '', z.end ? 'ends the mission' : '', z.rally > 0 ? 'calls enemies' : '', z.repeat > 0 ? 'repeats' : '', moves ? 'opens or closes ' + moves + (moves === 1 ? ' door' : ' doors') : '', z.hunt && n ? 'its enemies come to you' : '', z.respawn ? 'brings players back' : '', locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
       const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
       exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
       exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
@@ -2094,7 +2107,8 @@ function syncSide() {
   fill($('insertion'), [['', 'Each player\'s own choice'], ...ways.map(n => [n, 'Everyone starts at ' + n])], state.insertion);
   setVal($('wxRain'), state.weather.rain === null ? '' : state.weather.rain ? '1' : '0'); setVal($('wxStorm'), state.weather.sandstorm === null ? '' : state.weather.sandstorm ? '1' : '0');
   setVal($('wxHour'), state.weather.hour === null ? '' : state.weather.hour);
-  setVal($('power'), state.power || ''); setVal($('allSkill'), state.allSkill || ''); $('allNvg').checked = !!state.allNvg;
+  setVal($('power'), state.power || ''); setVal($('allSkill'), state.allSkill || ''); $('allNvg').checked = !!state.allNvg; setVal($('respawnAfter'), Math.round(state.respawnAfter || 0)); setVal($('respawnTimes'), state.respawnTimes || 0);
+  $('respawnHint').textContent = state.respawnAfter > 0 ? 'Dead players come back after ' + Math.round(state.respawnAfter) + ' s' + (state.respawnTimes > 0 ? ', ' + state.respawnTimes + (state.respawnTimes === 1 ? ' time' : ' times') + ' per mission.' : ', as often as needed.') + ' The game may then not save the score.' : 'Dead players: 0 leaves it to the game.';
   if (document.activeElement !== $('briefing')) $('briefing').value = state.briefing.join('\n');
   const wn = state.weatherNow;
   $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. Lights work on maps with a breaker box; Clean House has one. '
@@ -2108,12 +2122,13 @@ function syncSide() {
     if (dr) state.zones.forEach(z => {
       const row = document.createElement('div'), lab = document.createElement('label'), sel = document.createElement('select'), id = 'doorTrig' + z.id;
       row.className = 'field'; lab.htmlFor = id; lab.textContent = trigTitle(z) + (z.name ? ': ' + z.name : ''); sel.id = id;
-      [['', 'Leaves it alone'], ['1', 'Locks it'], ['0', 'Unlocks it']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      [['', 'Leaves it alone'], ['1', 'Locks it'], ['0', 'Unlocks it'], ['o', 'Opens it'], ['c', 'Closes it'], ['cl', 'Closes and locks it'], ['uo', 'Unlocks and opens it']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
       const cur = (z.doors || []).find(x => nearDoor(x.pos, [dr]) === 0);
-      sel.value = cur ? (cur.locked ? '1' : '0') : '';
+      sel.value = !cur ? '' : cur.open === true ? (cur.locked === false ? 'uo' : 'o') : cur.open === false ? (cur.locked === true ? 'cl' : 'c') : cur.locked ? '1' : '0';
       sel.addEventListener('change', () => {
         pushUndo(); z.doors = (z.doors || []).filter(x => nearDoor(x.pos, [dr]) !== 0);
-        if (sel.value !== '') z.doors.push({ name: dr.name || '', pos: dr.pos.slice(), locked: sel.value === '1' });
+        const v = sel.value;
+        if (v !== '') z.doors.push({ name: dr.name || '', pos: dr.pos.slice(), locked: v === '1' || v === 'cl' ? true : v === '0' || v === 'uo' ? false : null, open: v === 'o' || v === 'uo' ? true : v === 'c' || v === 'cl' ? false : null });
         changed();
       });
       row.append(lab, sel); dt.appendChild(row);
@@ -2205,6 +2220,8 @@ $('nvg').addEventListener('change', ev => editPicked(list => { for (const e of l
 $('tag').addEventListener('change', ev => editPicked(list => { const v = cleanTag(ev.target.value); for (const e of list) e.tag = v; }));
 $('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkill = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; }));
 $('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
+$('respawnAfter').addEventListener('change', ev => missionEdit(() => { const v = Math.max(0, Math.min(600, +ev.target.value || 0)); state.respawnAfter = v > 0 && v < 3 ? 3 : v; }));
+$('respawnTimes').addEventListener('change', ev => missionEdit(() => { state.respawnTimes = Math.max(0, Math.min(50, Math.round(+ev.target.value || 0))); }));
 $('gmOrder').addEventListener('click', () => {
   const ids = picked().map(i => state.enemies[i]).filter(e => e && e.live && e.id).map(e => e.id);
   if (!ids.length) return say('Select one or more live enemies first.');
@@ -2382,7 +2399,8 @@ $('wxHour').addEventListener('change', ev => missionEdit(() => { state.weather.h
 const doorEdit = fn => { const d = state.doors[state.door]; if (!d) return; pushUndo(); fn(d); changed(); };
 $('doorLock').addEventListener('change', ev => doorEdit(d => { d.locked = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('doorAi').addEventListener('change', ev => doorEdit(d => { d.enemiesCanOpen = ev.target.value === '' ? null : ev.target.value === '1'; }));
-$('doorClear').addEventListener('click', () => doorEdit(d => { d.locked = null; d.enemiesCanOpen = null; }));
+$('doorClear').addEventListener('click', () => doorEdit(d => { d.locked = null; d.enemiesCanOpen = null; d.open = null; }));
+$('doorOpen').addEventListener('change', ev => doorEdit(d => { d.open = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('ceiling').addEventListener('input', ev => { state.ceiling = +ev.target.value >= +ev.target.max ? Infinity : +ev.target.value; syncSide(); invalidate(); });
 // A click in the 3D view: the same tools as on the flat map. p = [x, y, z] in game coordinates.
 function click3d(p, enemyIndex, button) {
@@ -2659,7 +2677,7 @@ async function applyLive(s) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
-    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing, skill: s.skill, nvg: s.nvg });
+    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing, skill: s.skill, nvg: s.nvg, respawn: s.respawn });
     if (typeof s.night === 'boolean') state.night = s.night;
     if (Array.isArray(s.insertionSpots)) state.insertionSpots = s.insertionSpots.filter(q => q && q.name && isVec(q.pos));
     live.satOut = s.satOut | 0;
@@ -2744,7 +2762,7 @@ function missionCheck() {
   const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
   for (const z of state.zones) {
     const n = state.enemies.filter(e => e.trigger === z.id).length;
-    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked !== null) || z.opensExtraction || z.power || z.message || z.end || z.rally > 0 || state.extractionAfter === z.id || state.zones.some(q => (q.when === 'after' && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
+    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked != null || d.open != null) || z.opensExtraction || z.power || z.message || z.end || z.rally > 0 || z.respawn || state.extractionAfter === z.id || state.zones.some(q => (q.when === 'after' && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
     const byHand = z.when === 'after' && !z.after;
     if (z.when === 'door' && !isVec(z.pos)) add('problem', name(z) + ' waits for a door, but no door is chosen.', toTriggers);
     if (z.when === 'down' && z.tag && !state.enemies.some(e => e.tag === z.tag)) add('problem', name(z) + ' waits for enemies tagged "' + z.tag + '", but no enemy has that tag.', toTriggers);
@@ -2817,10 +2835,10 @@ const TRY_HINTS = {
   'power:off': 'Switches off the map\'s breaker box and the lights wired to it. Clean House has one; it shows best at night.',
   'power:on': 'Switches the breaker box back on.',
   walk: 'Gives every enemy that can walk a route of one stop: the spot where you stand. In a run they came, but only set off some twenty seconds later; they are now told to leave at once.',
-  doors: 'Tells every door on the map to open. Not tried yet.',
+  doors: 'Tells every door on the map to open. Seen to work.',
   sides: 'Moves every second enemy to another team. Watch whether the two sides start to fight each other.',
   thing: 'Places it where the selected enemy marker is, or 6 m in front of you when no marker is selected. Two seconds later the game reports whether it is still there. A rifle or the chair is the easiest to see; the flashbang and the landmine of the last run could not be seen.',
-  respawn: 'Asks the game to bring every player back. It may also send living players back to the start.',
+  respawn: 'Asks the game to bring every player back. It brought a dead player back in a run; it did nothing to a living one.',
   fail: 'Tells every player the mission has failed and, five seconds later, ends the operation: everyone goes back to the lobby, without a result screen.',
   endop: 'Calls the game\'s own "end operation": everyone goes back to the lobby, with no win and no loss shown.',
   complete: 'Ends the mission as if the team had extracted. Whether that run is marked as cheated is the FairPlay setting in the config. Keep it for last.',

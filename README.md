@@ -246,6 +246,20 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
+### New in 0.23
+- **Messages take turns.** Two messages at the same moment used to push each other off the screen.
+  Yellow ones now follow each other 4.5 seconds apart; red ones are shown at once.
+- **Respawn.** `"respawn": {"after": 20, "times": 3}` at the top of the file: a player who has been
+  dead for 20 seconds is brought back, at most three times per mission. `"respawn": true` on a
+  trigger brings dead players back when it fires. The game may then not save the score.
+- **Doors open or closed.** `"open": true` or `false` on a door: how it stands at the start. In a
+  trigger's `"doors"` the same key opens or closes the door when the trigger fires, together with
+  `"locked"` if wanted ("closes and locks it").
+- **Hunters.** `"hunt": true` on a trigger: the enemies it brings walk to the nearest player, at
+  twice their patrol speed, instead of waiting where they appear.
+- **Orders land on walkable ground.** A spot by a wall or a door's hinge is moved to the nearest
+  ground an enemy can stand on. Orders and calls are written to the recording with their time.
+
 With the game connected, the Map tab has a Game Master box: a message for every player, and the
 lights. In the editor the danger check now looks only at the insertion the scenario chose and
 knows that enemies see 25 m at night; the mission check also flags enemies that would appear in

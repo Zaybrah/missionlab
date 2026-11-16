@@ -38,6 +38,7 @@ namespace MissionLab
             public float FaceYaw = float.NaN; // for this one spawn: look this way instead (toward the player who reached its zone)
             public IntPtr SideFor;      // the live enemy that has already been given this marker's side
             public bool HadBot;         // an enemy has been made from this marker at some time
+            public float HuntAt;        // below 0: sets off for the players once its enemy exists; above 0: at that time
         }
         private sealed class LiveThing { public ThingPlan Plan; public GameObject Go; public bool Placed; }
         private static readonly List<LiveThing> _things = new List<LiveThing>();
@@ -71,6 +72,9 @@ namespace MissionLab
         private static string _power = "";
         private static string _skillAll = "";       // the scenario's own difficulty: every enemy without a skill of its own
         private static bool _nvgAll;
+        private static float _respawnAfter;         // the scenario's respawn rule
+        private static int _respawnTimes, _respawnsDone;
+        private static float _deadSince = -1f;
         private static float _vehicleCheckAt = -1f;
         private static float _noticeAt = -1f;
         private static string _title = "";
@@ -127,7 +131,7 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
             _weather = plan.Weather ?? new WeatherPlan();
-            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg;
+            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _respawnAfter = plan.RespawnAfter; _respawnTimes = plan.RespawnTimes;
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
             _title = plan.Title ?? ""; _briefing = new List<string>(plan.Briefing);
             BriefQueue.Clear(); Warned.Clear();
@@ -177,7 +181,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); InsideSince.Clear(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); Warned.Clear(); Rearm.Clear(); FiredTimes.Clear(); _skillAll = ""; _nvgAll = false; _title = ""; _briefing = new List<string>();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); Warned.Clear(); Rearm.Clear(); FiredTimes.Clear(); _skillAll = ""; _nvgAll = false; _respawnAfter = 0f; _respawnTimes = 0; _respawnsDone = 0; _deadSince = -1f; _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -192,6 +196,8 @@ namespace MissionLab
             Replay.Tick(raid, gm, now);
             TryOuts.Tick(Time.unscaledTime);
             ApplySides(gm);
+            Hunters(gm, now);
+            RespawnRule(raid, now);
             PumpSpawns(raid, gm, now);
             if (!_keysOk || !DirectorPlugin.GmEnabled.Value) return;
             try { Keys(raid, gm); }
@@ -381,6 +387,7 @@ namespace MissionLab
             bool open = ExtractionOpen(raid);
             sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
               .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
+            sb.Append(",\"respawn\":{\"after\":").Append(_respawnAfter.ToString("0.##", Inv)).Append(",\"times\":").Append(_respawnTimes).Append(",\"done\":").Append(_respawnsDone).Append('}');
             sb.Append(",\"skill\":").Append(Q(_skillAll)).Append(",\"nvg\":").Append(_nvgAll ? "true" : "false");
             sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count + Director.DoorsOut.Count + Director.ThingsOut.Count);
             sb.Append(",\"title\":").Append(Q(_title)).Append(",\"briefing\":[");
@@ -402,7 +409,7 @@ namespace MissionLab
             }
             catch { }
             sb.Append(']');
-            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0');
+            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0').Append(_respawnAfter.ToString("0.##", Inv)).Append('x').Append(_respawnTimes).Append('x').Append(_respawnsDone);
             sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
             List<string> names = Insertions();
             for (int i = 0; i < names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(names[i]));
@@ -697,6 +704,59 @@ namespace MissionLab
             return count <= 0 ? EverAlive.Count > 0 && alive == 0 : EverAlive.Count - alive >= count;
         }
 
+        private static void SetDoorOpen(DoorV2 d, bool open)
+        {
+            try { d.UserCode_CMD_SetDoorClosed__Boolean(!open); } catch { d.RPC_SetDoorClosed(!open); }
+        }
+
+        /// <summary>Enemies of a "hunt" trigger set off for the nearest player a moment after they appear.</summary>
+        private static void Hunters(GameManager gm, float now)
+        {
+            if (_markers == null) return;
+            foreach (Marker m in _markers)
+            {
+                if (m.HuntAt == 0f) continue;
+                if (m.HuntAt < 0f) { if (m.Bot != IntPtr.Zero) m.HuntAt = now + 2.5f; continue; }
+                if (now < m.HuntAt) continue;
+                m.HuntAt = 0f;
+                try
+                {
+                    BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
+                    if (b == null) continue;
+                    Vector3 from = b.transform.position, to = TryOuts.NearestPlayer(from);
+                    if (to == Vector3.zero) continue;
+                    int sent = TryOuts.WalkTo(gm, to, 0f, new HashSet<IntPtr> { m.Bot }, true);
+                    DirectorPlugin.L.LogInfo("hunter: enemy #" + m.Id + (sent == 1 ? " sets off for the nearest player, " + (to - from).magnitude.ToString("0", Inv) + " m away" : " could not be sent"));
+                    if (sent == 1) Replay.Event("note", "hunter: an enemy sets off for the nearest player");
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("a hunter could not be sent: " + e.Message); }
+            }
+        }
+
+        /// <summary>The scenario's respawn rule: a player who has been dead long enough is brought back, as often as the scenario allows.</summary>
+        private static void RespawnRule(RaidManager raid, float now)
+        {
+            if (_respawnAfter <= 0f || now - Director.HandledAt < 20f) return;
+            if (_respawnTimes > 0 && _respawnsDone >= _respawnTimes) return;
+            int dead = 0;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++) if (players[i] != null && players[i].PlayerSpawnedObject == null) dead++;
+            if (dead == 0) { _deadSince = -1f; return; }
+            if (_deadSince < 0f) { _deadSince = now; return; }
+            if (now - _deadSince < _respawnAfter) return;
+            _deadSince = -1f; _respawnsDone++;
+            try
+            {
+                string said = TryOuts.RespawnNow(true);
+                TryOuts.Did("bringing players back (the scenario's respawn rule)");
+                string left = _respawnTimes > 0 ? " " + (_respawnTimes - _respawnsDone) + " more left." : "";
+                DirectorPlugin.L.LogInfo("respawn rule: " + dead + " dead for " + _respawnAfter.ToString("0", Inv) + " s; " + said + left);
+                Replay.Event("note", "respawn rule: " + dead + (dead == 1 ? " player is" : " players are") + " brought back");
+                TryOuts.Message(raid, (dead == 1 ? "A player is back in the fight." : dead + " players are back in the fight.") + left);
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the respawn rule could not bring players back: " + e.Message); }
+        }
+
         private static void WarnLeft(RaidManager raid, TriggerPlan t, string text, bool red)
         {
             string line = (string.IsNullOrEmpty(t.Name) ? "" : t.Name + ": ") + text;
@@ -844,15 +904,26 @@ namespace MissionLab
                     mine.Add(m);
                 }
             Enqueue(mine);
+            if (t.Hunt) foreach (Marker m in mine) m.HuntAt = -1f;
             int doors = 0;
             foreach (DoorPlan p in t.Doors)
             {
-                if (!p.Locked.HasValue) continue;
+                if (!p.Locked.HasValue && !p.Open.HasValue) continue;
                 DoorV2 d = DoorAt(p.Pos);
                 if (d == null) continue;
-                try { if (d.CurrentlyLocked != p.Locked.Value) d.Server_SetDoorLocked(p.Locked.Value); doors++; }
+                try
+                {
+                    // Closing comes before locking, unlocking before opening.
+                    if (p.Open.HasValue && !p.Open.Value) SetDoorOpen(d, false);
+                    if (p.Locked.HasValue && d.CurrentlyLocked != p.Locked.Value) d.Server_SetDoorLocked(p.Locked.Value);
+                    if (p.Open.HasValue && p.Open.Value) SetDoorOpen(d, true);
+                    doors++;
+                }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("a door could not be set by " + TriggerName(t) + ": " + e.Message); }
             }
+            if (t.Respawn)
+                try { string said = TryOuts.RespawnNow(true); TryOuts.Did("bringing players back (" + TriggerName(t) + ")"); DirectorPlugin.L.LogInfo(TriggerName(t) + ": " + said); Replay.Event("note", "dead players are brought back by " + TriggerName(t)); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("players could not be brought back by " + TriggerName(t) + ": " + e.Message); }
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
             {
@@ -876,6 +947,7 @@ namespace MissionLab
                     Vector3 to = MetWhere.TryGetValue(t.Id, out Vector3 stoodAt) && stoodAt != Vector3.zero ? stoodAt : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : TryOuts.FirstPlayer();
                     int called = TryOuts.WalkTo(GameManager.instance, to, t.Rally, null);
                     more += ", " + called + (called == 1 ? " enemy is called" : " enemies are called") + " there";
+                    Replay.Event("note", "called: " + called + " to " + to.x.ToString("0.#", Inv) + ", " + to.z.ToString("0.#", Inv));
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the enemies could not be called by " + TriggerName(t) + ": " + e.Message); }
             int placedNow = PlaceThings(t.Id);
@@ -964,7 +1036,7 @@ namespace MissionLab
             if (before != null) foreach (DoorPlan b in before) old[DoorKey(b)] = b;
             foreach (DoorPlan p in _doorPlans)
             {
-                if (before != null && old.TryGetValue(DoorKey(p), out DoorPlan was) && was.Locked == p.Locked && was.EnemiesCanOpen == p.EnemiesCanOpen) continue;
+                if (before != null && old.TryGetValue(DoorKey(p), out DoorPlan was) && was.Locked == p.Locked && was.EnemiesCanOpen == p.EnemiesCanOpen && was.Open == p.Open) continue;
                 DoorV2 d = DoorAt(p.Pos);
                 if (d == null) continue;
                 found++;
@@ -983,6 +1055,7 @@ namespace MissionLab
                         if (atStart) d.AiCantOpenChance = cant ? 100f : 0f;
                         if (d.AiCantOpen != cant) { d.AiCantOpen = cant; changed++; }
                     }
+                    if (p.Open.HasValue && !d.isDead && d.IsOpenEnoughForAI != p.Open.Value) { SetDoorOpen(d, p.Open.Value); changed++; }
                 }
                 catch (Exception e) { failed++; _doorError = e.Message; }
             }
@@ -1012,10 +1085,12 @@ namespace MissionLab
                     wish.TryGetValue(d.Pointer, out DoorPlan w);
                     string wl = w != null && w.Locked.HasValue ? (w.Locked.Value ? "true" : "false") : "null";
                     string we = w != null && w.EnemiesCanOpen.HasValue ? (w.EnemiesCanOpen.Value ? "true" : "false") : "null";
+                    string wo = w != null && w.Open.HasValue ? (w.Open.Value ? "true" : "false") : "null";
+                    bool isOpen = false; try { isOpen = d.IsOpenEnoughForAI; } catch { }
                     sb.Append(first ? "" : ",").Append("{\"name\":").Append(Q(d.gameObject.name)).Append(",\"pos\":").Append(P(hinge)).Append(",\"mid\":").Append(P(Middle(d)))
                       .Append(",\"isLocked\":").Append(locked ? "true" : "false").Append(",\"enemiesKeptOut\":").Append(cant ? "true" : "false").Append(",\"broken\":").Append(dead ? "true" : "false")
-                      .Append(",\"locked\":").Append(wl).Append(",\"enemiesCanOpen\":").Append(we).Append(w != null && w.Chance < 100 ? ",\"chance\":" + w.Chance : "").Append('}');
-                    rev.Append('D').Append(P(hinge)).Append(locked ? 'l' : 'u').Append(cant ? 'c' : 'o').Append(dead ? 'x' : '-').Append(wl[0]).Append(we[0]);
+                      .Append(",\"isOpen\":").Append(isOpen ? "true" : "false").Append(",\"open\":").Append(wo).Append(",\"locked\":").Append(wl).Append(",\"enemiesCanOpen\":").Append(we).Append(w != null && w.Chance < 100 ? ",\"chance\":" + w.Chance : "").Append('}');
+                    rev.Append('D').Append(P(hinge)).Append(locked ? 'l' : 'u').Append(cant ? 'c' : 'o').Append(dead ? 'x' : '-').Append(wl[0]).Append(we[0]).Append(wo[0]).Append(isOpen ? 'O' : 'C');
                     first = false;
                 }
                 catch { }
@@ -1940,6 +2015,7 @@ namespace MissionLab
                 _weather = settings.Weather;
                 if (!string.IsNullOrEmpty(settings.Title)) _title = settings.Title;
                 _briefing = new List<string>(settings.Briefing);
+                _respawnAfter = settings.RespawnAfter; _respawnTimes = settings.RespawnTimes;
                 _skillAll = settings.Skill ?? ""; _nvgAll = settings.Nvg;          // for enemies that appear from now on
                 if ((settings.Power ?? "") != _power)
                 {
@@ -1990,6 +2066,7 @@ namespace MissionLab
                 if (_markers != null) foreach (Marker m in _markers) if (ids.Contains(m.Id) && m.Bot != IntPtr.Zero) who.Add(m.Bot);
                 int sent = who.Count == 0 ? 0 : TryOuts.WalkTo(gm, pos, 0f, who);
                 TryOuts.Did("an order to walk");
+                Replay.Event("note", "order: " + sent + " sent to " + pos.x.ToString("0.#", Inv) + ", " + pos.z.ToString("0.#", Inv));
                 Say(sent == 0 ? "no live enemy among those selected could be sent" : sent + (sent == 1 ? " enemy is" : " enemies are") + " on the way to that spot");
             }
             else if (cmd == "fire") FireNow(id);
@@ -2017,7 +2094,7 @@ namespace MissionLab
             plan.Doors.AddRange(Director.DoorsOut); plan.Things.AddRange(Director.ThingsOut);            // what lost its roll this time is still part of the scenario
             plan.Title = _title; plan.Briefing = new List<string>(_briefing);
             foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
-            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll;
+            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.RespawnAfter = _respawnAfter; plan.RespawnTimes = _respawnTimes;
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))

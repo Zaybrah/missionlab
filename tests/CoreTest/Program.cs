@@ -196,6 +196,20 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     if (!ok) { Console.WriteLine("  FAIL: things, sides or the hold and down triggers do not survive save and load: " + back.ToJson()); failures++; }
     else Console.WriteLine("  things, sides, hold and down triggers: survive save and load");
 }
+{   // 0.23: doors open or closed, hunters, respawn by trigger and by rule
+    string src = "{\"respawn\":{\"after\":1,\"times\":2}," +
+                 "\"doors\":[{\"name\":\"A\",\"pos\":[1,0,1],\"open\":true},{\"name\":\"B\",\"pos\":[2,0,2]}]," +
+                 "\"triggers\":[{\"id\":1,\"when\":\"time\",\"hunt\":true,\"respawn\":true,\"doors\":[{\"name\":\"A\",\"pos\":[1,0,1],\"open\":false,\"locked\":true},{\"name\":\"B\",\"pos\":[2,0,2],\"open\":true},{\"name\":\"C\",\"pos\":[3,0,3],\"enemiesCanOpen\":false}]},{\"id\":2,\"when\":\"alert\"}]," +
+                 "\"spawns\":[{\"pos\":[0,0,0]}]}";
+    var np = MissionPlan.FromJson(src);
+    string js = np.ToJson();
+    var back = MissionPlan.FromJson(js);
+    bool ok = back.RespawnAfter == 3f && back.RespawnTimes == 2 && back.Doors.Count == 1 && back.Doors[0].Open == true && !back.Doors[0].Locked.HasValue
+        && back.Triggers[0].Hunt && back.Triggers[0].Respawn && !back.Triggers[1].Hunt && !back.Triggers[1].Respawn
+        && back.Triggers[0].Doors.Count == 2 && back.Triggers[0].Doors[0].Open == false && back.Triggers[0].Doors[0].Locked == true && back.Triggers[0].Doors[1].Open == true && !back.Triggers[0].Doors[1].Locked.HasValue
+        && back.ToJson() == js && MissionPlan.FromJson("{\"spawns\":[]}").RespawnAfter == 0f && !MissionPlan.FromJson("{\"spawns\":[]}").ToJson().Contains("respawn");
+    if (!ok) { Console.WriteLine("  FAIL: the 0.23 fields do not survive save and load: " + js); failures++; }
+}
 {   // 0.22: tags, door triggers, every player, repeats, rally, red messages, the scenario's own skill
     string src = "{\"skill\":\"veteran\",\"nvg\":true," +
                  "\"triggers\":[{\"id\":1,\"when\":\"down\",\"tag\":\" off!icer \",\"count\":0,\"repeat\":2,\"times\":3,\"rally\":40,\"message\":\"x\",\"red\":true}," +

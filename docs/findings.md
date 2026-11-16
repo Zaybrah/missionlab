@@ -223,6 +223,26 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   enemy more or less sharp was not noticed in play; 0.22 can set it for all enemies.
 - **Failed ending:** red message, then `EndOperation()` five seconds later: ran as written.
 
+## Second run of 16 November 2026 (0.22.0, Clean House by night)
+
+- **Countdown:** all three lines shown (start, one minute, ten seconds), then "Out of time." and the
+  failed ending; the player saw the popup.
+- **Repeat:** a timer with `repeat: 90, times: 3` fired at 60 s, 150 s and 240 s and then stopped.
+- **Door trigger:** fired when the player opened the door. `IsOpenEnoughForAI` is the test.
+- **Tagged enemies down:** fired when the tagged guard went down. Its message came 3 s before
+  another one and was not seen: messages replace each other (0.23 spaces them).
+- **Respawn works on a dead player.** `SERVER_SetRespawns(true)` + `UserCode_SERVER_RespawnALL()`
+  brought the dead host back within a second (dead from 207.9 s, call at 220.6 s, back at 221.1 s).
+  The cheated flag was not set at that moment.
+- **Every door opens:** `UserCode_CMD_SetDoorClosed__Boolean(false)` opened all ten doors.
+- **Game Master order:** two selected enemies, one of them a guard that had not moved all mission,
+  set off within the same half second and walked to the clicked spot at patrol pace (about 1 m/s).
+- **Call by trigger did not move anyone** in the 18 s before the alarm. Its target was the door's
+  hinge, which is not walkable ground; 0.23 moves targets to the nearest walkable point.
+- **Skill for all (recruits):** the player thought enemies were slower and missed more.
+- An enemy turned or moved on the page is taken out and made again (the 0.7 s "re-make"); in the
+  recording that reads as "down" followed by "appears".
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.

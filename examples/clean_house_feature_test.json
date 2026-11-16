@@ -16,7 +16,8 @@
    "facePlayer": true,
    "message": "{time} in: more of them are on the way. {enemies} left.",
    "repeat": 90,
-   "times": 3
+   "times": 3,
+   "hunt": true
   },
   {
    "id": 2,
@@ -25,7 +26,8 @@
    "delay": 10,
    "facePlayer": true,
    "message": "They know you are here.",
-   "red": true
+   "red": true,
+   "hunt": true
   },
   {
    "id": 3,
@@ -50,7 +52,8 @@
       0.7,
       -19.57
      ],
-     "locked": true
+     "locked": true,
+     "open": false
     }
    ],
    "message": "Intel secured. Get out before the time runs out.",
@@ -144,6 +147,24 @@
    "locked": true,
    "enemiesCanOpen": false,
    "chance": 50
+  },
+  {
+   "name": "Door Exterior Paneled_2",
+   "pos": [
+    -18.16,
+    0.7,
+    -5.15
+   ],
+   "open": true
+  },
+  {
+   "name": "Door Interior Paneled_1",
+   "pos": [
+    -21.04,
+    0.69,
+    -10.64
+   ],
+   "open": true
   }
  ],
  "extraction": {
@@ -154,6 +175,10 @@
   "rain": true
  },
  "skill": "recruit",
+ "respawn": {
+  "after": 10,
+  "times": 2
+ },
  "briefing": [
   "Clean House, feature test.",
   "Take the intel. Once you hold it you have two and a half minutes."

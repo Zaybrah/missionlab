@@ -64,6 +64,8 @@ namespace MissionLab.Core
         public int Times;                 // how often it may fire in all, with Repeat (0: no limit)
         public float Rally;               // metres: enemies this close to the trigger's place walk there when it fires (0: nobody is called)
         public bool Red;                  // its message is shown as a red warning
+        public bool Hunt;                 // the enemies it brings walk to the nearest player instead of waiting where they appear
+        public bool Respawn;              // it brings dead players back
         public bool Off;                  // lost its roll this mission: only "Fire now" sets it off. Not written to the file.
     }
 
@@ -119,7 +121,8 @@ namespace MissionLab.Core
         public V3 Pos;
         public bool? Locked;
         public bool? EnemiesCanOpen;
-        public bool HasWish => Locked.HasValue || EnemiesCanOpen.HasValue;
+        public bool? Open;              // true: stands open, false: closed; null: as the game leaves it
+        public bool HasWish => Locked.HasValue || EnemiesCanOpen.HasValue || Open.HasValue;
         public int Chance = 100;        // percent: how often this setting applies at all; otherwise the door is left to the game
     }
 
@@ -182,6 +185,13 @@ namespace MissionLab.Core
         public string Power = "";         // "off": the breaker box is off when the mission starts ("": left to the game)
         public string Skill = "";         // "recruit" or "veteran": every enemy of the scenario that has no skill of its own
         public bool Nvg;                  // every enemy of the scenario sees in the dark
+        public float RespawnAfter;        // seconds a player stays dead before the scenario brings them back (0: the game's own rule)
+        public int RespawnTimes;          // how often the scenario does that in one mission (0: no limit)
+        private static float RespawnOf(JsonElement root, string key, float max)
+        {
+            if (!root.TryGetProperty("respawn", out JsonElement r) || r.ValueKind != JsonValueKind.Object) return 0f;
+            return System.Math.Max(0f, System.Math.Min(max, Num(r, key, 0)));
+        }
         public List<ThingPlan> Things = new List<ThingPlan>();
         public string Title = "";         // the mission's name ("name" in the file), shown to the players when it starts
         public List<string> Briefing = new List<string>();   // up to four lines shown on every screen at the start, one after another
@@ -220,6 +230,7 @@ namespace MissionLab.Core
                   .Append(F(d.Pos.X)).Append(',').Append(F(d.Pos.Y)).Append(',').Append(F(d.Pos.Z)).Append(']');
                 if (d.Locked.HasValue) sb.Append(",\"locked\":").Append(d.Locked.Value ? "true" : "false");
                 if (d.EnemiesCanOpen.HasValue) sb.Append(",\"enemiesCanOpen\":").Append(d.EnemiesCanOpen.Value ? "true" : "false");
+                if (d.Open.HasValue) sb.Append(",\"open\":").Append(d.Open.Value ? "true" : "false");
                 if (d.Chance < 100) sb.Append(",\"chance\":").Append(System.Math.Max(1, d.Chance));
                 sb.Append('}');
                 first = false;
@@ -267,9 +278,11 @@ namespace MissionLab.Core
                 if (z.Repeat > 0f) { sb.Append(",\"repeat\":").Append(F(z.Repeat)); if (z.Times > 0) sb.Append(",\"times\":").Append(z.Times); }
                 if (z.Rally > 0f) sb.Append(",\"rally\":").Append(F(z.Rally));
                 if (z.Red) sb.Append(",\"red\":true");
+                if (z.Hunt) sb.Append(",\"hunt\":true");
+                if (z.Respawn) sb.Append(",\"respawn\":true");
                 if (z.Delay > 0f) sb.Append(",\"delay\":").Append(F(z.Delay));
                 sb.Append(",\"facePlayer\":").Append(z.FacePlayer ? "true" : "false");
-                if (z.Doors.Exists(d => d.Locked.HasValue)) sb.Append(",\"doors\":").Append(DoorsJson(z.Doors));
+                if (z.Doors.Exists(d => d.Locked.HasValue || d.Open.HasValue)) sb.Append(",\"doors\":").Append(DoorsJson(z.Doors));
                 if (z.OpensExtraction) sb.Append(",\"extraction\":\"open\"");
                 if (TriggerPlan.OnOff(z.Power) != "") sb.Append(",\"power\":\"").Append(z.Power).Append('"');
                 if (TriggerPlan.Clean(z.Message) != "") sb.Append(",\"message\":\"").Append(Text(TriggerPlan.Clean(z.Message))).Append('"');
@@ -328,6 +341,7 @@ namespace MissionLab.Core
             if (TriggerPlan.OnOff(p.Power) != "") sb.Append(",\"power\":\"").Append(p.Power).Append('"');
             if (p.Skill == "recruit" || p.Skill == "veteran") sb.Append(",\"skill\":\"").Append(p.Skill).Append('"');
             if (p.Nvg) sb.Append(",\"nvg\":true");
+            if (p.RespawnAfter > 0f) sb.Append(",\"respawn\":{\"after\":").Append(System.Math.Round(p.RespawnAfter, 2).ToString(inv)).Append(p.RespawnTimes > 0 ? ",\"times\":" + p.RespawnTimes : "").Append('}');
             if (p.Weather.HasWish)
             {
                 var parts = new List<string>();
@@ -390,6 +404,7 @@ namespace MissionLab.Core
                     Insertion = Str(root, "insertion") ?? "",
                     Power = TriggerPlan.OnOff(Str(root, "power")),
                     Skill = Str(root, "skill") == "recruit" || Str(root, "skill") == "veteran" ? Str(root, "skill") : "", Nvg = Bool(root, "nvg"),
+                    RespawnAfter = RespawnOf(root, "after", 600f) > 0f ? System.Math.Max(3f, RespawnOf(root, "after", 600f)) : 0f, RespawnTimes = (int)RespawnOf(root, "times", 50f),
                     Title = (Str(root, "name") ?? "").Trim(),
                 };
                 if (root.TryGetProperty("briefing", out JsonElement br) && br.ValueKind == JsonValueKind.Array)
@@ -463,14 +478,14 @@ namespace MissionLab.Core
                         t.OpensExtraction = Str(z, "extraction") == "open";
                         t.Hold = System.Math.Min(3600f, System.Math.Max(1f, Num(z, "hold", 30))); t.Count = System.Math.Max(0, (int)Num(z, "count", 0));
                         t.Chance = System.Math.Max(1, System.Math.Min(100, (int)Num(z, "chance", 100))); t.Warn = Bool(z, "warn");
-                        t.Everyone = Bool(z, "everyone"); t.Tag = SpawnPlan.CleanTag(Str(z, "tag")); t.Red = Bool(z, "red");
+                        t.Everyone = Bool(z, "everyone"); t.Tag = SpawnPlan.CleanTag(Str(z, "tag")); t.Red = Bool(z, "red"); t.Hunt = Bool(z, "hunt"); t.Respawn = Bool(z, "respawn");
                         t.Repeat = System.Math.Min(3600f, System.Math.Max(0f, Num(z, "repeat", 0))); if (t.Repeat > 0f && t.Repeat < 5f) t.Repeat = 5f;
                         t.Times = System.Math.Max(0, System.Math.Min(100, (int)Num(z, "times", 0))); t.Rally = System.Math.Min(300f, System.Math.Max(0f, Num(z, "rally", 0)));
                         if (z.TryGetProperty("of", out JsonElement of) && of.ValueKind == JsonValueKind.Array)
                             foreach (JsonElement o in of.EnumerateArray())
                                 if (o.ValueKind == JsonValueKind.Number && o.GetInt32() > 0 && o.GetInt32() != id && !t.Of.Contains(o.GetInt32())) t.Of.Add(o.GetInt32());
                         t.Power = TriggerPlan.OnOff(Str(z, "power")); t.Message = TriggerPlan.Clean(Str(z, "message")); t.End = TriggerPlan.Ending(Str(z, "end"));
-                        t.Doors.RemoveAll(d => !d.Locked.HasValue);
+                        t.Doors.RemoveAll(d => !d.Locked.HasValue && !d.Open.HasValue);
                         plan.Triggers.Add(t);
                     }
                 if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)
@@ -507,7 +522,7 @@ namespace MissionLab.Core
             foreach (JsonElement d in list.EnumerateArray())
             {
                 if (d.ValueKind != JsonValueKind.Object || !TryVec(d, "pos", out V3 dp)) continue;
-                var door = new DoorPlan { Name = Str(d, "name"), Pos = dp, Locked = Flag(d, "locked"), EnemiesCanOpen = Flag(d, "enemiesCanOpen"),
+                var door = new DoorPlan { Name = Str(d, "name"), Pos = dp, Locked = Flag(d, "locked"), EnemiesCanOpen = Flag(d, "enemiesCanOpen"), Open = Flag(d, "open"),
                                           Chance = System.Math.Max(1, System.Math.Min(100, (int)Num(d, "chance", 100))) };
                 if (door.HasWish) into.Add(door);
             }
