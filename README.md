@@ -192,6 +192,25 @@ this way is marked as modded first, and the game then shows its own notice and g
 achievements. `"power": "off"` at the top of the file switches the lights off when the mission starts.
 Tested in the game: lights out, and the ending as a success. Not yet: the message, the ending as failed.
 
+### Things
+A scenario can lay things on the ground for every player: `"things": [{"name": "AKM", "pos":
+[x, y, z], "yaw": 90, "trigger": 0}]`. The name is the game's own name for the thing; with
+`"trigger"` it is placed when that trigger fires, otherwise from the start. In the editor: the
+World tab, pick a thing, choose Add thing and click the map; drag to move. With the game
+connected, a thing added in the page is placed at once and one removed is taken away.
+Seen to work in the game: rifles, which can be picked up and used. Intel items, mines and the
+rest of the list are offered as the game names them and have not been tried.
+
+### Sides
+`"team": 4` on an enemy puts it on a second enemy side that fights the first (seen in the game:
+they shoot each other); `"team": 1` puts it on the players' side (not tried). In the editor: "Side"
+in the enemy panel, for everything selected.
+
+### More trigger kinds
+- `"when": "hold"` with `"hold": 45`: a player has stayed inside the zone for that many seconds.
+  Leaving starts the count again. In the editor it is a zone with "and stay" set.
+- `"when": "down"` with `"count": 3`: that many enemies have gone down; `0` means all of them.
+
 ### Mission check
 The Mission tab lists what would go wrong before a mission is spent on it: triggers that can
 never fire or do nothing, an extraction that can never open, an insertion the map does not have,

@@ -132,6 +132,7 @@ namespace MissionLab
                     case "respawn": said = Respawn(); break;
                     case "fail": said = End(false); break;
                     case "complete": said = End(true); break;
+                    case "endop": said = EndOperation(); break;
                     default: said = "unknown try-out '" + what + "'"; break;
                 }
             }
@@ -162,7 +163,7 @@ namespace MissionLab
         }
 
         // ------------------------------------------------------------------ a message on every screen
-        internal static string Message(RaidManager raid, string text)
+        internal static string Message(RaidManager raid, string text, bool red = false)
         {
             if (string.IsNullOrWhiteSpace(text)) text = "MissionLab: test message";
             if (text.Length > 120) text = text.Substring(0, 120);
@@ -170,7 +171,7 @@ namespace MissionLab
             var zones = raid.exfilZones;
             for (int i = 0; zones != null && i < zones.Count && zone == null; i++) zone = zones[i];
             if (zone == null) return "message: this map has no extraction zone to send it through";
-            zone.RPCHint(text, Popup.PopupType.YellowWarning);
+            zone.RPCHint(text, red ? Popup.PopupType.RedWarning : Popup.PopupType.YellowWarning);
             return "message sent to every player's screen: \"" + text + "\"";
         }
 
@@ -264,25 +265,32 @@ namespace MissionLab
             return false;
         }
 
-        private static string Thing(string name, bool hasPos, Vector3 pos)
+        /// <summary>Places one of the game's network prefabs on the ground at a spot, for every player. Null if it cannot be.</summary>
+        internal static GameObject Place(string name, Vector3 pos, float yaw, out string said)
         {
             GameObject prefab = null;
             Mirror.NetworkManager net = Mirror.NetworkManager.singleton;
             var all = net == null ? null : net.spawnPrefabs;
             for (int i = 0; all != null && i < all.Count && prefab == null; i++)
                 if (all[i] != null && all[i].name == name) prefab = all[i];
-            if (prefab == null) return "thing: the game has no '" + name + "' to place";
-            if (!Allowed(prefab)) return "thing: '" + name + "' is not placed by hand";
-            float yaw = 0f;
-            if (!hasPos && !InFront(6f, out pos, out yaw)) return "thing: no player to place it in front of, and no enemy marker was selected";
+            if (prefab == null) { said = "the game has no '" + name + "' to place"; return null; }
+            if (!Allowed(prefab)) { said = "'" + name + "' is not placed by hand"; return null; }
             if (Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 8f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
             GameObject go = UnityEngine.Object.Instantiate((UnityEngine.Object)prefab, pos + Vector3.up * 0.05f, Quaternion.Euler(0f, yaw, 0f)).Cast<GameObject>();
             Mirror.NetworkServer.Spawn(go, (Mirror.NetworkConnection)null);
+            said = "'" + name + "' placed at " + P(pos);
+            return go;
+        }
+
+        private static string Thing(string name, bool hasPos, Vector3 pos)
+        {
+            float yaw = 0f;
+            if (!hasPos && !InFront(6f, out pos, out yaw)) return "thing: no player to place it in front of, and no enemy marker was selected";
+            GameObject go = Place(name, pos, yaw, out string said);
+            if (go == null) return "thing: " + said;
             Watch.Add(new Placed { Go = go, Name = name, At = go.transform.position, When = Time.unscaledTime });
-            CultureInfo inv = CultureInfo.InvariantCulture;
-            string where = "(" + pos.x.ToString("0.0", inv) + ", " + pos.y.ToString("0.0", inv) + ", " + pos.z.ToString("0.0", inv) + ")";
-            Replay.Event("appears", "'" + name + "' is placed", pos);
-            return "thing: '" + name + "' placed at " + where + (hasPos ? ", where the selected marker is" : ", 6 m in front of you");
+            Replay.Event("appears", "'" + name + "' is placed", go.transform.position);
+            return "thing: " + said + (hasPos ? ", where the selected marker is" : ", 6 m in front of you");
         }
 
         // ------------------------------------------------------------------ players and the mission's end
@@ -302,13 +310,23 @@ namespace MissionLab
             if (g == null) return "end: the game's mission keeper was not found";
             if (!success)
             {
+                // The game's failed screen closes again at once while a player is alive (seen in a run), so the players are told in words too.
+                try { RaidManager raid = RaidManager.singleton; if (raid != null) Message(raid, "Mission failed.", true); } catch { }
                 g.SERVER_FailOperation();
-                return "end: the game was told the mission has failed";
+                return "end: the players were told the mission has failed; the game's own failed screen only stays when nobody is alive";
             }
             // Whether a success the mod asked for counts is the host's choice (General/FairPlay); the studio leaves it to the mod.
             string flag = FairPlayIs("Off") ? "the run is not marked (FairPlay is Off)" : Mark();
             g.ServerCompleteExfil();
             return "end: the game was told the extraction is complete; " + flag;
+        }
+
+        private static string EndOperation()
+        {
+            GameManagerNetwork g = GameManagerNetwork.instance;
+            if (g == null) return "end: the game's mission keeper was not found";
+            g.EndOperation();
+            return "end: the game's own 'end operation' was called";
         }
 
         internal static bool FairPlayIs(string what)

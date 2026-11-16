@@ -60,22 +60,31 @@ most likely to break.
 | Win and lose rules | built as a trigger action; success seen in the game (with the game's "cheating detected" notice), failed not yet |
 | Lights out | built as a trigger action and a mission setting; seen in the game |
 
+### Built in 0.20
+
+| What | State |
+|---|---|
+| Things as markers | built; rifles seen to work in the game, placing from a scenario not yet |
+| A side per enemy | built; two sides seen to fight, the side from a scenario not yet |
+| "Hold the zone" and "enemies down" triggers | built; not yet in the game |
+| Messages on screen | seen in the game |
+
 ### B: next
 
 | What | Why this grade | Shown in the game so far | Work |
 |---|---|---|---|
-| Things as markers (mines, weapons, intel anywhere) | New kinds of mission; needs a new marker kind in the editor. | three things placed without error, none seen; the try-out now reports back | medium |
-| Trigger logic and "hold the zone" | Defend and multi-stage missions. Survives V10. | needs no game | medium |
-| Orders and hunters from behind | The base for adaptive pacing and a stronger Game Master. | not clicked yet | medium |
+| A way to fail a mission | The game's failed screen closes while someone is alive. `EndOperation()` is the next thing to try. | failed popup seen for a moment | small once it works |
+| Orders and hunters from behind | The base for adaptive pacing and a stronger Game Master. | `HeardTarget` moved nobody; a heard shot is the next try | medium |
 | Enemy profiles | Conscripts, bodyguards, night-vision sentries; runs on the host only. | class listing only | medium |
-| Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | not clicked yet | medium |
+| Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | the call did nothing to a living player | medium |
+| Trigger logic (AND, OR, counters) | Multi-stage missions. Survives V10. | needs no game | medium |
 | Scaling by team size | One scenario for two or six friends. | needs one read on the host | small |
 | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
-| Fair-play switch | Built in 0.19 as the `FairPlay` setting (Off, ModEndedWins, Always), off by default: the studio leaves it to the mod. With it, a notice to other players (`TellPlayers`). | flag seen; notice not yet | done |
 | Pop-in check | Warns when a trigger's enemies would appear in plain sight of the players. | needs no game | medium |
 | Smarter danger check | Only the insertion the scenario chose; 25 m sight at night. | needs no game | small |
-| Chance for doors and triggers | A door locked half the time, a trigger that only sometimes fires. | needs no game | small |
+| Chance for doors, triggers and things | A door locked half the time, a rifle that is only sometimes there. | needs no game | small |
 | Enemies that sit out, shown in the live page | The Game Master sees what the roll left out and can bring it in. | needs no game | small |
+| Things in the 3D view, by hand | Things show in 3D but can only be placed and moved in 2D. | needs no game | small |
 
 ### C: later
 

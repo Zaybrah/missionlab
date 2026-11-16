@@ -189,6 +189,10 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
     report "Idle" for a moment before its "Evade", so "differs from the first state" was not
     enough. 0.19.1 trusts nothing for 2 s and takes the state then as the enemy's state of rest.
   - Trigger messages were sent twice ("a message is shown"); whether they appeared is not known yet.
+- Seen by the player after the fourth run: the two trigger messages appeared on screen
+  (`ExfilZone.RPCHint` works as a message to players). `SERVER_FailOperation()` shows the failed
+  screen for a moment and closes it again while a player is alive; `GameManagerNetwork` also has
+  `CloseAllFailScreens()`, `EndOperation()` and `RestartOperation()`, not tried yet.
 - Collider layers seen: Default, Shrapnel_Ignore, AI_VisionBlock, Water, PlayerBlock,
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.

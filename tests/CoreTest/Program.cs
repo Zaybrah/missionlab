@@ -181,6 +181,21 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     var none = MissionPlan.FromJson("{\"spawns\":[{\"pos\":[1,2,3]}]}");
     if (Variants.Any(none) || Variants.Resolve(none, new Rng(1), null).Count != 0 || none.Spawns.Count != 1) { Console.WriteLine("  FAIL: a plain scenario was touched by the rolls"); failures++; }
 }
+{   // things, sides, and the triggers that wait for a held zone or for enemies to go down
+    string src = "{\"things\":[{\"name\":\"AKM\",\"pos\":[1,2,3],\"yaw\":90},{\"name\":\"Hard Drive\",\"pos\":[4,5,6],\"trigger\":2},{\"name\":\"\",\"pos\":[0,0,0]},{\"name\":\"MP5\"}]," +
+                 "\"triggers\":[{\"id\":1,\"when\":\"hold\",\"pos\":[1,0,1],\"radius\":6,\"hold\":45},{\"id\":2,\"when\":\"down\",\"count\":3},{\"id\":3,\"when\":\"hold\"},{\"id\":4,\"when\":\"down\"}]," +
+                 "\"spawns\":[{\"pos\":[0,0,0],\"team\":4},{\"pos\":[1,0,0],\"team\":1},{\"pos\":[2,0,0]},{\"pos\":[3,0,0],\"team\":99}]}";
+    var tp = MissionPlan.FromJson(src);
+    var back = MissionPlan.FromJson(tp.ToJson());
+    bool ok = back.Things.Count == 2 && back.Things[0].Name == "AKM" && back.Things[0].Yaw == 90 && back.Things[0].Trigger == 0 && back.Things[1].Name == "Hard Drive" && back.Things[1].Trigger == 2 && back.Things[1].Pos.Z == 6
+        && back.Triggers.Count == 3 && back.Triggers[0].When == TriggerPlan.OnHold && back.Triggers[0].Hold == 45 && back.Triggers[0].Radius == 6 && back.Triggers[0].Pos.X == 1
+        && back.Triggers[1].When == TriggerPlan.OnDown && back.Triggers[1].Count == 3 && back.Triggers[2].When == TriggerPlan.OnDown && back.Triggers[2].Count == 0
+        && back.Spawns[0].Team == 4 && back.Spawns[1].Team == 1 && back.Spawns[2].Team == 0 && back.Spawns[3].Team == 8
+        && back.ToJson() == tp.ToJson() && !MissionPlan.SpawnJson(back.Spawns[2]).Contains("team") && !MissionPlan.FromJson("{\"spawns\":[{\"pos\":[0,0,0]}]}").ToJson().Contains("things")
+        && back.Things[0].Key != back.Things[1].Key;
+    if (!ok) { Console.WriteLine("  FAIL: things, sides or the hold and down triggers do not survive save and load: " + back.ToJson()); failures++; }
+    else Console.WriteLine("  things, sides, hold and down triggers: survive save and load");
+}
 var seenPlans = new HashSet<string>();
 foreach (var seed in seeds)
 {
