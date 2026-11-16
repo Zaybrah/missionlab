@@ -222,11 +222,12 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="nextMission">Next mission uses</label><select id="nextMission" title="What the next mission you host will load. In the game lobby, F8 steps through the same list."></select></div>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div id="gmBox" hidden>
-        <div class="field"><label for="gmText">Tell players</label><input id="gmText" type="text" maxlength="120" placeholder="A message on every screen"></div>
+        <div class="field"><label for="gmText">Tell players</label><input id="gmText" type="text" maxlength="120" placeholder="A message on every screen" title="{enemies}, {players} and {time} become the numbers of the moment"></div>
         <div class="row">
           <button class="btn" id="gmSend" type="button">Send message</button>
           <button class="btn" id="gmDark" type="button">Lights out</button>
           <button class="btn" id="gmLight" type="button">Lights on</button>
+          <button class="btn" id="gmOrder" type="button" title="Select live enemies, press this, then click the spot on the map">Send selected enemies…</button>
         </div>
       </div>
       <div class="row">
@@ -342,8 +343,19 @@ body.dragging #drop { display: flex; }
           <option value="down">When enemies are down</option>
           <option value="all">When all of several triggers have fired</option>
           <option value="any">When one of several triggers has fired</option>
+          <option value="door">When a door is opened or broken</option>
         </select>
         <button class="btn" id="trigNew" type="button">Add trigger</button>
+      </div>
+      <div class="row" id="recipeRow">
+        <select id="recipe" aria-label="Ready-made set of triggers">
+          <option value="countdown">Set: countdown after the intel is taken</option>
+          <option value="help">Set: the alarm calls nearby enemies</option>
+          <option value="waves">Set: help arrives every two minutes</option>
+          <option value="blackout">Set: lights go out on the alarm</option>
+          <option value="targets">Set: success when the tagged enemies are down</option>
+        </select>
+        <button class="btn" id="recipeAdd" type="button">Add set</button>
       </div>
       <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
     </div>
@@ -371,6 +383,8 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="extractAfter">Extraction</label><select id="extractAfter"></select></div>
       <div class="field"><label for="insertion">Insertion</label><select id="insertion"></select></div>
       <div class="field"><label for="power">Lights</label><select id="power"><option value="">Leave to the game</option><option value="off">Off when the mission starts</option><option value="on">On when the mission starts</option></select></div>
+      <div class="field"><label for="allSkill">Enemies</label><select id="allSkill"><option value="">Skill as the game makes it</option><option value="recruit">All recruits: slower, wilder</option><option value="veteran">All veterans: quicker, surer</option></select></div>
+      <label class="check"><input id="allNvg" type="checkbox"><span>All enemies see in the dark</span></label>
       <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
       <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
       <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
@@ -385,6 +399,7 @@ body.dragging #drop { display: flex; }
         <option value="power:off">Lights out</option>
         <option value="power:on">Lights back on</option>
         <option value="walk">Enemies walk to where you stand</option>
+        <option value="doors">Every door opens</option>
         <option value="sides">Split the enemies into two sides</option>
         <option value="thing">Place a thing</option>
         <option value="respawn">Bring every player back</option>
@@ -420,8 +435,10 @@ body.dragging #drop { display: flex; }
     <label class="check"><input id="vehicle" type="checkbox"><span>This is a gun truck, not a person. It is parked here, facing this way. Takes effect at the next mission start.</span></label>
     <div class="field" id="triggerRow" hidden><label for="trigger">Appears</label><select id="trigger"></select></div>
     <div class="field"><label for="minPlayers">Players needed</label><input id="minPlayers" type="number" min="1" max="8" step="1" title="Only there when at least this many players are in the mission. 1: always."></div>
-    <div class="field"><label for="skill">Skill</label><select id="skill"><option value="">As the game makes it</option><option value="recruit">Recruit: slower, wilder (not tried yet)</option><option value="veteran">Veteran: quicker, surer (not tried yet)</option></select></div>
-    <label class="check"><input id="nvg" type="checkbox"><span>Sees in the dark (not tried yet)</span></label>
+    <div class="field"><label for="skill">Skill</label><select id="skill"><option value="">As the game makes it</option><option value="recruit">Recruit: slower, wilder</option><option value="veteran">Veteran: quicker, surer</option></select></div>
+    <label class="check"><input id="nvg" type="checkbox"><span>Sees in the dark</span></label>
+    <div class="field"><label for="tag">Tag</label><input id="tag" type="text" maxlength="24" list="tagList" placeholder="For example: officer"><datalist id="tagList"></datalist></div>
+    <p class="hint">A trigger can wait until the enemies with a tag are down. Skill was applied in a run, but one enemy more or less sharp is hard to notice: the Mission tab can set it for all of them.</p>
     <div class="field"><label for="team">Side</label><select id="team"><option value="0">The enemy</option><option value="4">A second enemy side</option><option value="1">The players' side (not tried yet)</option></select></div>
     <div class="field"><label for="chance">Chance (%)</label><input id="chance" type="number" min="1" max="100" step="5" title="How often it is there at all. Rolled anew each time the mission starts."></div>
     <div class="field"><label for="either">Either/or</label><select id="either"></select></div>
@@ -527,6 +544,8 @@ const state = {
   insertion: '',        // the insertion every player gets ('': each player's own choice)
   insertions: [],       // the map's insertions by name, from the game or a recon file
   weather: { hour: null, rain: null, sandstorm: null },     // null: left to the game
+  allSkill: '', allNvg: false,   // every enemy of the scenario: 'recruit' or 'veteran', and night vision
+  order: null,               // ids of live enemies waiting for a click on the map that tells them where to go
   power: '',                 // 'off' or 'on': the breaker box when the mission starts ('': left to the game)
   things: [],                // weapons and other things the game can place: {name, pos, yaw, trigger}
   thing: -1,                 // the selected one
@@ -719,7 +738,7 @@ function facePlayers(e) {
   return e;
 }
 function newEnemy(pos, role, group) {
-  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false, chance: 100, lot: 0, either: 0, option: 0, team: 0, minPlayers: 0, skill: '', nvg: false,
+  return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false, chance: 100, lot: 0, either: 0, option: 0, team: 0, minPlayers: 0, skill: '', nvg: false, tag: '',
            detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
@@ -749,7 +768,7 @@ function spawnOf(e) {
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
     prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt, ...(e.vehicle ? { vehicle: true } : {}),
     ...(e.chance < 100 ? { chance: e.chance } : {}), ...(e.chance < 100 && e.lot ? { lot: e.lot } : {}), ...(e.either ? { either: e.either, option: e.option || 1 } : {}), ...(e.team ? { team: e.team } : {}),
-    ...(e.minPlayers > 1 ? { minPlayers: e.minPlayers } : {}), ...(e.skill ? { skill: e.skill } : {}), ...(e.nvg ? { nvg: true } : {}),
+    ...(e.minPlayers > 1 ? { minPlayers: e.minPlayers } : {}), ...(e.skill ? { skill: e.skill } : {}), ...(e.nvg ? { nvg: true } : {}), ...(e.tag ? { tag: e.tag } : {}),
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
@@ -800,6 +819,8 @@ function settingsOut() {
   if (state.extractionAfter && state.zones.some(z => z.id === state.extractionAfter)) o.extraction = { after: state.extractionAfter };
   if (state.insertion) o.insertion = state.insertion;
   if (state.power) o.power = state.power;
+  if (state.allSkill) o.skill = state.allSkill;
+  if (state.allNvg) o.nvg = true;
   if (state.briefing.length) o.briefing = state.briefing.slice(0, 4);
   if (state.weather.hour !== null) w.hour = r2(state.weather.hour);
   if (state.weather.rain !== null) w.rain = state.weather.rain;
@@ -813,9 +834,14 @@ function settingsIn(root) {
   state.insertion = root && typeof root.insertion === 'string' ? root.insertion : '';
   state.power = root && (root.power === 'off' || root.power === 'on') ? root.power : '';
   state.briefing = briefingIn(root && root.briefing);
+  state.allSkill = root && (root.skill === 'recruit' || root.skill === 'veteran') ? root.skill : ''; state.allNvg = !!(root && root.nvg === true);
   state.weather = { hour: Number.isFinite(w.hour) ? Math.max(0, Math.min(24, w.hour)) : null, rain: tri(w.rain), sandstorm: tri(w.sandstorm) };
 }
-const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any'];
+const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
+const cleanTag = t => String(t || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 24);
+const tagsOf = () => [...new Set(state.enemies.map(e => e.tag).filter(Boolean))].sort();
+// Which known door a door trigger points at: its place in the list, or '' when none is near enough.
+const doorOf = z => { if (!isVec(z.pos)) return ''; let best = '', bd = 0.6; state.doors.forEach((d, i) => { const dd = Math.hypot(d.pos[0] - z.pos[0], d.pos[1] - z.pos[1], d.pos[2] - z.pos[2]); if (dd < bd) { bd = dd; best = String(i); } }); return best; };
 // What the game can place, by its own names. Rifles were seen to work; the rest is offered as found in the game's list.
 const THING_GROUPS = [['Weapons', ["AK-74M", "AKM", "B&T APC9", "BLACKHAWK DE-MS", "Benelli M2", "F2000", "FN FNX-45", "Glock 17", "Glock 18C", "Glock 19x", "Glock 45 Legacy", "HK416A5", "HK416D", "M&P 9 2.0", "M320", "M45A1", "M4A1", "M72 LAW", "M9A1", "MCX", "MCX SPEAR", "MK16", "MK17", "MK46 MOD 2", "MP5", "MP7A1", "MP7A2", "MP9-N", "Noveske N4", "R700", "Remington M870", "SIG M17", "SIG MG338", "SIG P226", "SIG P320x", "SPR300", "SR-25", "STACCATO 2011", "SVD", "TT 2011 PitViper", "USP 45", "USP45 Tactical", "VKS"]], ['Intel items (not tried yet)', ["CIA Contacts Phone", "Cell Phone", "Encrypted Walkie Talkie", "Golden Watch", "HVI'S Classified Document", "HVT's Log Book", "Hard Drive", "Mexico_Contents", "Mexico_Document", "Mexico_Document Logs", "Mexico_Phone Numbers", "Mexico_Routes Document", "RFID Card", "Sim cards", "Tactical Encryption Unit", "Thumbdrive"]], ['Explosives (not tried yet)', ["Landmine", "Proximity Explosive_IED ", "Slap Charge"]], ['Other (not tried yet)', ["Chair_Leather_Interactable"]]];
 const pct = v => Math.max(1, Math.min(100, Math.round(num(v, 100))));
@@ -824,11 +850,15 @@ const thingsOut = () => state.things.map(t => ({ name: t.name, pos: r3(t.pos), y
 const briefingIn = list => (Array.isArray(list) ? list : []).map(cleanMessage).filter(Boolean).slice(0, 4);
 const zonesOut = () => state.zones.map(z => {
   const o = { id: z.id, name: z.name || '', when: z.when || 'zone' };
-  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } }
-  if (o.when === 'down') o.count = Math.max(0, z.count | 0);
+  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } if (z.everyone) o.everyone = true; }
+  if (o.when === 'door' && isVec(z.pos)) o.pos = r3(z.pos);
+  if (o.when === 'down') { o.count = Math.max(0, z.count | 0); if (z.tag) o.tag = z.tag; }
   if (o.when === 'all' || o.when === 'any') o.of = (z.of || []).filter(id => id !== z.id && state.zones.some(q => q.id === id));
   if (z.chance < 100) o.chance = Math.max(1, z.chance | 0);
   if (z.warn) o.warn = true;
+  if (z.repeat > 0) { o.repeat = r2(z.repeat); if (z.times > 0) o.times = z.times | 0; }
+  if (z.rally > 0) o.rally = r2(z.rally);
+  if (z.red && cleanMessage(z.message)) o.red = true;
   if (o.when === 'intel') o.item = z.item || '';
   if (o.when === 'after') o.after = z.after | 0;
   if (z.delay > 0) o.delay = r2(z.delay);
@@ -841,16 +871,17 @@ const zonesOut = () => state.zones.map(z => {
   if (z.end === 'success' || z.end === 'failed') o.end = z.end;
   return o;
 });
-const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false }, more || {});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false }, more || {});
 const cleanMessage = t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 // What a trigger waits for, in a few words.
 const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
-const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'down' ? 'When enemies are down' : z.when === 'all' ? 'When all of these have fired' : z.when === 'any' ? 'When one of these has fired' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
+const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'door' ? 'When a door is opened' : z.when === 'down' ? 'When enemies are down' : z.when === 'all' ? 'When all of these have fired' : z.when === 'any' ? 'When one of these has fired' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
 const trigTag = id => { const z = state.zones.find(q => q.id === id); return (z && z.when !== 'zone' ? 'trigger ' : 'zone ') + id; };
 // A file from before there were other kinds has only zones; a zone needs a place, the other kinds do not.
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id > 0 && (isVec(z.pos) || (WHENS.includes(z.when) && z.when !== 'zone'))).map(z => newTrigger(z.id | 0, WHENS.includes(z.when) ? z.when : 'zone', {
   hold: z.when === 'hold' ? Math.max(1, Math.min(3600, num(z.hold, 30))) : 0, count: Math.max(0, num(z.count, 0) | 0),
   of: (Array.isArray(z.of) ? z.of : []).map(v => v | 0).filter(v => v > 0), chance: Math.max(1, Math.min(100, Math.round(num(z.chance, 100)))), warn: z.warn === true,
+  everyone: z.everyone === true, tag: cleanTag(z.tag), repeat: Math.max(0, Math.min(3600, num(z.repeat, 0))), times: Math.max(0, Math.min(100, num(z.times, 0) | 0)), rally: Math.max(0, Math.min(300, num(z.rally, 0))), red: z.red === true,
   name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
   delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
   power: z.power === 'off' || z.power === 'on' ? z.power : '', message: cleanMessage(z.message), end: z.end === 'success' || z.end === 'failed' ? z.end : '',
@@ -864,7 +895,7 @@ function enemyOf(s, i) {
     prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt, vehicle: !!s.vehicle,
     chance: Math.max(1, Math.min(100, Math.round(num(s.chance, 100)))), lot: Math.max(0, num(s.lot, 0) | 0), either: Math.max(0, num(s.either, 0) | 0), option: num(s.either, 0) > 0 ? Math.max(1, num(s.option, 1) | 0) : 0,
     team: Math.max(0, Math.min(8, num(s.team, 0) | 0)),
-    minPlayers: Math.max(0, Math.min(16, num(s.minPlayers, 0) | 0)), skill: s.skill === 'recruit' || s.skill === 'veteran' ? s.skill : '', nvg: s.nvg === true,
+    minPlayers: Math.max(0, Math.min(16, num(s.minPlayers, 0) | 0)), skill: s.skill === 'recruit' || s.skill === 'veteran' ? s.skill : '', nvg: s.nvg === true, tag: cleanTag(s.tag),
     detectionRange: num(s.detectionRange, 0), hearingRange: num(s.hearingRange, 0), fov: num(s.fov, 0),
     wanderDistance: num(s.wanderDistance, 0), patrolWaitSeconds: num(s.patrolWaitSeconds, 4),
     patrol: Array.isArray(s.patrol) ? s.patrol.filter(isVec).map(p => p.slice(0, 3)) : [],
@@ -1789,6 +1820,12 @@ canvas.addEventListener('pointerup', ev => {
   if (d.button === 2) { const [lx, lz] = toWorld(d.sx, d.sy); if (lookAt(lx, lz)) say('Enemy ' + (state.selected + 1) + ' now looks that way.'); return; }
   if (d.button !== 0) return;
   const [wx, wz] = toWorld(d.sx, d.sy), y = groundAt(wx, wz);
+  if (state.order && !d.target) {
+    const ids = state.order; state.order = null;
+    if (y === null) return say('Nobody can walk there. Pick a spot on the shaded ground.');
+    liveCommand('order', { ids, pos: [r2(wx), r2(y), r2(wz)] });
+    return say(ids.length + (ids.length === 1 ? ' enemy is' : ' enemies are') + ' told to go there.');
+  }
   if (state.tool === 'add' && !d.target) {
     if (y === null) return say('Nobody can walk there. Click on the shaded ground' + (isFinite(state.ceiling) ? ', or raise "Show up to" to reach higher floors.' : '.'));
     pushUndo();
@@ -1915,7 +1952,7 @@ function syncSide() {
     setVal($('group'), e.group + 1); setVal($('yaw'), Math.round(e.yaw)); setVal($('wander'), e.wanderDistance); setVal($('wait'), e.patrolWaitSeconds);
     $('defensive').checked = e.defensive; $('fixed').checked = e.fixed; $('prone').checked = e.prone; $('hvt').checked = !!e.hvt; $('vehicle').checked = !!e.vehicle;
     setVal($('chance'), e.chance || 100); syncEither(e); setVal($('team'), String(e.team || 0));
-    setVal($('minPlayers'), Math.max(1, e.minPlayers || 1)); setVal($('skill'), e.skill || ''); $('nvg').checked = !!e.nvg;
+    setVal($('minPlayers'), Math.max(1, e.minPlayers || 1)); setVal($('skill'), e.skill || ''); $('nvg').checked = !!e.nvg; setVal($('tag'), e.tag || ''); $('tagList').replaceChildren(...tagsOf().map(t => Object.assign(document.createElement('option'), { value: t })));
     $('wanderRow').hidden = e.role !== 'Wander'; $('waitRow').hidden = e.role !== 'Patrol';
     $('clearRoute').hidden = !(e.role === 'Patrol' && e.patrol.length);
     syncPos();
@@ -2011,6 +2048,9 @@ function syncSide() {
       const sum = mk('div', { className: 'sum hint' });
       const act = mk('div', { className: 'what' });
       const pick = (label, options, value, set) => { const sel = mk('select'); sel.setAttribute('aria-label', label + ' of ' + trigTitle(z)); options.forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t }))); sel.value = value || ''; sel.addEventListener('change', () => { pushUndo(); set(sel.value); changed(); }); return sel; };
+      if (z.when === 'zone') { const el = mk('label'), eb = mk('input', { type: 'checkbox', checked: !!z.everyone }); eb.setAttribute('aria-label', 'Every player must be in zone ' + z.id); eb.addEventListener('change', () => { pushUndo(); z.everyone = eb.checked; changed(); }); el.append(eb, ' every player, not just one'); what.append(el); }
+      if (z.when === 'down') { const tags = tagsOf(); what.append(grp('Only those tagged', pick('Tag wanted', [['', 'any enemy'], ...tags.map(t => [t, t]), ...(z.tag && !tags.includes(z.tag) ? [[z.tag, z.tag + ' (no enemy has it)']] : [])], z.tag || '', v => { z.tag = v; }))); }
+      if (z.when === 'door') { const at = doorOf(z); what.append(grp('This door is opened or broken:', pick('Door watched', [...(at === '' ? [['', isVec(z.pos) ? 'the door from the file' : 'choose a door']] : []), ...state.doors.map((d, i) => [String(i), (d.name || 'Door') + ' ' + (i + 1)])], at, v => { if (v !== '' && state.doors[+v]) z.pos = state.doors[+v].pos.slice(0, 3); })), state.doors.length ? '' : ' Doors are listed once the game has sent them, on the World tab.'); }
       let ofBox = null;
       if (z.when === 'all' || z.when === 'any') {
         ofBox = mk('div', { className: 'of' });
@@ -2024,16 +2064,23 @@ function syncSide() {
       }
       const odds = mk('div', { className: 'what' });
       odds.append(grp('Chance', numIn(z.chance || 100, 1, 100, 5, 'Chance in percent that ' + trigTitle(z) + ' is part of the mission', v => { z.chance = Math.round(v); }), '%'));
-      if (z.delay >= 20) { const wl = mk('label'), wb = mk('input', { type: 'checkbox', checked: !!z.warn }); wb.setAttribute('aria-label', 'Warn players before ' + trigTitle(z)); wb.addEventListener('change', () => { pushUndo(); z.warn = wb.checked; changed(); }); wl.append(wb, ' tell players when time is nearly up'); odds.append(wl); }
+      if (z.delay >= 20) { const wl = mk('label'), wb = mk('input', { type: 'checkbox', checked: !!z.warn }); wb.setAttribute('aria-label', 'Warn players before ' + trigTitle(z)); wb.addEventListener('change', () => { pushUndo(); z.warn = wb.checked; changed(); }); wl.append(wb, ' tell players how much time is left'); odds.append(wl); }
+      odds.append(grp('Again after', numIn(Math.round(z.repeat || 0), 0, 3600, 10, 'Seconds before ' + trigTitle(z) + ' may fire again', v => { z.repeat = v > 0 && v < 5 ? 5 : v; }), 's'));
+      if (z.repeat > 0) odds.append(grp('at most', numIn(z.times | 0, 0, 100, 1, 'How often ' + trigTitle(z) + ' may fire', v => { z.times = v | 0; }), 'times (0: no limit)'));
       act.append(grp('Lights', pick('Lights', [['', 'stay as they are'], ['off', 'go out'], ['on', 'come back on']], z.power, v => { z.power = v; })),
                  grp('Mission', pick('End of the mission', [['', 'goes on'], ['success', 'ends as a success'], ['failed', 'ends as failed']], z.end, v => { z.end = v; })));
+      const rg = grp('Enemies within', numIn(Math.round(z.rally || 0), 0, 300, 10, 'Metres within which enemies walk to the place of ' + trigTitle(z), v => { z.rally = v; }), 'm walk there');
+      rg.title = 'There: where the player stood who set off a zone, the door of a door trigger, and otherwise where the first player is.'; act.append(rg);
       const msg = mk('input', { type: 'text', className: 'msg', value: z.message || '', placeholder: 'Message on every player\'s screen (optional)', maxLength: 120 }); msg.setAttribute('aria-label', 'Message of ' + trigTitle(z));
       msg.addEventListener('change', () => { pushUndo(); z.message = cleanMessage(msg.value); changed(); });
-      sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), z.power ? (z.power === 'off' ? 'lights out' : 'lights on') : '', z.message ? 'shows a message' : '', z.end ? 'ends the mission' : '', locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
+      msg.title = '{enemies}, {players} and {time} become the numbers of the moment';
+      const redL = mk('label'), redB = mk('input', { type: 'checkbox', checked: !!z.red }); redB.setAttribute('aria-label', 'Show the message of ' + trigTitle(z) + ' in red');
+      redB.addEventListener('change', () => { pushUndo(); z.red = redB.checked; changed(); }); redL.append(redB, ' in red'); redL.hidden = !z.message;
+      sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), z.power ? (z.power === 'off' ? 'lights out' : 'lights on') : '', z.message ? 'shows a message' : '', z.end ? 'ends the mission' : '', z.rally > 0 ? 'calls enemies' : '', z.repeat > 0 ? 'repeats' : '', locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
       const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
       exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
       exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
-      li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, sum); zl.appendChild(li);
+      li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, redL, sum); zl.appendChild(li);
     });
   }
   // Settings for the whole mission.
@@ -2047,7 +2094,7 @@ function syncSide() {
   fill($('insertion'), [['', 'Each player\'s own choice'], ...ways.map(n => [n, 'Everyone starts at ' + n])], state.insertion);
   setVal($('wxRain'), state.weather.rain === null ? '' : state.weather.rain ? '1' : '0'); setVal($('wxStorm'), state.weather.sandstorm === null ? '' : state.weather.sandstorm ? '1' : '0');
   setVal($('wxHour'), state.weather.hour === null ? '' : state.weather.hour);
-  setVal($('power'), state.power || '');
+  setVal($('power'), state.power || ''); setVal($('allSkill'), state.allSkill || ''); $('allNvg').checked = !!state.allNvg;
   if (document.activeElement !== $('briefing')) $('briefing').value = state.briefing.join('\n');
   const wn = state.weatherNow;
   $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. Lights work on maps with a breaker box; Clean House has one. '
@@ -2155,6 +2202,24 @@ $('team').addEventListener('change', ev => editPicked(list => { const t = +ev.ta
 $('minPlayers').addEventListener('change', ev => editPicked(list => { const n = Math.max(1, Math.min(8, Math.round(+ev.target.value || 1))); for (const e of list) e.minPlayers = n > 1 ? n : 0; }));
 $('skill').addEventListener('change', ev => editPicked(list => { const v = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; for (const e of list) e.skill = v; }));
 $('nvg').addEventListener('change', ev => editPicked(list => { for (const e of list) e.nvg = ev.target.checked; }));
+$('tag').addEventListener('change', ev => editPicked(list => { const v = cleanTag(ev.target.value); for (const e of list) e.tag = v; }));
+$('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkill = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; }));
+$('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
+$('gmOrder').addEventListener('click', () => {
+  const ids = picked().map(i => state.enemies[i]).filter(e => e && e.live && e.id).map(e => e.id);
+  if (!ids.length) return say('Select one or more live enemies first.');
+  state.order = ids; say('Now click the spot on the map where ' + (ids.length === 1 ? 'that enemy' : 'those ' + ids.length + ' enemies') + ' should go.');
+});
+$('recipeAdd').addEventListener('click', () => {
+  pushUndo(); let id = state.zones.reduce((m, q) => Math.max(m, q.id), 0);
+  const add = (when, more) => { const z = newTrigger(++id, when, more); state.zones.push(z); return z; }, kind = $('recipe').value;
+  if (kind === 'countdown') { const a = add('intel', { name: 'Intel taken', message: 'You have the intel. Get out.' }); add('after', { name: 'Out of time', after: a.id, delay: 180, warn: true, message: 'Out of time.', red: true, end: 'failed' }); }
+  else if (kind === 'help') add('alert', { name: 'Alarm', delay: 5, rally: 60, message: 'They know you are here.', red: true });
+  else if (kind === 'waves') add('time', { name: 'Help arrives', delay: 120, repeat: 120, times: 3, message: 'More of them are coming.' });
+  else if (kind === 'blackout') add('alert', { name: 'Blackout', delay: 3, power: 'off', message: 'They cut the power.' });
+  else add('down', { name: 'Targets down', tag: 'target', count: 0, message: 'All targets are down.', end: 'success' });
+  changed(); say('Added. Change the texts and the times to taste' + (kind === 'waves' ? ', and bind enemies to it on the Enemies tab.' : kind === 'targets' ? ', and give enemies the tag "target".' : '.'));
+});
 $('briefing').addEventListener('change', ev => missionEdit(() => { state.briefing = briefingIn(ev.target.value.split('\n')); }));
 $('doorChance').addEventListener('change', ev => doorEdit(d => { d.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
 $('thingChance').addEventListener('change', ev => editThing(t => { t.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
@@ -2594,7 +2659,7 @@ async function applyLive(s) {
     live.rev = s.rev;
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
-    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing });
+    settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing, skill: s.skill, nvg: s.nvg });
     if (typeof s.night === 'boolean') state.night = s.night;
     if (Array.isArray(s.insertionSpots)) state.insertionSpots = s.insertionSpots.filter(q => q && q.name && isVec(q.pos));
     live.satOut = s.satOut | 0;
@@ -2667,7 +2732,7 @@ function missionCheck() {
   const canFire = (z, trail) => {
     if (memo.has(z.id)) return memo.get(z.id);
     let ok = true;
-    if (z.when === 'zone') ok = isVec(z.pos);
+    if (z.when === 'zone' || z.when === 'door') ok = isVec(z.pos);
     else if (z.when === 'after') { const p = byId(z.after); ok = !!p && p.id !== z.id && !trail.includes(p.id) && canFire(p, trail.concat(z.id)); }
     else if (z.when === 'all' || z.when === 'any') {
       const list = (z.of || []).map(byId).filter(q => q && q.id !== z.id), can = q => !trail.includes(q.id) && canFire(q, trail.concat(z.id));
@@ -2679,8 +2744,11 @@ function missionCheck() {
   const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
   for (const z of state.zones) {
     const n = state.enemies.filter(e => e.trigger === z.id).length;
-    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked !== null) || z.opensExtraction || z.power || z.message || z.end || state.extractionAfter === z.id || state.zones.some(q => (q.when === 'after' && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
+    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked !== null) || z.opensExtraction || z.power || z.message || z.end || z.rally > 0 || state.extractionAfter === z.id || state.zones.some(q => (q.when === 'after' && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
     const byHand = z.when === 'after' && !z.after;
+    if (z.when === 'door' && !isVec(z.pos)) add('problem', name(z) + ' waits for a door, but no door is chosen.', toTriggers);
+    if (z.when === 'down' && z.tag && !state.enemies.some(e => e.tag === z.tag)) add('problem', name(z) + ' waits for enemies tagged "' + z.tag + '", but no enemy has that tag.', toTriggers);
+    if (z.repeat > 0 && z.end) add('note', name(z) + ' repeats, but it also ends the mission: it will only fire once.', toTriggers);
     if (byHand) { if (does) add('note', name(z) + ' fires only when the Game Master presses Fire now.', toTriggers); }
     else if (!canFire(z, [])) add('problem', name(z) + ' can never fire: ' + (z.when === 'zone' ? 'it has no place on the map' : z.when === 'all' || z.when === 'any' ? ((z.of || []).length ? 'the triggers it waits for can never fire, or wait for it' : 'no triggers are ticked for it') : byId(z.after) ? 'it waits for a trigger that in turn waits for it' : 'the trigger it waits for is gone') + '.', toTriggers);
     if (!does) add('warning', name(z) + ' does nothing: no enemy, door, message or other action belongs to it.', toTriggers);
@@ -2748,7 +2816,8 @@ const TRY_HINTS = {
   message: 'Shows a yellow notice on every player\'s screen. It tells us whether the mod can talk to friends who have no mod.',
   'power:off': 'Switches off the map\'s breaker box and the lights wired to it. Clean House has one; it shows best at night.',
   'power:on': 'Switches the breaker box back on.',
-  walk: 'Gives every enemy that can walk a route of one stop: the spot where you stand. Telling them a sound was heard moved nobody in two runs; this uses the game\'s own patrol.',
+  walk: 'Gives every enemy that can walk a route of one stop: the spot where you stand. In a run they came, but only set off some twenty seconds later; they are now told to leave at once.',
+  doors: 'Tells every door on the map to open. Not tried yet.',
   sides: 'Moves every second enemy to another team. Watch whether the two sides start to fight each other.',
   thing: 'Places it where the selected enemy marker is, or 6 m in front of you when no marker is selected. Two seconds later the game reports whether it is still there. A rifle or the chair is the easiest to see; the flashbang and the landmine of the last run could not be seen.',
   respawn: 'Asks the game to bring every player back. It may also send living players back to the start.',
@@ -2784,7 +2853,7 @@ function tryOut() {
 $('tryWhat').addEventListener('change', syncTry);
 $('tryGo').addEventListener('click', tryOut);
 
-window.missionlabEditor = { syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+window.missionlabEditor = { tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

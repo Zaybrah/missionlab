@@ -196,6 +196,24 @@ foreach (var (name, kind) in new[] { ("Cell Phone_1", "cell phone"), ("Cell Phon
     if (!ok) { Console.WriteLine("  FAIL: things, sides or the hold and down triggers do not survive save and load: " + back.ToJson()); failures++; }
     else Console.WriteLine("  things, sides, hold and down triggers: survive save and load");
 }
+{   // 0.22: tags, door triggers, every player, repeats, rally, red messages, the scenario's own skill
+    string src = "{\"skill\":\"veteran\",\"nvg\":true," +
+                 "\"triggers\":[{\"id\":1,\"when\":\"down\",\"tag\":\" off!icer \",\"count\":0,\"repeat\":2,\"times\":3,\"rally\":40,\"message\":\"x\",\"red\":true}," +
+                 "{\"id\":2,\"when\":\"door\",\"pos\":[1,2,3]},{\"id\":3,\"when\":\"door\"},{\"id\":4,\"when\":\"zone\",\"pos\":[0,0,0],\"radius\":5,\"everyone\":true},{\"id\":5,\"when\":\"time\",\"everyone\":true,\"tag\":\"a\",\"times\":4}]," +
+                 "\"spawns\":[{\"pos\":[0,0,0],\"tag\":\"Officer\"},{\"pos\":[1,0,0]}]}";
+    var np = MissionPlan.FromJson(src);
+    var back = MissionPlan.FromJson(np.ToJson());
+    string js = np.ToJson();
+    bool ok = back.Skill == "veteran" && back.Nvg && back.Triggers.Count == 4                                    // the door trigger without a door is dropped
+        && back.Triggers[0].Tag == "officer" && back.Triggers[0].Repeat == 5f && back.Triggers[0].Times == 3 && back.Triggers[0].Rally == 40f && back.Triggers[0].Red
+        && back.Triggers[1].When == TriggerPlan.OnDoor && back.Triggers[1].Pos.X == 1f && back.Triggers[2].Everyone && !back.Triggers[3].Everyone
+        && back.Spawns[0].Tag == "Officer" && back.Spawns[1].Tag == "" && back.ToJson() == js
+        && !MissionPlan.SpawnJson(back.Spawns[1]).Contains("tag") && MissionPlan.FromJson("{\"skill\":\"hero\",\"spawns\":[]}").Skill == "" && SpawnPlan.CleanTag("  a<b>c  ") == "abc" && SpawnPlan.CleanTag(new string('x', 40)).Length == 24;
+    // The fifth trigger is a timer: "everyone" and "tag" are not written for it, "times" is not written without a repeat.
+    string fifth = js.Substring(js.IndexOf("\"id\":5")); fifth = fifth.Substring(0, fifth.IndexOf('}'));
+    ok = ok && !fifth.Contains("everyone") && !fifth.Contains("tag") && !fifth.Contains("times");
+    if (!ok) { Console.WriteLine("  FAIL: the 0.22 fields do not survive save and load: " + js); failures++; }
+}
 {   // 0.21: trigger logic, chance on doors, things and triggers, players needed, skill, name and briefing
     string src = "{\"name\":\" Night raid \",\"briefing\":[\"Get  the phone.\",\"\",\"Leave by the east gate.\",\"3\",\"4\",\"5\"]," +
                  "\"doors\":[{\"name\":\"A\",\"pos\":[1,0,1],\"locked\":true,\"chance\":50},{\"name\":\"B\",\"pos\":[2,0,2],\"locked\":true}]," +

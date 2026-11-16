@@ -220,9 +220,32 @@ in the enemy panel, for everything selected.
   `"warn": true` tells the players when one minute and when ten seconds are left of its wait.
 - **Chance for doors and things.** `"chance"` on a door setting or a thing: how often it applies.
 - **Players needed.** `"minPlayers": 3` on an enemy: only there with three or more players.
-- **Skill and night vision** (not tried in the game yet). `"skill": "recruit"` or `"veteran"`
+- **Skill and night vision** (applied in a run, by the log; the difference was not noticed in play). `"skill": "recruit"` or `"veteran"`
   scales the enemy's reaction time, inaccuracy and hit chance from what the game gave it;
   `"nvg": true` gives it night vision.
+### New in 0.22
+- **Countdown, told in full.** `"warn": true` on a trigger with a wait now tells the players how long
+  they have a few seconds after the clock starts, again at five minutes (waits of six minutes and
+  more), at one minute and, in red, at ten seconds. Each line is written to the log and the recording.
+- **Tags.** `"tag": "officer"` on enemies, and `"when": "down"` with `"tag": "officer"` on a trigger:
+  it fires when the enemies with that tag are down (`"count": 0` for all of them).
+- **Door trigger.** `"when": "door"` with the door's `"pos"`: fires when that door is opened or broken.
+- **Every player.** `"everyone": true` on a zone or hold trigger: all living players must be inside.
+- **Repeat.** `"repeat": 120` lets a trigger fire again 120 seconds later, `"times": 3` caps it. A
+  timer fires on the clock; other kinds wait for their condition again. Enemies bound to it that
+  have gone down come back.
+- **Calling enemies.** `"rally": 40` on a trigger: enemies within 40 m walk to its place (the player
+  who set off a zone, the door of a door trigger, otherwise the first player).
+- **Messages.** `"red": true` shows a trigger's message as a red warning. `{enemies}`, `{players}`
+  and `{time}` in any message become the numbers of the moment.
+- **Skill for the whole scenario.** `"skill": "recruit"` or `"veteran"` and `"nvg": true` at the top
+  of the file apply to every enemy of the scenario that has no skill of its own. Mission tab.
+- **Game Master: send enemies.** With the game connected: select live enemies, press "Send selected
+  enemies…", click the spot. They walk there.
+- **Ready-made sets** on the Triggers tab: a countdown after the intel, an alarm that calls help,
+  help every two minutes, lights out on the alarm, success when the tagged enemies are down.
+- **Try-out:** every door opens.
+
 With the game connected, the Map tab has a Game Master box: a message for every player, and the
 lights. In the editor the danger check now looks only at the insertion the scenario chose and
 knows that enemies see 25 m at night; the mission check also flags enemies that would appear in

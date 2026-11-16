@@ -210,6 +210,19 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   IgnoreFakeGI, Interactable. PlayerBlock holds the invisible walls. "Has a renderer nearby"
   does not tell visible from invisible shapes.
 
+## Run of 16 November 2026 (0.21.0, Clean House by night)
+
+- **Orders by patrol route work, late.** Setting `aiPatrol` to a one-stop route and `idleStates` to
+  Patrol moved idle enemies to the spot, but only some twenty seconds after the order (three orders
+  at 313 s, 340 s and 357 s; movement from about 365 s). 0.22 also sets `patrolWaitTime = 0`,
+  `onReachDestination = MoveImmediately` and `patrolTimer = 0`. Whether they now leave at once is open.
+- **The countdown was not due.** Intel at 172.6 s plus a wait of 300 s puts the first warning at
+  412 s; the mission was ended by hand at 396 s. 0.22 announces the clock when it starts.
+- **Skill is applied.** Log: veteran reaction 0.24 to 0.14, inaccuracy 0.78 to 0.47, hit chance 1.00
+  to 1.35; recruit reaction 0.23 to 0.36, inaccuracy 1.89 to 3.02, hit chance 0.80 to 0.48. One
+  enemy more or less sharp was not noticed in play; 0.22 can set it for all enemies.
+- **Failed ending:** red message, then `EndOperation()` five seconds later: ran as written.
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.

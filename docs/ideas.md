@@ -35,7 +35,6 @@ collects them: breakers, alarms, mines, weapon racks, teams, everything spawnabl
 | Idea | What the game has |
 |---|---|
 | Lights out | `BreakerSwitch` (`PowerOn` synced, `CMD_SetPowerState`), on maps that have one |
-| Orders for enemies | `BrainAI.HeardTarget(position, ...)`, `CalledBackup(position, ...)`, `SetNewAiState` |
 | Win and lose rules | `GameManagerNetwork.ShowMissionCompleteScreen`, the mission-failed popup |
 | Mines and other placeable things | `Landmine`, `ProximityExplosive`, `N_WeaponSpawner`; anything in `NetworkManager.spawnPrefabs` |
 | Factions | `TeamIdentifier.TeamID` (synced) on enemies and players, `TeamManager.GrabAllEnemies` |
@@ -76,6 +75,15 @@ doors and things; a countdown warning; players needed per enemy; skill and night
 enemy; Game Master box (message, lights) in the live page; danger check for the chosen insertion
 and for night; pop-in check.
 
+### Built in 0.22 (tested in the editor and the core, not yet in the game)
+
+Countdown told at its start, at five minutes, one minute and ten seconds, each logged; tags on
+enemies and a "tagged enemies down" trigger; door trigger; "every player" for zones; repeating
+triggers; triggers that call nearby enemies; red messages and {enemies} {players} {time}; skill and
+night vision for the whole scenario; Game Master "send selected enemies"; ready-made trigger sets;
+try-out "every door opens". Orders: the one-stop patrol route moved enemies in the run of
+16 November, some twenty seconds late; they are now told to leave at once.
+
 ### B: next
 
 | What | Why this grade | Shown in the game so far | Work |
@@ -84,11 +92,10 @@ and for night; pop-in check.
 | A way to fail a mission | Red message, then the game's end operation: built in 0.20.1. | end operation seen; the pair not yet | done once seen |
 | Which call marks a run as cheated | Decides whether a mod-ended win can look clean. | one of respawns on, failed, forced extraction | small |
 | Respawn rules and rally points | Co-op friends stop watching after a death. Touches players, so V10 may break it. | the call did nothing to a living player | medium |
-| Hunters from behind, adaptive pacing | Needs orders that work. | waits for orders | medium |
+| Hunters from behind, adaptive pacing | Orders work (0.22: send, rally). Next: enemies sent to a spot behind the players, and more or fewer by how the players fare. | orders seen once, late | medium |
 | Game Master on another device | A friend runs the mission from a second screen; needs a password and care. | not started | medium |
 | Enemies that sit out, shown in the live page | The Game Master sees what the roll left out and can bring it in. | needs no game | small |
 | Things in the 3D view, by hand | Things show in 3D but can only be placed and moved in 2D. | needs no game | small |
-| Repeating triggers | A wave every two minutes from one trigger. | needs no game | medium |
 
 ### C: later
 

@@ -137,6 +137,7 @@ namespace MissionLab
                     case "power": said = Power((arg ?? "") == "on"); break;
                     case "message": said = Message(raid, arg); break;
                     case "walk": said = Walk(gm); break;
+                    case "doors": said = OpenDoors(); break;
                     case "thing": said = Thing(arg, hasPos, pos); break;
                     case "sides": said = Sides(gm); break;
                     case "respawn": said = Respawn(); break;
@@ -176,6 +177,7 @@ namespace MissionLab
         internal static string Message(RaidManager raid, string text, bool red = false)
         {
             if (string.IsNullOrWhiteSpace(text)) text = "MissionLab: test message";
+            text = Fill(text);
             if (text.Length > 120) text = text.Substring(0, 120);
             ExfilZone zone = null;
             var zones = raid.exfilZones;
@@ -183,6 +185,24 @@ namespace MissionLab
             if (zone == null) return "message: this map has no extraction zone to send it through";
             zone.RPCHint(text, red ? Popup.PopupType.RedWarning : Popup.PopupType.YellowWarning);
             return "message sent to every player's screen: \"" + text + "\"";
+        }
+
+        /// <summary>{enemies}, {players} and {time} in a message become the numbers of the moment.</summary>
+        private static string Fill(string text)
+        {
+            if (text.IndexOf('{') < 0) return text;
+            try
+            {
+                int enemies = 0, players = 0;
+                GameManager gm = GameManager.instance; var ai = gm == null ? null : gm.allAI;
+                for (int i = 0; ai != null && i < ai.Count; i++) if (ai[i] != null) enemies++;
+                var all = PlayerMaster.AllPlayerMasters;
+                for (int i = 0; all != null && i < all.Count; i++) if (all[i] != null && all[i].PlayerSpawnedObject != null) players++;
+                int secs = Mathf.Max(0, Mathf.RoundToInt(Time.unscaledTime - Director.HandledAt));
+                text = text.Replace("{enemies}", enemies.ToString()).Replace("{players}", players.ToString()).Replace("{time}", (secs / 60) + ":" + (secs % 60).ToString("00"));
+            }
+            catch { }
+            return text;
         }
 
         // ------------------------------------------------------------------ enemies
@@ -216,47 +236,81 @@ namespace MissionLab
             return told == 0 ? "hunt: no enemy could be told (" + all + " alive)" : "hunt: " + told + " of " + all + " enemies were told where the nearest player is";
         }
 
-        /// <summary>
-        /// Every enemy that can walk gets a route of one stop: a spot around the first player. The game's own patrol
-        /// takes them there. (Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody in two runs.)
-        /// </summary>
-        private static string Walk(GameManager gm)
+        internal static Vector3 FirstPlayer()
         {
-            Vector3 to = Vector3.zero; bool have = false;
             var players = PlayerMaster.AllPlayerMasters;
-            for (int i = 0; players != null && i < players.Count && !have; i++)
+            for (int i = 0; players != null && i < players.Count; i++)
             {
                 PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
-                if (body != null) { to = body.transform.position; have = true; }
+                if (body != null) return body.transform.position;
             }
-            if (!have) return "walk: no player to walk to";
-            foreach (GameObject old in Orders) try { if (old != null) UnityEngine.Object.Destroy(old); } catch { }
-            Orders.Clear();
-            int told = 0, all = 0;
+            return Vector3.zero;
+        }
+
+        internal static string Clock(float seconds)
+        {
+            int s = Mathf.Max(0, Mathf.RoundToInt(seconds));
+            return s >= 60 ? (s / 60) + (s % 60 == 0 ? (s / 60 == 1 ? " minute" : " minutes") : ":" + (s % 60).ToString("00") + " minutes") : s + " seconds";
+        }
+
+        /// <summary>
+        /// Enemies that can walk get a route of one stop, spread around a spot, and set off at once; the game's own
+        /// patrol takes them there. (Seen in a run: with the game's usual pause they only left after some twenty seconds.
+        /// Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody.)
+        /// within: only enemies this close to the spot (0: any distance). only: just these enemies (null: all).
+        /// </summary>
+        internal static int WalkTo(GameManager gm, Vector3 to, float within, HashSet<IntPtr> only)
+        {
+            if (gm == null) return 0;
+            int told = 0;
             var ai = gm.allAI;
             for (int i = 0; ai != null && i < ai.Count; i++)
             {
                 BrainAI b = ai[i];
-                if (b == null) continue;
-                all++;
+                if (b == null || (only != null && !only.Contains(b.Pointer))) continue;
                 try
                 {
                     AgentController legs = b.agent;
                     if (legs == null || !legs.entityExists) continue;                      // a gunner, or someone told to stand still
+                    if (within > 0f && (b.transform.position - to).sqrMagnitude > within * within) continue;
                     float turn = told * 2.4f;                                             // spread around the spot, 2 m out
-                    var stop = new GameObject("MissionLab order " + told);
+                    var stop = new GameObject("MissionLab order " + Orders.Count);
                     stop.transform.position = to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f);
                     Orders.Add(stop);
                     AIPatrol route = b.aiPatrol;
                     if (route == null) { route = new AIPatrol(); b.aiPatrol = route; }
                     var stops = new Il2Generic.List<Transform>(); stops.Add(stop.transform);
                     route.patrolPoints = stops; route.currentWayPointIndex = 0; route.Looping = false;
+                    route.patrolWaitTime = 0f; route.onReachDestination = AIPatrol.OnReachDestination.MoveImmediately;
+                    b.patrolTimer = 0f;
                     b.idleStates = BrainAI.IdleStates.Patrol;
                     told++;
                 }
                 catch { }
             }
-            return told == 0 ? "walk: no enemy could be sent (" + all + " alive)" : "walk: " + told + " of " + all + " enemies were given a one-stop route to " + P(to);
+            if (Orders.Count > 200) { for (int i = 0; i < 100; i++) try { if (Orders[i] != null) UnityEngine.Object.Destroy(Orders[i]); } catch { } Orders.RemoveRange(0, 100); }
+            return told;
+        }
+
+        private static string Walk(GameManager gm)
+        {
+            Vector3 to = FirstPlayer();
+            if (to == Vector3.zero) return "walk: no player to walk to";
+            int told = WalkTo(gm, to, 0f, null);
+            return told == 0 ? "walk: no enemy could be sent" : "walk: " + told + " enemies were given a one-stop route to " + P(to) + " and told to set off at once";
+        }
+
+        private static string OpenDoors()
+        {
+            var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<DoorV2>(), false);
+            int n = 0;
+            for (int i = 0; found != null && i < found.Length; i++)
+            {
+                DoorV2 d = found[i] == null ? null : found[i].TryCast<DoorV2>();
+                if (d == null || d.isDead) continue;
+                try { d.UserCode_CMD_SetDoorClosed__Boolean(false); n++; } catch { try { d.RPC_SetDoorClosed(false); n++; } catch { } }
+            }
+            return "doors: " + n + " doors were told to open";
         }
 
         /// <summary>A shot that was never fired: the game is told one was heard where the first player stands.</summary>
