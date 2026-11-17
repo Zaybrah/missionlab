@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Builds the MissionLab plugins against the game's own .NET 6 runtime, BepInEx and interop assemblies.
-#   MissionLab.Recon.dll     read-only observer (writes what a mission contains to JSON)
-#   MissionLab.Director.dll  replaces the enemy layout from a seed (includes MissionLab.Core)
+# Builds dist/MissionLab.Director.dll and dist/MissionLab.Recon.dll; the work is in tools/build.py.
+#   OPERATOR_REFS=<OPERATOR folder> ./build.sh     or     ./build.sh --refs <OPERATOR folder>
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-REFS="${OPERATOR_REFS:-/mnt/user-data/uploads/OPERATOR}"
-CSC="$(ls /usr/lib/dotnet/sdk/*/Roslyn/bincore/csc.dll | tail -1)"
-OUT="$HERE/dist"
-mkdir -p "$OUT"
-args=()
-for f in "$REFS"/dotnet/*.dll "$REFS"/BepInEx/core/*.dll "$REFS"/BepInEx/interop/*.dll; do args+=("-r:$f"); done
-common=(-nologo -target:library -nostdlib -noconfig -langversion:10 -optimize+ -deterministic -nowarn:CS1701,CS1702)
-dotnet "$CSC" "${common[@]}" -out:"$OUT/MissionLab.Recon.dll" "${args[@]}" "$HERE"/src/MissionLab.Recon/*.cs
-dotnet "$CSC" "${common[@]}" -out:"$OUT/MissionLab.Director.dll" "${args[@]}" "$HERE"/src/MissionLab.Core/*.cs "$HERE"/src/MissionLab.Director/*.cs
-ls -la "$OUT"
+# On Windows "python3" can be the Microsoft Store stub, so try each name before using it.
+for py in python3 python; do
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import sys' >/dev/null 2>&1; then
+    exec "$py" "$HERE/tools/build.py" "$@"
+  fi
+done
+echo "No working python3 or python found; install Python 3." >&2
+exit 2

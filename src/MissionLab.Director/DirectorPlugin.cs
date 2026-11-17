@@ -21,7 +21,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.24.2";
+        public const string Version = "0.24.3";
 
         internal static ManualLogSource L;
 
@@ -69,7 +69,7 @@ namespace MissionLab
         internal static ConfigEntry<string> FairPlay;
         internal static ConfigEntry<bool> TellPlayers;
         internal static ConfigEntry<bool> GmEnabled;
-        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget, RandomExtras, ReplayEnabled;
+        internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget, RandomExtras, RandomIntel, ReplayEnabled;
         internal static ConfigEntry<int> ReplayKeep;
         internal static ConfigEntry<int> LivePort;
         internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
@@ -122,10 +122,12 @@ namespace MissionLab
                 "0 = use the enemy count chosen on the mission laptop. Otherwise force this many enemies (1-60).");
             Scenes = Config.Bind("General", "Scenes", "*",
                 "Comma-separated scene names where the director is active. * = every PvE mission.");
-            MoveTarget = Config.Bind("General", "MoveTarget", true,
-                "In missions with a target person, a generated layout also picks a new place for the target. false = the game's own places.");
+            MoveTarget = Config.Bind("General", "MoveTarget", false,
+                "In missions with a target person, a generated layout also picks a new place for the target. Off by default: a moved target has not been checked in the game yet. true = experimental; false = the game's own places.");
             RandomExtras = Config.Bind("General", "RandomExtras", true,
-                "A random layout also gets a wave of enemies that comes once the enemy is alerted, an ambush where players walk into a building, a few locked doors, and the intel laid somewhere else. false = positions only.");
+                "A random layout also gets a wave of enemies that comes once the enemy is alerted, an ambush where players walk into a building, and a few locked doors. The intel is only laid somewhere else with RandomIntel. false = positions only.");
+            RandomIntel = Config.Bind("General", "RandomIntel", false,
+                "With RandomExtras, a random layout also lays the intel somewhere else, and taking it may lock a door nearby. Off by default: whether a player without the mod sees moved intel in its new place has not been confirmed in co-op yet. true = experimental.");
             FairPlay = Config.Bind("General", "FairPlay", "Off",
                 "Whether missions played with the mod are marked with the game's own 'cheated' flag (the end screen then says cheating was detected, and there are no achievements). " +
                 "Off = never. ModEndedWins = only when a trigger or the Game Master ends a mission as a success. Always = every mission the mod sets up. " +

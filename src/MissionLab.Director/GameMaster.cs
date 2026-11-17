@@ -39,6 +39,8 @@ namespace MissionLab
             public IntPtr SideFor;      // the live enemy that has already been given this marker's side
             public bool HadBot;         // an enemy has been made from this marker at some time
             public float HuntAt;        // below 0: sets off for the players once its enemy exists; above 0: at that time
+            public string Command = ""; // the page's change that waits to hear whether this marker's enemy was made ("": none)
+            public int Spawn = -1;      // its place in the plan's list of spawns when the mission began (-1: placed during the mission); kept through edits, for the recording
         }
         private sealed class LiveThing { public ThingPlan Plan; public GameObject Go; public bool Placed; }
         private static readonly List<LiveThing> _things = new List<LiveThing>();
@@ -203,7 +205,7 @@ namespace MissionLab
             if (_raidPtr == IntPtr.Zero) return;
             RaidManager raid = RaidManager.singleton;
             GameManager gm = GameManager.instance;
-            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End(); Reset(); Director.EndSession("the mission is over"); return; }
+            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End("the mission is over"); Reset(); Director.EndSession("the mission is over"); return; }
 
             Replay.Tick(raid, gm, now);
             TryOuts.Tick(Time.unscaledTime);
@@ -258,8 +260,8 @@ namespace MissionLab
             _markers = new List<Marker>();
             MissionPlan plan = Director.CurrentPlan;
             if (plan == null) return;
-            foreach (SpawnPlan s in plan.Spawns)
-                _markers.Add(new Marker { Plan = s, Waiting = _later != null && _later.Contains(s) });
+            for (int i = 0; i < plan.Spawns.Count; i++)
+                _markers.Add(new Marker { Plan = plan.Spawns[i], Spawn = i, Waiting = _later != null && _later.Contains(plan.Spawns[i]) });
             _zones = new List<TriggerPlan>(plan.Triggers);
             Engine.Reset(Time.unscaledTime); Engine.Sync(_zones);
             foreach (string problem in Engine.Problems) DirectorPlugin.L.LogWarning("triggers: " + problem);
@@ -563,6 +565,74 @@ namespace MissionLab
         }
         private static readonly Dictionary<IntPtr, Seen> Known = new Dictionary<IntPtr, Seen>();
         private static readonly List<VehicleAI> Vehicles = new List<VehicleAI>();
+
+        /// <summary>
+        /// Who an enemy is, for the recording: the plan's spawn it was made from (its place in this mission's list), or the
+        /// Game Master marker it was made from (-1 for either: not known), and the number of the gun truck it mans (0: none).
+        /// An enemy made again after an edit comes from the same marker, so it stays who it was. An enemy's own object stands
+        /// where it was made, so one that is not linked to its marker yet is matched by that place, as MapBots does.
+        /// </summary>
+        internal static void Identity(BrainAI b, out int spawn, out int marker, out int truck)
+        {
+            spawn = -1; marker = -1; truck = 0;
+            VehicleAI v = TruckOf(b);
+            Vector3 at = b.transform.position;
+            if (v != null) { truck = TruckNumber(v); at = v.transform.position; }
+            float reach = v != null ? 4f : 0.8f;          // a truck is parked on its spot; the gunner sits above it
+            if (_markers != null)
+            {
+                Marker found = null;
+                if (v == null) foreach (Marker m in _markers) if (m.Bot == b.Pointer) { found = m; break; }
+                if (found == null)
+                    foreach (Marker m in _markers)
+                    {
+                        if (m.Plan.Vehicle != (v != null) || (m.Bot != IntPtr.Zero && m.Bot != b.Pointer)) continue;
+                        float d = PlanDistance(m.Plan.Pos, at);
+                        if (d < reach) { reach = d; found = m; }
+                    }
+                if (found == null) return;
+                if (found.Spawn >= 0) spawn = found.Spawn; else marker = found.Id;
+                return;
+            }
+            // No markers yet (nobody has opened the Game Master tools): the plan's list is what the markers will be made from, in the same order.
+            MissionPlan plan = Director.CurrentPlan;
+            for (int i = 0; plan != null && i < plan.Spawns.Count; i++)
+            {
+                SpawnPlan s = plan.Spawns[i];
+                if (s.Vehicle != (v != null)) continue;
+                float d = PlanDistance(s.Pos, at);
+                if (d < reach) { reach = d; spawn = i; }
+            }
+        }
+
+        private static float PlanDistance(V3 p, Vector3 at) => Mathf.Sqrt((at.x - p.X) * (at.x - p.X) + (at.z - p.Z) * (at.z - p.Z)) + Mathf.Abs(at.y - p.Y) * 0.5f;
+
+        /// <summary>The gun truck this enemy mans, or null. A gunner cannot walk, so anyone who can is not looked up.</summary>
+        private static VehicleAI TruckOf(BrainAI b)
+        {
+            try
+            {
+                AgentController legs = b.agent;
+                if (legs != null && legs.entityExists) return null;
+                var found = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<VehicleAI>(), true);
+                for (int i = 0; found != null && i < found.Length; i++)
+                {
+                    VehicleAI v = found[i] == null ? null : found[i].TryCast<VehicleAI>();
+                    BrainAI gunner = v == null ? null : v.turrentBot;
+                    if (gunner != null && gunner.Pointer == b.Pointer) { Crew.Add(b.Pointer); return v; }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>A gun truck's number in this mission, counted in the order the trucks were first seen; a number once given stays.</summary>
+        private static int TruckNumber(VehicleAI v)
+        {
+            for (int i = 0; i < Vehicles.Count; i++) if (Vehicles[i] != null && Vehicles[i].Pointer == v.Pointer) return i + 1;
+            Vehicles.Add(v);
+            return Vehicles.Count;
+        }
 
         /// <summary>
         /// What state an enemy is really in. Recordings show that a state read off a new enemy is not to be trusted:
@@ -1420,14 +1490,15 @@ namespace MissionLab
                 {
                     if (m.TurnedAt < 0f || now - m.TurnedAt < 0.6f || m.Queued) continue;
                     m.TurnedAt = -1f;
-                    if (Special(m.Plan)) continue;                            // the target person is never re-made: it would come back as an ordinary enemy
+                    if (Special(m.Plan)) { Settle(m, CommandLedger.Unconfirmed, "the target and gun trucks are only made at the start; the change applies to the next start"); continue; }   // the target person is never re-made: it would come back as an ordinary enemy
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
-                    if (b == null) continue;                              // not alive: the new facing applies when it spawns
-                    if (!Destroy(b, "made again after an edit")) continue;
+                    if (b == null) { Settle(m, CommandLedger.Applied, "its enemy is no longer alive; the change applies when it is made"); continue; }    // not alive: the new facing applies when it spawns
+                    if (!Destroy(b, "its marker was changed", Replay.KindRemade)) { Settle(m, CommandLedger.Failed, "its enemy could not be taken out to be made again"); continue; }
                     // The game will not spawn onto a spot that is still occupied, and the old enemy is only gone a moment later.
                     m.Bot = IntPtr.Zero; m.Waiting = true;
                     bool held = m.Plan.Trigger != 0 && !Engine.EverFired(m.Plan.Trigger);      // now bound to a zone nobody has reached: it waits there
                     m.RemakeAt = held ? -1f : now + 0.7f;
+                    if (held) Settle(m, CommandLedger.Applied, "its enemy was taken out; it waits for its trigger now");
                 }
                 foreach (Marker m in _markers)
                 {
@@ -1519,7 +1590,7 @@ namespace MissionLab
 
         private static void Fail(Batch batch, string why)
         {
-            foreach (Marker m in batch.Items) m.Queued = false;
+            foreach (Marker m in batch.Items) { m.Queued = false; Settle(m, CommandLedger.Failed, why); }
             _running = null;
             Say(why);
         }
@@ -1535,7 +1606,12 @@ namespace MissionLab
             Restore(raid, gm);
             MapBots(gm, fresh);
             int made = 0;
-            foreach (Marker m in batch.Items) { m.Queued = false; if (m.Bot != IntPtr.Zero) { made++; FacingChecks.Add(new KeyValuePair<Marker, float>(m, now + 1.5f)); } }
+            foreach (Marker m in batch.Items)
+            {
+                m.Queued = false;
+                if (m.Bot != IntPtr.Zero) { made++; FacingChecks.Add(new KeyValuePair<Marker, float>(m, now + 1.5f)); Settle(m, CommandLedger.Applied, "its enemy exists"); }
+                else Settle(m, CommandLedger.Failed, "the game did not make its enemy");
+            }
             _running = null;
             Tell((made == batch.Items.Count ? "spawned " + made : "spawned " + made + " of " + batch.Items.Count) + (made == 1 ? " enemy" : " enemies") +
                 (batch.Type != null ? " of type " + batch.Type : "") + " after " + (now - _runningSince).ToString("0.00", Inv) + " s | enemies alive: " + (ai != null ? ai.Count : 0));
@@ -1818,9 +1894,9 @@ namespace MissionLab
             Say("spawning " + list.Count + " waiting enemies");
         }
 
-        private static bool Destroy(BrainAI b, string why = "removed by the Game Master")
+        private static bool Destroy(BrainAI b, string why = "removed by the Game Master", string kind = Replay.KindRemoved)
         {
-            try { Replay.Removed(b.Pointer, why); Mirror.NetworkServer.Destroy(b.gameObject); return true; }
+            try { Replay.Removed(b.Pointer, kind, why); Mirror.NetworkServer.Destroy(b.gameObject); return true; }
             catch (Exception e) { DirectorPlugin.L.LogWarning("could not remove enemy '" + b.name + "': " + e.Message); return false; }
         }
 
@@ -1925,6 +2001,37 @@ namespace MissionLab
         private static string Q(string s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ") + "\"";
         private static string F(float f) => (float.IsNaN(f) || float.IsInfinity(f) ? 0f : (float)Math.Round(f, 2)).ToString(Inv);
         private static string P(Vector3 v) => "[" + F(v.x) + "," + F(v.y) + "," + F(v.z) + "]";
+        private static string GeoFile(string nav) => Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo");
+
+        /// <summary>
+        /// The state answer with what became of each part of the change, after the last state field:
+        /// "result":{"command":"c1","status":"partial","ops":[{"op":"move","ref":"12","at":3,"status":"failed","said":"why"}],"left":0}
+        /// status of the whole: applied (every part), failed (every part), partial (some failed), pending (some still on their
+        /// way into the game), unconfirmed (asked of the game, the effect cannot be seen). The parts go to the ledger too, so
+        /// GET /api/command/c1 tells a reloaded page, and queued spawns update them when they are made or not.
+        /// </summary>
+        private static string WithResult(string state, string command, Outcome done)
+        {
+            string json = state.Substring(0, state.Length - 1) + ",\"result\":{\"command\":" + Q(command ?? "") + ",\"status\":\"" + done.Overall(CommandLedger.Applied) + "\"," + done.Json() + "}}";
+            try { LiveLink.Ledger.Record(command, done); } catch (Exception e) { DirectorPlugin.L.LogWarning("the result of a browser change could not be kept: " + e.Message); }
+            return json;
+        }
+
+        /// <summary>This marker's enemy is now what the given change waits for. One it waited for before has to make do with the later answer.</summary>
+        private static void Follow(Marker m, string command)
+        {
+            if (m.Command.Length > 0 && m.Command != command) Settle(m, CommandLedger.Unconfirmed, "changed again before its enemy was made; the later change says what became of it");
+            m.Command = command ?? "";
+        }
+
+        /// <summary>The change waiting on this marker hears what became of it.</summary>
+        private static void Settle(Marker m, string status, string said)
+        {
+            if (m.Command.Length == 0) return;
+            string command = m.Command; m.Command = "";
+            try { LiveLink.Ledger.Settle(command, m.Id.ToString(Inv), status, said); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the result of a browser change could not be updated: " + e.Message); }
+        }
 
         /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
         internal static string StateJson()
@@ -1940,7 +2047,7 @@ namespace MissionLab
             var sb = new System.Text.StringBuilder(8192);
             var rev = new System.Text.StringBuilder(2048);
             sb.Append("{\"mission\":true").Append(page).Append(",\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
-            sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo")) ? "true" : "false");
+            sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(GeoFile(nav)) ? "true" : "false");
             var hvtPoints = raid.hvtSpawnPoints;
             sb.Append(",\"targetMission\":").Append(hvtPoints != null && hvtPoints.Length > 0 && gm.botHVTAmount > 0 ? "true" : "false");
             sb.Append(",\"busy\":").Append(_running != null || Pending.Count > 0 ? "true" : "false");
@@ -2029,12 +2136,14 @@ namespace MissionLab
         /// <summary>
         /// The page sends its whole enemy list. New entries become markers (spawned at once if asked),
         /// missing ones are removed with their enemy, and changed ones are updated; a live enemy whose
-        /// marker changed is taken out and made again.
+        /// marker changed is taken out and made again. Each marker added, changed or removed gets a result of its own
+        /// (see WithResult); a spawn stays pending until its enemy exists or the game gives up.
         /// </summary>
-        internal static string Reconcile(string json)
+        internal static string Reconcile(string json, string command)
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
+            var done = new Outcome();
             var ids = new List<int>(); bool spawnNow; MissionPlan sent; MissionPlan settings = null;
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
@@ -2055,7 +2164,11 @@ namespace MissionLab
                 string thingsText = root.TryGetProperty("things", out var ths) && ths.ValueKind == System.Text.Json.JsonValueKind.Array ? ths.GetRawText() : MissionPlan.ThingsJson(thingsNow);
                 sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"doors\":" + doorsText + ",\"things\":" + thingsText + ",\"spawns\":" + list.GetRawText() + "}");
             }
-            if (sent.Spawns.Count != ids.Count) return StateJson();
+            if (sent.Spawns.Count != ids.Count)
+            {
+                done.Add(new CommandOp("markers", "", -1, CommandLedger.Failed, "the enemy list could not be read as sent; nothing was changed"));
+                return WithResult(StateJson(), command, done);
+            }
 
             float now = Time.unscaledTime;
             var byId = new Dictionary<int, Marker>();
@@ -2072,33 +2185,75 @@ namespace MissionLab
                     {
                         bool released = m.Plan.Trigger != 0 && s.Trigger == 0 && m.Waiting && !m.Queued && m.Bot == IntPtr.Zero;   // unbound from its zone
                         bool target = Special(s) || Special(m.Plan);  // the target person and gun trucks are spawned by the game at the start only
+                        string kind = m.Plan.Pos.X != s.Pos.X || m.Plan.Pos.Y != s.Pos.Y || m.Plan.Pos.Z != s.Pos.Z ? "move" : "change";
+                        string reference = m.Id.ToString(Inv);
+                        bool there = m.Plan.Vehicle ? !m.Waiting : m.Bot != IntPtr.Zero;
                         m.Plan = s;
-                        if (target) { }
-                        else if (m.Bot != IntPtr.Zero) m.TurnedAt = now;
-                        else if (released && spawnNow) fresh.Add(m);
+                        if (target)
+                            done.Add(there ? new CommandOp(kind, reference, i, CommandLedger.Unconfirmed, "kept for the next start; the target and gun trucks in the game stay as they are")
+                                           : new CommandOp(kind, reference, i, CommandLedger.Applied, "the target and gun trucks are made at the start only"));
+                        else if (m.Bot != IntPtr.Zero)
+                        {
+                            // Its live enemy is taken out and made again in a moment; that remake gives the answer.
+                            m.TurnedAt = now; Follow(m, command);
+                            done.Add(new CommandOp(kind, reference, i, CommandLedger.Pending, "its enemy is made again with the change"));
+                        }
+                        else if (released && spawnNow)
+                        {
+                            fresh.Add(m); Follow(m, command);
+                            done.Add(new CommandOp(kind, reference, i, CommandLedger.Pending, "no longer bound to a trigger: its enemy is on its way"));
+                        }
+                        else if (m.Queued)
+                        {
+                            Follow(m, command);
+                            done.Add(new CommandOp(kind, reference, i, CommandLedger.Pending, "its enemy is on its way into the game"));
+                        }
+                        else done.Add(new CommandOp(kind, reference, i, CommandLedger.Applied, m.Plan.Trigger != 0 ? "waits for trigger " + m.Plan.Trigger.ToString(Inv) : ""));
                     }
                     result.Add(m);
                 }
                 else
                 {
-                    if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); }
+                    string where = "";
+                    if (!s.Fixed && !OnWalkable(new Vector3(s.Pos.X, s.Pos.Y, s.Pos.Z))) { s.Fixed = true; s.Role = SpawnRole.Guard; s.Patrol.Clear(); where = "not on walkable ground, so it became a fixed sentry; "; }
                     var created = new Marker { Plan = s, Waiting = true };
                     result.Add(created);
-                    if (spawnNow && s.Trigger == 0 && !Special(s)) fresh.Add(created);       // a zone enemy waits for its zone; a target for the next start
+                    string reference = created.Id.ToString(Inv);
+                    if (spawnNow && s.Trigger == 0 && !Special(s))       // a zone enemy waits for its zone; a target for the next start
+                    {
+                        fresh.Add(created); Follow(created, command);
+                        done.Add(new CommandOp("add", reference, i, CommandLedger.Pending, where + "its enemy is on its way"));
+                    }
+                    else done.Add(new CommandOp("add", reference, i, CommandLedger.Applied, where + (s.Trigger != 0 ? "waits for trigger " + s.Trigger.ToString(Inv) : Special(s) ? "made at the next start" : "placed; not spawned")));
                 }
             }
             foreach (Marker gone in byId.Values)
             {
-                if (gone.Queued) { result.Add(gone); continue; }          // on its way into the game: keep it for now
+                string reference = gone.Id.ToString(Inv);
+                if (gone.Queued)
+                {
+                    // On its way into the game: kept for now, or its enemy would appear with no marker to remove it by.
+                    result.Add(gone);
+                    done.Add(new CommandOp("remove", reference, -1, CommandLedger.Failed, "it is being spawned; remove it again once its enemy is there"));
+                    continue;
+                }
+                Settle(gone, CommandLedger.Failed, "removed before its enemy was made");
                 BrainAI b = gone.Bot == IntPtr.Zero ? null : Find(gm, gone.Bot);
-                if (b != null) Destroy(b);
+                if (b == null) done.Add(new CommandOp("remove", reference, -1, CommandLedger.Applied, ""));
+                else if (Destroy(b)) done.Add(new CommandOp("remove", reference, -1, CommandLedger.Unconfirmed, "its enemy was told to go; the game removes it a moment later"));
+                else done.Add(new CommandOp("remove", reference, -1, CommandLedger.Failed, "the marker is gone, but its enemy could not be removed"));
             }
             _markers = result; _aiming = -1; _current = -1;
             // A timer made during the mission counts from now; one that was taken away forgets what it saw.
             foreach (TriggerPlan nt in sent.Triggers) { TriggerPlan was = _zones.Find(z => z.Id == nt.Id); if (was != null) nt.Off = was.Off; }   // a trigger that lost its roll stays out
             _zones = sent.Triggers;
+            var knownProblems = new HashSet<string>(Engine.Problems);
             Engine.Sync(_zones, now);
-            foreach (string problem in Engine.Problems) Say("triggers: " + problem);
+            foreach (string problem in Engine.Problems)
+            {
+                Say("triggers: " + problem);
+                if (!knownProblems.Contains(problem)) done.Add(new CommandOp("triggers", "", -1, CommandLedger.Failed, problem));     // new with this change: it will not fire as meant
+            }
             _wanted = sent.Objectives; PlaceObjectives(raid);
             if (settings != null)
             {
@@ -2113,9 +2268,16 @@ namespace MissionLab
                 if ((settings.Power ?? "") != _power)
                 {
                     _power = settings.Power ?? "";
-                    if (_power != "") try { Tell("lights: " + TryOuts.Power(_power == "on")); } catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set: " + e.Message); }
+                    // The switches are asked to change; whether every light follows is not seen from here.
+                    if (_power != "")
+                        try { string lit = TryOuts.Power(_power == "on"); Tell("lights: " + lit); done.Add(new CommandOp("lights", _power, -1, CommandLedger.Unconfirmed, lit)); }
+                        catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set: " + e.Message); done.Add(new CommandOp("lights", _power, -1, CommandLedger.Failed, e.Message)); }
                 }
-                if (weatherChanged) { try { string w = ApplyWeather(); if (w != null) Tell("weather: " + w); } catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); } }
+                if (weatherChanged)
+                {
+                    try { string w = ApplyWeather(); if (w != null) { Tell("weather: " + w); done.Add(new CommandOp("weather", "", -1, CommandLedger.Unconfirmed, w)); } }
+                    catch (Exception e) { DirectorPlugin.L.LogWarning("weather could not be set: " + e.Message); done.Add(new CommandOp("weather", "", -1, CommandLedger.Failed, e.Message)); }
+                }
                 int holdNow = settings.ExtractionAfter != 0 && sent.Triggers.Exists(t => t.Id == settings.ExtractionAfter) ? settings.ExtractionAfter : 0;
                 if (holdNow != _holdAfter)
                 {
@@ -2126,14 +2288,16 @@ namespace MissionLab
                 }
             }
             List<DoorPlan> doorsBefore = _doorPlans;
+            bool doorsChanged = MissionPlan.DoorsJson(doorsBefore) != MissionPlan.DoorsJson(sent.Doors);
             _doorPlans = sent.Doors;
             ReconcileThings(sent.Things);
-            try { ApplyDoors(false, doorsBefore); } catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set: " + e.Message); }
+            try { string swung = ApplyDoors(false, doorsBefore); if (doorsChanged) done.Add(new CommandOp("doors", "", -1, CommandLedger.Unconfirmed, swung)); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("doors could not be set: " + e.Message); done.Add(new CommandOp("doors", "", -1, CommandLedger.Failed, e.Message)); }
             if (fresh.Count > 0) Enqueue(fresh);
-            return StateJson();
+            return WithResult(StateJson(), command, done);
         }
 
-        internal static string Command(string json)
+        internal static string Command(string json, string command)
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
@@ -2155,25 +2319,89 @@ namespace MissionLab
             }
             asked = cmd + (what != "" ? " " + what : "") + (id != 0 ? " " + id : "");
             Replay.Event("command", "the Game Master asked: " + asked);          // what was asked; what came of it is recorded by whoever did it
+            var done = new Outcome();
+            int saidBefore = SaidCount;
             if (cmd == "order" && hasPos)
             {
-                // The Game Master sends the chosen enemies to a spot on the map.
+                // The Game Master sends the chosen enemies to a spot on the map. Each is told or not; whether it gets there is not followed.
                 var who = new HashSet<IntPtr>();
-                if (_markers != null) foreach (Marker m in _markers) if (ids.Contains(m.Id) && m.Bot != IntPtr.Zero) who.Add(m.Bot);
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    string reference = ids[i].ToString(Inv);
+                    Marker m = _markers == null ? null : _markers.Find(x => x.Id == ids[i]);
+                    BrainAI b = m == null || m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
+                    string why = m == null ? "there is no such marker" : b == null ? "its enemy is not alive" : "";
+                    if (why == "")
+                        try
+                        {
+                            AgentController legs = b.agent;
+                            if (legs == null || !legs.entityExists) why = "it cannot walk";
+                            else if (Posted(b)) why = "it holds a fixed post or sits in a vehicle";
+                        }
+                        catch (Exception e) { why = "it could not be asked: " + e.Message; }
+                    if (why != "") { done.Add(new CommandOp("order", reference, i, CommandLedger.Failed, why)); continue; }
+                    who.Add(m.Bot);
+                    done.Add(new CommandOp("order", reference, i, CommandLedger.Unconfirmed, "told to walk there"));
+                }
                 int sent = who.Count == 0 ? 0 : TryOuts.WalkTo(gm, pos, 0f, who);
                 TryOuts.Did("an order to walk");
                 Replay.Event("note", "order: " + TryOuts.LastWalk.Words());
                 DirectorPlugin.L.LogInfo("order: " + TryOuts.LastWalk.Words());
                 Say(sent == 0 ? "no live enemy among those selected could be sent" : sent + (sent == 1 ? " enemy is" : " enemies are") + " on the way to that spot");
             }
-            else if (cmd == "fire") FireNow(id);
-            else if (cmd == "try") Say(TryOuts.Run(what, arg, hasPos, pos, raid, gm));
-            else if (cmd == "spawnWaiting") SpawnWaiting();
-            else if (cmd == "removeAllEnemies") RemoveAllEnemies(gm);
-            else if (cmd == "save") Save();
-            else if (cmd == "export") ExportMap();
-            else Say("unknown request from the browser: " + cmd);
-            return StateJson();
+            else if (cmd == "fire")
+            {
+                // Fired means the trigger engine counted the firing; the enemies it releases are spawned like any other.
+                int before = Engine.Fires(id);
+                FireNow(id);
+                bool fired = Engine.Fires(id) > before;
+                done.Add(new CommandOp("fire", id.ToString(Inv), -1, fired ? CommandLedger.Applied : CommandLedger.Failed, SaidCount != saidBefore ? LastSaid : ""));
+            }
+            else if (cmd == "try")
+            {
+                string said = TryOuts.Run(what, arg, hasPos, pos, raid, gm);
+                Say(said);
+                done.Add(new CommandOp("try", what, -1, CommandLedger.Unconfirmed, said));      // the game was asked; the sentence says what it answered
+            }
+            else if (cmd == "spawnWaiting")
+            {
+                var queuedBefore = new HashSet<Marker>();
+                foreach (Marker m in _markers) if (m.Queued) queuedBefore.Add(m);
+                SpawnWaiting();
+                foreach (Marker m in _markers)
+                {
+                    if (!m.Queued || queuedBefore.Contains(m)) continue;
+                    Follow(m, command);
+                    done.Add(new CommandOp("spawn", m.Id.ToString(Inv), -1, CommandLedger.Pending, "its enemy is on its way"));
+                }
+                if (done.Ops.Count == 0) done.Add(new CommandOp("spawn", "", -1, CommandLedger.Failed, SaidCount != saidBefore ? LastSaid : "nothing was waiting"));
+            }
+            else if (cmd == "removeAllEnemies")
+            {
+                RemoveAllEnemies(gm);
+                done.Add(new CommandOp("clear", "", -1, CommandLedger.Unconfirmed, SaidCount != saidBefore ? LastSaid : ""));   // the game removes them a moment later
+            }
+            else if (cmd == "save")
+            {
+                DateTime before = _savePath != null && File.Exists(_savePath) ? File.GetLastWriteTimeUtc(_savePath) : DateTime.MinValue;
+                Save();
+                bool written = _savePath != null && File.Exists(_savePath) && File.GetLastWriteTimeUtc(_savePath) > before;
+                done.Add(new CommandOp("save", _savePath != null ? Path.GetFileName(_savePath) : "", -1, written ? CommandLedger.Applied : CommandLedger.Failed, SaidCount != saidBefore ? LastSaid : ""));
+            }
+            else if (cmd == "export")
+            {
+                string nav = LiveNavFile(), geo = nav != null ? GeoFile(nav) : null;
+                DateTime before = geo != null && File.Exists(geo) ? File.GetLastWriteTimeUtc(geo) : DateTime.MinValue;
+                ExportMap();
+                bool written = geo != null && File.Exists(geo) && File.GetLastWriteTimeUtc(geo) > before;
+                done.Add(new CommandOp("export", geo != null ? Path.GetFileName(geo) : "", -1, written ? CommandLedger.Applied : CommandLedger.Failed, SaidCount != saidBefore ? LastSaid : ""));
+            }
+            else
+            {
+                Say("unknown request from the browser: " + cmd);
+                done.Add(new CommandOp(cmd, "", -1, CommandLedger.Failed, "unknown request"));
+            }
+            return WithResult(StateJson(), command, done);
         }
 
         // ------------------------------------------------------------------ saving

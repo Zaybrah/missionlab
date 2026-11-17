@@ -23,7 +23,7 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
+        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Messages.Reset(); _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
@@ -51,8 +51,9 @@ namespace MissionLab
         {
             WatchFlag();
             FollowUp(now);
-            if (Pending.Count > 0 && now >= _nextMessageAt)
-                try { RaidManager raid = RaidManager.singleton; string next = Pending.Dequeue(); if (raid != null) Show(raid, next, false); } catch { }
+            string due = Messages.Due(now);
+            if (due != null)
+                try { RaidManager raid = RaidManager.singleton; if (raid != null) Show(raid, due, false); } catch { }
             if (_respawnsOffAt >= 0f && now >= _respawnsOffAt) RestoreRespawns("twelve seconds have passed");
             if (_endAt >= 0f && now >= _endAt)
             {
@@ -184,18 +185,14 @@ namespace MissionLab
             text = Fill(text);
             if (text.Length > 120) text = text.Substring(0, 120);
             // One message would push the other off the screen: yellow ones wait their turn, red ones go at once.
-            if (!red && (Pending.Count > 0 || Time.unscaledTime < _nextMessageAt))
-            {
-                if (Pending.Count >= 8) return "message dropped, eight are already waiting: \"" + text + "\"";
-                Pending.Enqueue(text);
-                return "message waits its turn: \"" + text + "\"";
-            }
+            Core.MessageTurn turn = Messages.Offer(text, red, Time.unscaledTime);
+            if (turn == Core.MessageTurn.Dropped) return "message dropped, eight are already waiting: \"" + text + "\"";
+            if (turn == Core.MessageTurn.Waits) return "message waits its turn: \"" + text + "\"";
             return Show(raid, text, red);
         }
 
-        private static readonly Queue<string> Pending = new Queue<string>();
-        private static float _nextMessageAt, _respawnsOffAt = -1f;
-        private const float MessageGap = 4.5f;
+        private static readonly Core.MessageQueue Messages = new Core.MessageQueue();
+        private static float _respawnsOffAt = -1f;
         private static readonly HashSet<IntPtr> Hurried = new HashSet<IntPtr>();
         private static bool _speedLogged;
 
@@ -206,7 +203,7 @@ namespace MissionLab
             for (int i = 0; zones != null && i < zones.Count && zone == null; i++) zone = zones[i];
             if (zone == null) return "message: this map has no extraction zone to send it through";
             zone.RPCHint(text, red ? Popup.PopupType.RedWarning : Popup.PopupType.YellowWarning);
-            _nextMessageAt = Time.unscaledTime + MessageGap;
+            Messages.Shown(Time.unscaledTime);
             return "message sent to every player's screen: \"" + text + "\"";
         }
 

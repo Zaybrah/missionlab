@@ -1,57 +1,99 @@
 // ------------------------------------------------------------------ replay
 const replay = { data: null, t: 0, playing: false, speed: 4, last: 0, name: '' };
 const mmss = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+// Who an enemy row is (recordings of semantics 3 on): "s4" is the scenario's spawn 4 counted from 0, "m12" a marker the
+// Game Master placed, and "v1" after either marks the gunner of gun truck 1. '' when the recording does not know.
+const whoOf = q => (typeof q[6] === 'string' ? q[6] : '');
+function whoName(who) {
+  const m = /^(?:([sm])(\d+))?(?:v(\d+))?$/.exec(who || '');
+  if (!m || !who) return '';
+  const said = [];
+  if (m[1] === 's') said.push('spawn #' + (+m[2] + 1));
+  if (m[1] === 'm') said.push('marker ' + m[2]);
+  if (m[3]) said.push('gun truck ' + m[3]);
+  return said.join(', ');
+}
 function loadReplay(obj, name) {
   if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
   // Only moments that are whole are kept: a time, players and enemies, each with a place. A damaged file is read as far as it goes.
   const row = q => Array.isArray(q) && q.length >= 4 && [1, 2, 3].every(k => typeof q[k] === 'number' && isFinite(q[k]));
-  const frames = obj.frames.filter(f => Array.isArray(f) && typeof f[0] === 'number' && isFinite(f[0]) && Array.isArray(f[1]) && Array.isArray(f[2])).map(f => [f[0], f[1].filter(row), f[2].filter(row)]);
+  // An identity that cannot be read is dropped, so that enemy is simply not known.
+  const clean = q => { if (q.length > 6 && !whoName(whoOf(q))) q.length = 6; return q; };
+  const frames = obj.frames.filter(f => Array.isArray(f) && typeof f[0] === 'number' && isFinite(f[0]) && Array.isArray(f[1]) && Array.isArray(f[2])).map(f => [f[0], f[1].filter(row), f[2].filter(row).map(clean)]);
   if (!frames.length) throw new Error('It is a replay, but none of its recorded moments can be read.');
-  // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
-  const born = new Map();
-  for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
-  // A gun truck's gunner reports "Evade" for as long as he lives (plugin 0.17.0 recorded that). He is where the truck is.
-  const trucks = (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && /gun truck/.test(String(e[2])) && Array.isArray(e[3])).map(e => e[3]);
-  if (trucks.length) {
-    const crew = new Set(), seen = new Set();
-    for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
-    if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
+  const semantics = typeof obj.semantics === 'number' ? obj.semantics : 1, linked = semantics >= 3;
+  if (!linked) {
+    // Older recordings do not say who an enemy is, so what follows is worked out by guessing.
+    // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
+    const born = new Map();
+    for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
+    // A gun truck's gunner reports "Evade" for as long as he lives (plugin 0.17.0 recorded that). He is where the truck is.
+    const trucks = (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && /gun truck/.test(String(e[2])) && Array.isArray(e[3])).map(e => e[3]);
+    if (trucks.length) {
+      const crew = new Set(), seen = new Set();
+      for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
+      if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
+    }
   }
+  const text = k => (typeof obj[k] === 'string' ? obj[k] : '');
   replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3 && typeof e[0] === 'number'),
-    legacy: !(obj.semantics >= 2), plugin: typeof obj.plugin === 'string' ? obj.plugin : '', run: typeof obj.run === 'string' ? obj.run : '',
+    semantics, linked, legacy: semantics < 2, plugin: text('plugin'), run: text('run'), session: text('session'), scenario: text('scenario'), scenarioHash: text('scenarioHash'),
     start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
   replay.t = replay.data.start; replay.playing = false; replay.name = name;
   if (state.mode === '3d') setMode('2d');
   $('tabReplay').hidden = false; showTab('replay');
   syncReplay(); invalidate();
-  return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events. Press Play.';
+  return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events.' +
+    (linked ? '' : ' An older recording: it links enemies by a guess.') + ' Press Play.';
 }
 // The mission in a few numbers, worked out from the recording. A row with a time can be jumped to.
 function replayStats(d) {
   const fr = d.frames, rows = [], alert = q => !!q[5] && q[5] !== 'I';
+  // Who each row id was, and how to call an enemy: by who it is when the recording says so, by its row id otherwise.
+  const who = new Map();
+  for (const f of fr) for (const q of f[2]) if (!who.get(q[0]) && whoOf(q)) who.set(q[0], whoOf(q));
+  const call = id => (whoName(who.get(id)) || 'enemy ' + id);
   rows.push(['Length', mmss(d.end - d.start)]);
   let first = null, contact = 0, most = 0; const seen = new Set();
   fr.forEach((f, i) => {
     most = Math.max(most, f[2].length); for (const q of f[2]) seen.add(q[0]);
-    const who = f[2].find(alert);
-    if (who && !first) { let near = Infinity; for (const p of f[1]) near = Math.min(near, Math.hypot(p[1] - who[1], p[2] - who[2], p[3] - who[3])); first = { t: f[0], id: who[0], dist: near, at: [who[1], who[2], who[3]] }; }
-    if (who && i > 0) contact += f[0] - fr[i - 1][0];
+    const one = f[2].find(alert);
+    if (one && !first) { let near = Infinity; for (const p of f[1]) near = Math.min(near, Math.hypot(p[1] - one[1], p[2] - one[2], p[3] - one[3])); first = { t: f[0], id: one[0], dist: near, at: [one[1], one[2], one[3]] }; }
+    if (one && i > 0) contact += f[0] - fr[i - 1][0];
   });
-  rows.push(['Players first noticed', first ? mmss(first.t) + ', by enemy ' + first.id + (isFinite(first.dist) ? ' from ' + Math.round(first.dist) + ' m' : '') : 'never', first ? first.t : null, first ? first.at : null]);
+  rows.push(['Players first noticed', first ? mmss(first.t) + ', by ' + call(first.id) + (isFinite(first.dist) ? ' from ' + Math.round(first.dist) + ' m' : '') : 'never', first ? first.t : null, first ? first.at : null]);
   rows.push(['Time with the enemy alerted', mmss(contact)]);
-  const downs = d.events.filter(e => e[1] === 'down'), minutes = Math.max(1 / 60, (d.end - d.start) / 60);
-  rows.push(['Enemies seen in all', String(seen.size)]);
+  const kind = k => d.events.filter(e => e[1] === k), downs = kind('down'), minutes = Math.max(1 / 60, (d.end - d.start) / 60);
+  // An enemy made again after an edit is the same enemy: the writer links it to the one taken out, and so does this count.
+  let again = 0;
+  if (d.linked) {
+    const waiting = new Map();
+    for (const e of d.events) {
+      const w = typeof e[4] === 'number' ? who.get(e[4]) : '';
+      if (!w) continue;
+      if (e[1] === 'remade') waiting.set(w, (waiting.get(w) || 0) + 1);
+      else if (e[1] === 'appears' && waiting.get(w)) { waiting.set(w, waiting.get(w) - 1); again++; }
+    }
+  }
+  rows.push(['Enemies seen in all', String(seen.size - again)]);
   rows.push(['Most at one time', String(most)]);
   rows.push(['Enemies down', downs.length + (downs.length ? ' (' + (downs.length / minutes).toFixed(1) + ' a minute)' : '')]);
-  if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]), downs[0][0], downs[0][3]]);
-  const taken = d.events.filter(e => e[1] === 'removed'), asked = d.events.filter(e => e[1] === 'command');
-  if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
+  if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]) + (d.linked && typeof downs[0][4] === 'number' ? ', ' + call(downs[0][4]) : ''), downs[0][0], downs[0][3]]);
+  const taken = kind('removed'), remade = kind('remade'), gone = kind('gone'), asked = kind('command'), ended = kind('end');
+  if (d.linked) {
+    if (taken.length) rows.push(['Taken out by an edit', String(taken.length)]);
+    if (remade.length) rows.push(['Made again after an edit', String(remade.length)]);
+    if (gone.length) rows.push(['Gone for a reason not known', String(gone.length), gone[0][0], gone[0][3]]);
+  } else if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
   if (asked.length) rows.push(['Game Master requests', String(asked.length)]);
-  if (d.legacy) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'an edit that took an enemy out counts as down here']);
+  if (ended.length) rows.push(['Recording ended', mmss(ended[ended.length - 1][0]) + ', ' + ended[ended.length - 1][2], ended[ended.length - 1][0], null]);
+  if (!d.linked) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'enemies are linked by a guess, and every enemy that left counts as down' + (d.legacy ? ', even one an edit took out' : '')]);
+  if (d.scenario) rows.push(['Scenario', d.scenario + (d.scenarioHash ? ' (' + d.scenarioHash.replace(/^[a-z0-9]+:/, '').slice(0, 8) + ')' : '')]);
   if (d.run) rows.push(['Run record', d.run]);
-  d.players.forEach((name, who) => {
+  if (d.session) rows.push(['Session', d.session]);
+  d.players.forEach((name, n) => {
     let dist = 0, last = null, lastT = null;
-    for (const f of fr) { const p = f[1].find(q => q[0] === who); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
+    for (const f of fr) { const p = f[1].find(q => q[0] === n); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
     if (lastT === null) return;
     rows.push([name + ' walked', Math.round(dist) + ' m']);
     if (lastT < d.end - 3) rows.push([name + ' last seen', mmss(lastT), lastT, [last[1], last[2], last[3]]]);
@@ -71,7 +113,7 @@ function replayNow() {
   const { a, b, k } = replayFrame(replay.t);
   const mix = (list, next) => list.map(p => {
     const q = next.find(n => n[0] === p[0]);
-    return { id: p[0], pos: q ? [p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k, p[3] + (q[3] - p[3]) * k] : [p[1], p[2], p[3]], yaw: p[4], state: p[5] };
+    return { id: p[0], pos: q ? [p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k, p[3] + (q[3] - p[3]) * k] : [p[1], p[2], p[3]], yaw: p[4], state: p[5], who: whoOf(p) };
   });
   return { players: mix(a[1], b[1]).map(p => Object.assign(p, { name: replay.data.players[p.id] || 'Player' })), enemies: mix(a[2], b[2]) };
 }

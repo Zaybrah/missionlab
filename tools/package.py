@@ -11,6 +11,16 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def read(path): return open(os.path.join(HERE, path), 'rb').read()
 version = re.search(r'public const string Version = "([^"]+)"', read('src/MissionLab.Director/DirectorPlugin.cs').decode()).group(1)
 tested = re.search(r'TestedGame = "([^"]+)"', read('src/MissionLab.Director/LiveLink.cs').decode()).group(1)
+import subprocess
+# The page shipped is tools/editor/index.html, which build.py makes from tools/editor/src; refuse a stale or mismatched one.
+refuse = []
+if subprocess.run([sys.executable, os.path.join(HERE, 'tools', 'editor', 'build.py'), '--check']).returncode != 0:
+    refuse.append('tools/editor/index.html is out of date with tools/editor/src: run  python3 tools/editor/build.py')
+editor = re.search(r"const EDITOR_VERSION = '([^']+)'", read('tools/editor/src/20-state.js').decode('utf-8'))
+if not editor: refuse.append('tools/editor/src/20-state.js has no EDITOR_VERSION constant')
+elif editor.group(1) != version: refuse.append('the editor says ' + editor.group(1) + ' but DirectorPlugin.Version is ' + version + ': make them equal')
+for p in refuse: print('REFUSED: ' + p)
+if refuse: sys.exit(1)
 TEXT = f"""MissionLab {version}
 An unofficial, free mod toolkit for OPERATOR. It is not made or supported by Vector Interactive.
 

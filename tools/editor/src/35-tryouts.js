@@ -40,5 +40,5 @@ function tryOut() {
 $('tryWhat').addEventListener('change', syncTry);
 $('tryGo').addEventListener('click', tryOut);
 
-window.missionlabEditor = { readyRows, readyReport, scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+window.missionlabEditor = { readyRows, readyReport, reportBundle, scrubReport, EDITOR_VERSION, scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();

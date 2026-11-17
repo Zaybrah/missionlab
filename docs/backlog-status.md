@@ -1,9 +1,9 @@
 # Backlog status
 
-Where each ticket of `docs/backlog.md` stands. Updated 17 November 2026, build 0.24.1.
+Where each ticket of `docs/backlog.md` stands. Updated 17 November 2026, build 0.24.3.
 
-"Tested" means an automatic test proves it (`./test.sh`, the map tests, or the editor tests). "In the game" means it
-needs a run in OPERATOR; "co-op" means a run with a friend who has no mod. 0.24.1 itself has not run in the game yet.
+"Tested" means an automatic test proves it (`./test.sh`: the C# suite and the editor checks, or the map tests). "In the game" means it
+needs a run in OPERATOR; "co-op" means a run with a friend who has no mod. 0.24.1 to 0.24.3 have not run in the game yet.
 
 ## v0.24
 
@@ -16,13 +16,13 @@ In the game so far (17 November, 0.24.0, one player): the trigger engine, a shar
 | ML-003 current positions | Built; the call still moved nobody | Order log: "3 accepted, walkable ground at ..." | 0.24.1 follows every order up and tries three ways; needs the next run |
 | ML-004 trigger history | Built, seen in the game | Rearm keeps history, repeats, countdown, order of the list, circles, delete and re-make, fire by hand, hold. In the game: every trigger of the feature test | |
 | ML-005 failure isolation | Built | Guard: pauses, growth to a minute, independence, recovery | In the game: nothing forces an error there |
-| ML-006 command results | Built | Ledger; page: stale, expired, pending, numbers and session sent | A batch gets one result, not one per operation |
-| ML-007 scenario contract | Built | Seven files that must be refused, with the same findings in plugin and editor; text escaping; schema kept in step with the writer; every scenario on the test PC passes | A newer format has nothing to convert from yet, so there is no conversion summary beyond the note for a file without a format line |
+| ML-006 command results | Built | Ledger with one result per part (applied, failed, pending, unconfirmed), parts kept for a reload, partial status, mission end closes waiting parts; page: stale, expired, pending, numbers and session sent | In the game: a partial change and a spawn that settles later |
+| ML-007 scenario contract | Built | Seven files that must be refused, with the same findings in plugin and editor (now checked by `tests/editor/run.mjs`); text escaping; schema kept in step with the writer; every scenario on the test PC passes | A newer format has nothing to convert from yet, so there is no conversion summary beyond the note for a file without a format line |
 | ML-008 resolved run record | Built | Fingerprint; page: list and choice of a run to repeat | In the game: the record itself and a repeated run. Random extras are in the record but were not checked for repeating |
-| ML-009 replay events | Built | Removed is not down; requests counted apart; older and damaged recordings | Marker and vehicle identity in every row is not there yet |
-| ML-010 asset-free tests | Partly | `./test.sh`: 150 checks without a game file, also on GitHub; fixtures; examples checked; `--read` checks any scenario file | Editor tests still live outside the repository and need local game files |
-| ML-011 co-op proof | Not started | | Needs you and a friend without the mod |
-| ML-012 packaging | Built | ZIP built and its contents checked; readiness rows; report without names or folders; 3D library beside the page | The ZIP on a clean game install; another game version only warns, it does not hide controls |
+| ML-009 replay events | Built | Removed is not down; requests counted apart; older and damaged recordings; rows carry `who` (scenario number, marker, gun truck), `down` only when the game says dead, `gone` otherwise, end reason, session/run/scenario in the header | In the game: whether a kill is seen as dead before the body is removed; size and time of a long recording |
+| ML-010 asset-free tests | Built | `./test.sh`: C# suite (simulated clock: repeats, countdown, message queue, waves, reset; synthetic maps: islands, stacked floors, insertion clearance) and 62 editor checks in Node (refusals equal to the plugin's, editor → C# → editor, awkward text, mission check), also on GitHub | |
+| ML-011 co-op proof | Prepared | `examples/clean_house_acceptance.json`, `docs/coop-record.md`, the README Status table | Needs you and a friend without the mod |
+| ML-012 packaging | Built | ZIP built and its contents checked, refused when the page is stale or its version differs; build on Windows and Linux with the references checked first; readiness rows incl. version mismatch with the repair step, mode, map data, compatibility; report with an optional scenario and run, listing its contents, without names or folders | The ZIP on a clean game install |
 
 ## v0.25 and v0.26
 

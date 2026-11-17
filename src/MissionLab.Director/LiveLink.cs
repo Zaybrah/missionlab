@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Threading;
 using BepInEx;
 using MissionLab.Core;
@@ -29,6 +31,7 @@ namespace MissionLab
         private const int MaxWaiting = 64;             // more than this and the page is told to wait: a stuck page cannot pile up work
         private static int _waiting;
         private static volatile string _status = "{\"mission\":false}";
+        private static string _sessionSeen = "";        // game thread only: the mission Pump last saw
 
         private static readonly ConcurrentQueue<Job> Jobs = new ConcurrentQueue<Job>();
         private static MiniHttp _web;
@@ -40,6 +43,36 @@ namespace MissionLab
         internal static bool Running;
         internal static float LastRequestAt = -100f;    // game time of the last request from the browser
         internal static volatile string PageStamp = "";  // changes whenever the editor page on disk changes
+
+        // How far a map, mode and seat has been proven with this build: the values the page shows beside "Is everything ready?".
+        internal const string Tested = "tested", Experimental = "experimental", Untested = "untested";
+        internal const string AnyPve = "pve";           // in the table below: any of the PvE raid modes
+
+        // The combinations played through with this build, in one place. A row is added only after its acceptance run has
+        // passed (docs/backlog-status.md); anything not listed is reported as untested, so a host can tell before relying on it.
+        private static readonly (string Map, string Mode, string Role, string Level)[] Compat =
+        {
+            ("suburbv2.bytes", AnyPve, "host", Tested),   // Clean House, hosted with the mod: the demonstrated baseline
+        };
+
+        /// <summary>The PvE raids MissionLab was written for. Everything else (PvP, wave survival, modes a later game adds) is left alone.</summary>
+        internal static bool PveRaid(OperationsManager.GameMode mode)
+        {
+            return mode == OperationsManager.GameMode.StandardPVE || mode == OperationsManager.GameMode.PVE_HVTKILL ||
+                   mode == OperationsManager.GameMode.PVE_FINDINTEL || mode == OperationsManager.GameMode.PVE_ASSETDESTROY;
+        }
+
+        /// <summary>The table's word for this map, mode and seat; "" while no map is in use, as there is nothing to judge.</summary>
+        internal static string CompatFor(string map, string mode, bool pve, string role)
+        {
+            if (string.IsNullOrEmpty(map)) return "";
+            foreach (var row in Compat)
+            {
+                bool modeFits = row.Mode == AnyPve ? pve : string.Equals(row.Mode, mode, StringComparison.Ordinal);
+                if (modeFits && row.Role == role && string.Equals(row.Map, map, StringComparison.OrdinalIgnoreCase)) return row.Level;
+            }
+            return Untested;
+        }
 
         private static string Stamp(string file)
         {
@@ -99,9 +132,10 @@ namespace MissionLab
                 return r.Path == "/api/map" ? HttpResponse.File(Path.Combine(_navDir, Path.GetFileName(nav)), "application/octet-stream")
                                             : HttpResponse.File(Path.Combine(_mapsDir, Path.GetFileNameWithoutExtension(nav) + ".mlgeo"), "application/octet-stream");
             }
-            // Recordings and map files by name, so a mission can be played back after it has ended. Names only: no folders.
+            // Recordings, run records and map files by name, so a mission can be played back or reported after it has ended. Names only: no folders.
             if (r.Path == "/api/replays") return HttpResponse.Json(Replay.ListJson());
-            foreach (var kind in new[] { ("/api/replay/", Replay.Dir, ".json", "application/json"), ("/api/mapfile/", _navDir, ".bytes", "application/octet-stream"), ("/api/geofile/", _mapsDir, ".mlgeo", "application/octet-stream") })
+            foreach (var kind in new[] { ("/api/replay/", Replay.Dir, ".json", "application/json"), ("/api/runfile/", RunRecord.Dir, ".run.json", "application/json"),
+                                         ("/api/mapfile/", _navDir, ".bytes", "application/octet-stream"), ("/api/geofile/", _mapsDir, ".mlgeo", "application/octet-stream") })
             {
                 if (!r.Path.StartsWith(kind.Item1, StringComparison.Ordinal)) continue;
                 string name = Uri.UnescapeDataString(r.Path.Substring(kind.Item1.Length));
@@ -118,8 +152,8 @@ namespace MissionLab
             if (r.Path.StartsWith("/api/command/", StringComparison.Ordinal) && !change)
             {
                 string asked = CommandLedger.Clean(Uri.UnescapeDataString(r.Path.Substring("/api/command/".Length)));
-                return asked != "" && Ledger.TryGet(asked, out CommandLedger.Entry known) ? HttpResponse.Json(CommandLedger.Json(known))
-                                                                                         : HttpResponse.Json("{\"command\":\"" + asked + "\",\"status\":\"unknown\"}", 404);
+                string known = asked != "" ? Ledger.JsonOf(asked) : null;
+                return known != null ? HttpResponse.Json(known) : HttpResponse.Json("{\"command\":\"" + asked + "\",\"status\":\"unknown\"}", 404);
             }
 
             var job = new Job { Req = r };
@@ -129,8 +163,8 @@ namespace MissionLab
                 job.Command = r.Headers.TryGetValue("X-MissionLab-Command", out string number) ? CommandLedger.Clean(number) : "";
                 // The same number twice is carried out once: the second time gets what the first one got.
                 if (job.Command != "" && !Ledger.Begin(job.Command, job.Session, r.Path, 0f, out CommandLedger.Entry seen))
-                    return seen.Status == CommandLedger.Pending ? HttpResponse.Json(CommandLedger.Json(seen), 202)
-                                                                : new HttpResponse { Status = seen.Code, Body = System.Text.Encoding.UTF8.GetBytes(seen.Body) };
+                    return !seen.Done ? HttpResponse.Json(Ledger.JsonOf(job.Command) ?? CommandLedger.Json(seen), 202)
+                                      : new HttpResponse { Status = seen.Code, Body = System.Text.Encoding.UTF8.GetBytes(seen.Body) };
             }
             if (Volatile.Read(ref _waiting) >= MaxWaiting)
             {
@@ -162,9 +196,32 @@ namespace MissionLab
             {
                 string role = "menu";
                 try { role = Mirror.NetworkServer.active ? "host" : Mirror.NetworkClient.active ? "client" : "menu"; } catch { }
-                string game = ""; try { game = UnityEngine.Application.version; } catch { }
-                _status = "{\"mission\":" + (GameMaster.LiveNavFile() != null ? "true" : "false") + ",\"role\":\"" + role + "\",\"game\":\"" + game.Replace("\"", "") + "\",\"testedGame\":\"" + TestedGame
-                        + "\",\"port\":" + Port + ",\"library\":" + (File.Exists(Path.Combine(_webDir, "three.min.js")) ? "true" : "false") + GameMaster.Standing() + "}";
+                string game = ""; try { game = UnityEngine.Application.version ?? ""; } catch { }
+                // The game mode as the game names it; unreadable in some menus, which leaves it empty rather than guessed.
+                string mode = ""; bool pve = false;
+                try
+                {
+                    OperationsManager om = OperationsManager.singleton;
+                    if (om != null) { OperationsManager.GameMode m = om.CurrentGameMode; mode = m.ToString(); pve = PveRaid(m); }
+                }
+                catch { mode = ""; pve = false; }
+                string map = _navFile ?? "";
+                var sb = new StringBuilder(1024);
+                sb.Append("{\"mission\":").Append(map.Length > 0 ? "true" : "false");
+                sb.Append(",\"role\":\"").Append(role).Append("\",\"game\":\"").Append(Guard.Esc(game)).Append("\",\"testedGame\":\"").Append(TestedGame).Append('"');
+                sb.Append(",\"mode\":\"").Append(Guard.Esc(mode)).Append("\",\"pve\":").Append(pve ? "true" : "false");
+                sb.Append(",\"map\":\"").Append(Guard.Esc(Path.GetFileName(map))).Append("\",\"compat\":\"").Append(CompatFor(map, mode, pve, role)).Append('"');
+                sb.Append(",\"port\":").Append(Port.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"library\":").Append(File.Exists(Path.Combine(_webDir, "three.min.js")) ? "true" : "false");
+                sb.Append(GameMaster.Standing()).Append('}');
+                _status = sb.ToString();
+            }
+            if (Director.Session != _sessionSeen)
+            {
+                // A mission ended or began: spawns still queued for the old one were dropped with it, so they will never be made.
+                _sessionSeen = Director.Session;
+                try { int lost = Ledger.Abandon("the mission ended before the game made it"); if (lost > 0) DirectorPlugin.L.LogInfo("browser changes: " + lost + " queued part(s) ended with the mission"); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("browser change results could not be closed: " + e.Message); }
             }
             for (int n = 0; n < 8 && Jobs.TryDequeue(out Job job); n++)
             {
@@ -180,7 +237,7 @@ namespace MissionLab
                     job.Res = HttpResponse.Json("{\"status\":\"stale\",\"command\":\"" + job.Command + "\",\"session\":\"" + Director.Session + "\",\"error\":\"this was meant for another mission; nothing was done\"}", 409);
                 }
                 else
-                    try { job.Res = Answer(job.Req); if (job.Res.Status >= 400) status = CommandLedger.Failed; }
+                    try { job.Res = Answer(job.Req, job.Command); if (job.Res.Status >= 400) status = CommandLedger.Failed; }
                     catch (Exception e)
                     {
                         status = CommandLedger.Failed;
@@ -193,13 +250,13 @@ namespace MissionLab
             }
         }
 
-        private static HttpResponse Answer(HttpRequest r)
+        private static HttpResponse Answer(HttpRequest r, string command)
         {
             switch (r.Path)
             {
                 case "/api/state": return HttpResponse.Json(GameMaster.StateJson());
-                case "/api/markers": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Reconcile(r.BodyText)) : HttpResponse.Error(400, "POST expected");
-                case "/api/command": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Command(r.BodyText)) : HttpResponse.Error(400, "POST expected");
+                case "/api/markers": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Reconcile(r.BodyText, command)) : HttpResponse.Error(400, "POST expected");
+                case "/api/command": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Command(r.BodyText, command)) : HttpResponse.Error(400, "POST expected");
                 case "/api/runs":
                     return HttpResponse.Json("{\"runs\":" + RunRecord.ListJson(12) + ",\"repeat\":\"" + Director.RepeatFile + "\"}");
                 case "/api/repeat":

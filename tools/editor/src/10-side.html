@@ -23,7 +23,8 @@
       <div class="field"><label for="repeatRun">Dice</label><select id="repeatRun" title="A new roll, or the roll of an earlier mission: the same scenario, roll and number of players give the same setup again."><option value="">A new roll</option></select></div>
       <details id="readyBox"><summary>Is everything ready? <span id="readySum"></span></summary>
         <ul id="readyList"></ul>
-        <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names.">Copy a report</button>
+        <label class="check"><input id="readyBundle" type="checkbox"><span>Add the scenario on this page and the last run's resolved plan</span></label>
+        <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names, and never map files, 3D geometry, replays or game files.">Copy a report</button>
       </details>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div id="gmBox" hidden>

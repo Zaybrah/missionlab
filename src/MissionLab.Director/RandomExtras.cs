@@ -8,7 +8,7 @@ namespace MissionLab
     /// <summary>
     /// What a random layout gets on top of its enemy positions, so that two missions differ in more than where
     /// people stand: a wave that comes when the enemy is alerted, an ambush where players walk into a building,
-    /// a few doors locked, and the intel laid somewhere else. Everything is rolled from the mission's seed and
+    /// a few doors locked, and (only with RandomIntel) the intel laid somewhere else. Everything is rolled from the mission's seed and
     /// written into the plan, so a mission record replays the same.
     /// </summary>
     internal static class RandomExtras
@@ -18,7 +18,12 @@ namespace MissionLab
             var notes = new List<string>();
             try { Extras.Waves(plan, rng, infils, notes); } catch (Exception e) { notes.Add("waves failed (" + e.Message + ")"); }
             try { Doors(plan, rng, notes); } catch (Exception e) { notes.Add("doors failed (" + e.Message + ")"); }
-            try { Intel(plan, raid, nav, rng, notes); } catch (Exception e) { notes.Add("intel failed (" + e.Message + ")"); }
+            // Moved intel is not yet confirmed on a client without the mod, so it waits for its own setting (off by default).
+            if (DirectorPlugin.RandomIntel.Value)
+            {
+                try { Intel(plan, raid, nav, rng, notes); } catch (Exception e) { notes.Add("intel failed (" + e.Message + ")"); }
+            }
+            else notes.Add("intel left in its place (RandomIntel is off)");
             plan.Notes.Add("extras: " + (notes.Count > 0 ? string.Join("; ", notes) : "none fitted this layout"));
         }
 

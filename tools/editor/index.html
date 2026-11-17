@@ -231,7 +231,8 @@ body.dragging #drop { display: flex; }
       <div class="field"><label for="repeatRun">Dice</label><select id="repeatRun" title="A new roll, or the roll of an earlier mission: the same scenario, roll and number of players give the same setup again."><option value="">A new roll</option></select></div>
       <details id="readyBox"><summary>Is everything ready? <span id="readySum"></span></summary>
         <ul id="readyList"></ul>
-        <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names.">Copy a report</button>
+        <label class="check"><input id="readyBundle" type="checkbox"><span>Add the scenario on this page and the last run's resolved plan</span></label>
+        <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names, and never map files, 3D geometry, replays or game files.">Copy a report</button>
       </details>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div id="gmBox" hidden>
@@ -534,6 +535,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const ROLES = ['Guard', 'Wander', 'Patrol'];
 const DRAFT_KEY = 'missionlab-editor-draft-1';
+const EDITOR_VERSION = '0.24.3';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
 
 const state = {
   map: null,            // walkable surface, see makeMap()
@@ -2018,9 +2020,11 @@ function syncSide() {
   state.enemies.forEach((e, i) => {
     const w = warningFor(e); if (w) warn++;
     const li = document.createElement('li'), b = document.createElement('button');
+    const op = liveOp(e);       // the last change to this marker failed or is still on its way: it is not shown as live
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
+    if (op) b.title = (b.title ? b.title + ' ' : '') + 'The last change to enemy ' + (i + 1) + (op.status === 'failed' ? ' failed: ' : ' is still on its way into the game: ') + (op.said || 'no reason given') + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', op ? op.status : w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -2329,7 +2333,10 @@ $('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkil
 $('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
 $('needsGm').addEventListener('change', ev => missionEdit(() => { state.gameMaster = ev.target.checked; }));
 $('repeatRun').addEventListener('change', ev => api('/api/repeat', { file: ev.target.value }).then(s => { live.rev = null; live.runsFor = null; say(ev.target.value ? 'The next mission you host repeats that run: same roll. It needs the same scenario and number of players to come out the same.' : 'The next mission gets a new roll.'); return applyLive(s); }).catch(e => say(liveTrouble(e))));
-$('readyCopy').addEventListener('click', () => { const text = readyReport(); (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); }); });
+$('readyCopy').addEventListener('click', async () => {
+  const text = readyReport($('readyBundle').checked ? await reportBundle() : null);
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard. Its first lines list what it holds.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); });
+});
 $('liveRecover').addEventListener('click', () => api('/api/recover', {}).then(s => { live.rev = null; return applyLive(s); }).catch(e => say(liveTrouble(e))));
 // What the running game says about the wave, in words.
 function waveNow() {
@@ -2345,11 +2352,23 @@ function waveNow() {
 function readyRows(st, s) {
   const rows = [], add = (ok, text) => rows.push({ ok, text });
   if (!st) { add(false, 'The game does not answer. Is OPERATOR running with MissionLab installed?'); return rows; }
-  add(true, 'MissionLab ' + (st.plugin || '?') + ' answers on port ' + (st.port || '?') + '.');
+  add(true, 'MissionLab ' + (st.plugin || '?') + ' answers on port ' + (st.port || '?') + (st.plugin === EDITOR_VERSION ? '; this page is the same release.' : '.'));
+  // Page and plugin come out of one ZIP; when they differ, the step that brings them together again is named.
+  if (st.plugin && st.plugin !== EDITOR_VERSION) {
+    const served = String(location.port) === String(st.port) ? '' : ', or open the page the game serves at http://localhost:' + st.port;
+    add(false, 'This page is MissionLab ' + EDITOR_VERSION + ', the game runs MissionLab ' + st.plugin + '. Copy index.html and three.min.js from the MissionLab ' + st.plugin + ' ZIP into BepInEx/MissionLab/web/ and reload this page' + served + '. To use ' + EDITOR_VERSION + ' instead, install its ZIP whole, plugin included, and restart the game.');
+  }
   if (st.startError) add(false, st.startError);
+  // Another game version only warns: everything stays usable, as most of it usually still works.
   add(st.game === st.testedGame, st.game === st.testedGame ? 'OPERATOR ' + st.game + ': the version this MissionLab was tried with.' : 'OPERATOR ' + (st.game || '?') + ': this MissionLab was tried with ' + st.testedGame + '. It may not work, or only in part.');
   add(st.role !== 'client', st.role === 'host' ? 'You are the host.' : st.role === 'client' ? 'You joined someone else: MissionLab only works for the host. Nothing here changes that mission.' : 'No mission yet: host one to use the live tools.');
-  if (st.role === 'host') add(!!st.mission, st.mission ? 'The mission is running and the map is known.' : 'A mission is starting, or its map data was not found.');
+  if (st.mode) add(!!st.pve || st.role !== 'host', st.pve ? 'Game mode ' + st.mode + ': a PvE raid, the kind MissionLab works in.' : 'Game mode ' + st.mode + ': not a PvE raid. MissionLab leaves such a mission as the game made it; host a PvE raid to use it.');
+  else if (st.role === 'host') add(false, 'The game mode could not be read, so MissionLab leaves this mission as the game made it.');
+  if (st.role === 'host') add(!!st.mission, st.mission ? 'The mission is running on the map data ' + (st.map || '?') + '.' : 'A mission is starting, or its map data was not found; without it MissionLab leaves the mission as the game made it.');
+  const compat = { tested: [true, 'has been played through with this release: the tested baseline.'],
+    experimental: [false, 'has been tried, but not played through with this release: expect parts of it not to work.'],
+    untested: [false, 'has not been played through with this release. It may well work; try it before you rely on it.'] }[st.compat];
+  if (compat) add(compat[0], 'The map ' + (st.map || '?') + ' in ' + (st.mode || 'this mode') + ' as ' + (st.role || '?') + ' ' + compat[1]);
   add(!!st.library, st.library ? 'The 3D view works without the internet.' : 'The 3D view needs the internet: three.min.js is not beside the page.');
   if (st.rejected) add(false, st.rejected);
   for (const h of st.health || []) if (h.paused) add(false, 'The part "' + h.name + '" is paused: ' + (h.lastError || 'unknown error') + '.');
@@ -2368,17 +2387,58 @@ function syncReady(s) {
     for (const r of rows) { const li = document.createElement('li'); li.className = r.ok ? 'yes' : 'no'; li.textContent = (r.ok ? 'OK: ' : 'Look: ') + r.text; list.appendChild(li); }
   });
 }
-// The report holds versions and states only: no player names, no folders, no scenario text.
-function readyReport() {
-  const st = live.status || {}, lines = ['MissionLab report', 'made ' + new Date().toISOString()];
-  lines.push('plugin ' + (st.plugin || '?') + ', OPERATOR ' + (st.game || '?') + ' (tried with ' + (st.testedGame || '?') + '), role ' + (st.role || '?') + ', mission ' + (st.mission ? 'yes' : 'no') + ', 3D library beside the page ' + (st.library ? 'yes' : 'no'));
+// A report goes to other people: folders and the names of players are taken out of everything in it, error texts included.
+function scrubReport(text) {
+  // Drive folders (also as written inside JSON, and with spaces in folder names), network shares and the usual home and
+  // system folders of Linux and macOS. Taking out a little too much is better than leaving a user name in.
+  let out = String(text).replace(/(^|[^A-Za-z0-9])[A-Za-z]:[\\/](?:[^\\/\n"'<>|]*[\\/])*[^\s"',;)\\/]*/g, '$1(folder)').replace(/(^|[\s"'(=])(?:\\\\){1,2}[^\s"',;)]+/g, '$1(folder)')
+    .replace(/(^|[\s"'(=])\/(?:home|Users|mnt|media|run|tmp|var|opt|srv)\/(?:[^\\/\n"'<>|]*\/)*[^\s"',;)\/]*/g, '$1(folder)');
+  const names = new Set();
+  for (const p of [...(live.players || []), ...((replay.data && replay.data.players) || [])]) {
+    const n = typeof p === 'string' ? p : p && typeof p.name === 'string' ? p.name : '';
+    if (n.trim().length >= 3) names.add(n);
+  }
+  for (const n of names) out = out.split(n).join('(player)');
+  return out;
+}
+const byteSize = text => new TextEncoder().encode(text).length;
+// The optional parts of a report: the scenario on the page and the resolved plan of the game's last run, each with why it is missing.
+async function reportBundle() {
+  const st = live.status || {}, out = {};
+  out.scenario = state.enemies.length > 0 && !state.example ? { name: fileName(), text: scenarioText() }
+    : { name: fileName(), missing: state.example ? 'the page shows the example, not a scenario' : 'no enemies are placed' };
+  if (!st.run) out.run = { name: '', missing: 'the game has written no run record yet' };
+  else {
+    try {
+      const r = await fetch('/api/runfile/' + encodeURIComponent(st.run), { cache: 'no-store' });
+      out.run = r.ok ? { name: st.run, text: await r.text() } : { name: st.run, missing: 'the game did not hand it over (status ' + r.status + ')' };
+    } catch (e) { out.run = { name: st.run, missing: 'the game did not answer' }; }
+  }
+  return out;
+}
+// Versions and states first; with a bundle, the scenario and the resolved run follow. The first lines list what the report holds.
+// Map files, 3D geometry, replays and game files are never part of it.
+function readyReport(extra) {
+  const st = live.status || {}, lines = [];
+  lines.push('page ' + EDITOR_VERSION + ', plugin ' + (st.plugin || '?') + ', OPERATOR ' + (st.game || '?') + ' (tried with ' + (st.testedGame || '?') + '), role ' + (st.role || '?') + ', mission ' + (st.mission ? 'yes' : 'no') + ', 3D library beside the page ' + (st.library ? 'yes' : 'no'));
+  lines.push('mode ' + (st.mode || '?') + (st.pve ? ' (PvE raid)' : '') + ', map data ' + (st.map || 'none') + ', compatibility ' + (st.compat || 'no map in use'));
   lines.push('session ' + (st.session || 'none') + ', run record ' + (st.run || 'none') + ', repeat ' + (st.repeat || 'no'));
   if (st.startError) lines.push('start: ' + st.startError);
   if (st.rejected) lines.push('refused: ' + st.rejected);
   for (const h of st.health || []) lines.push('part "' + h.name + '": ' + (h.paused ? 'paused' : h.ok ? 'ok' : h.failures + ' failures') + (h.lastError ? ', last error: ' + h.lastError : ''));
   for (const c of st.commands || []) lines.push('change ' + c.path + ': ' + c.status + (c.said ? ' (' + c.said + ')' : ''));
   for (const r of readyRows(live.status, null)) if (!r.ok) lines.push('look: ' + r.text);
-  return lines.join('\n');
+  const summary = scrubReport(lines.join('\n')), parts = [], contents = ['- summary of versions and states: ' + byteSize(summary) + ' bytes'];
+  for (const [key, label] of [['scenario', 'scenario'], ['run', 'resolved run']]) {
+    const p = extra && extra[key];
+    if (!p) continue;
+    if (typeof p.text !== 'string') { contents.push('- ' + label + (p.name ? ' ' + p.name : '') + ': not included, ' + p.missing); continue; }
+    const text = scrubReport(p.text);
+    contents.push('- ' + label + ' ' + p.name + ': ' + byteSize(text) + ' bytes');
+    parts.push('', '--- ' + label + ' ' + p.name + ' ---', text);
+  }
+  return ['MissionLab report', 'made ' + new Date().toISOString(), 'Contents:', ...contents,
+    'Never included: game files, map files, 3D geometry, replays, player names, folders.', '', summary, ...parts].join('\n');
 }
 // The list of earlier runs is asked for when the page connects and whenever a mission has written a new record.
 function syncRuns(s) {
@@ -2678,7 +2738,7 @@ $('copy').addEventListener('click', async () => {
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
 // players and enemies where they are right now. Every change you make here is carried out in the game.
 const PAGE_STAMP = '__ML_PAGE_STAMP__';        // filled in by the game when it serves this page
-const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, status: null, statusAt: 0, runsFor: null, session: null, trig: new Map(), wave: null };
+const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, status: null, statusAt: 0, runsFor: null, session: null, trig: new Map(), wave: null, ops: new Map(), opsSession: null, following: new Set() };
 // Reading the game's state is a plain request. A change carries a number of its own and the mission it was made for:
 // the game carries a number out once, and refuses a change that was meant for another mission.
 const newCommand = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -2688,18 +2748,84 @@ const api = async (path, body) => {
   if (typeof live.session === 'string') headers['X-MissionLab-Session'] = live.session;
   const r = await fetch(path, { method: 'POST', cache: 'no-store', headers, body: JSON.stringify(body) });
   let s = null; try { s = await r.json(); } catch (e) { /* no body */ }
-  if (r.status === 200) return s;
+  if (r.status === 200) { if (s && s.result) liveResult(s.result, s); return s; }
   const err = new Error((s && s.error) || 'status ' + r.status); err.status = r.status; err.command = command; err.result = (s && s.status) || '';
   if (r.status === 202) {
     // The game has begun it. Ask what became of it; never send it again.
-    for (let i = 0; i < 12 && err.result === 'pending'; i++) {
+    let k = null;
+    for (let i = 0; i < 12 && !(k && k.done); i++) {
       await new Promise(done => setTimeout(done, 500));
-      try { const k = await (await fetch('/api/command/' + command, { cache: 'no-store' })).json(); if (k && k.status && k.status !== 'unknown') { err.result = k.status; err.said = k.said || ''; } } catch (e) { /* ask again */ }
+      try { const got = await (await fetch('/api/command/' + command, { cache: 'no-store' })).json(); if (got && got.status && got.status !== 'unknown') { k = got; err.result = got.status; err.said = got.said || ''; } } catch (e) { /* ask again */ }
     }
-    if (err.result === 'applied') return (await fetch('/api/state', { cache: 'no-store' })).json();
+    if (k && k.done && ['applied', 'partial', 'pending', 'unconfirmed'].indexOf(k.status) >= 0) { liveResult(k, null); return (await fetch('/api/state', { cache: 'no-store' })).json(); }
+    if (k && k.done && k.status === 'failed') err.message = (Array.isArray(k.ops) && k.ops.length ? opsSummary(k) : k.said) || 'no reason given';
+    if (!k || !k.done) err.result = 'pending';
   }
   throw err;
 };
+// What became of each part of the last change. The game answers part by part: applied (seen in the game), failed,
+// pending (on its way, such as a queued spawn) or unconfirmed (requested: the call was made, the effect is not seen).
+const OP_WORDS = { add: 'added', move: 'moved', change: 'changed', remove: 'removed', spawn: 'made', order: 'ordered', fire: 'set off', save: 'saved', export: 'exported', clear: 'cleared' };
+const MARKER_OPS = ['add', 'move', 'change', 'remove', 'spawn'];
+function opsSummary(res) {
+  const ops = res && Array.isArray(res.ops) ? res.ops : [], done = new Map(), failed = [];
+  let pending = 0, asked = 0;
+  ops.forEach(o => {
+    if (o.status === 'applied') done.set(o.op, (done.get(o.op) || 0) + 1);
+    else if (o.status === 'failed') failed.push(o);
+    else if (o.status === 'pending') pending++;
+    else asked++;
+  });
+  const parts = [...done].map(([op, n]) => (OP_WORDS[op] || op) + ' ' + n);
+  if (asked) parts.push(asked + ' requested, not yet seen in the game');
+  if (pending) parts.push(pending + ' still on the way into the game');
+  if (failed.length) parts.push(failed.length + ' failed: ' + (failed[0].said || 'no reason given') + (failed.length > 1 ? ' (and ' + (failed.length - 1) + ' more)' : ''));
+  if (res && res.left) parts.push(res.left + ' more not listed');
+  const text = parts.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+// Markers whose last change failed or is still on its way, by marker id, for the list. Kept per mission and bounded.
+function noteOps(ops) {
+  if (live.opsSession !== live.session) { live.ops.clear(); live.opsSession = live.session; }
+  ops.forEach(o => {
+    if (!o || !o.ref || MARKER_OPS.indexOf(o.op) < 0) return;
+    if (o.status === 'failed' || o.status === 'pending') live.ops.set(o.ref, o); else live.ops.delete(o.ref);
+  });
+  while (live.ops.size > 200) live.ops.delete(live.ops.keys().next().value);
+}
+function liveOp(e) { return live.on && e && e.id && live.opsSession === live.session ? live.ops.get(String(e.id)) || null : null; }
+function liveResult(res, s) {
+  if (!res || !Array.isArray(res.ops)) return;
+  if (s && typeof s.session === 'string') live.session = s.session;
+  noteOps(res.ops);
+  if (res.status !== 'applied') live.rev = null;          // the page takes the game's marker list over: it follows the game, not the request
+  if (res.ops.some(o => o.status === 'failed')) {
+    if (s && s.message) live.lastMessage = s.message;    // the outcome part by part says more than the game's last line
+    say(opsSummary(res) + '.');
+  }
+  if (res.command && res.ops.some(o => o.status === 'pending')) followCommand(res.command);
+  syncSide();
+}
+// Spawns answer later: ask the game what became of them until none is on its way, then read the game's state again.
+async function followCommand(command) {
+  if (live.following.has(command) || live.following.size >= 8) return;
+  live.following.add(command);
+  try {
+    let seen = '';
+    for (let i = 0; i < 30; i++) {
+      await new Promise(done => setTimeout(done, 800));
+      let k = null;
+      try { k = await (await fetch('/api/command/' + encodeURIComponent(command), { cache: 'no-store' })).json(); } catch (e) { continue; }
+      if (!k || !Array.isArray(k.ops)) return;           // the game no longer knows it: nothing more to learn
+      const now = k.ops.map(o => o.status).join();
+      if (now !== seen) { seen = now; noteOps(k.ops); live.rev = null; syncSide(); invalidate(); }   // something settled: take the game's state over again
+      if (!k.ops.some(o => o.status === 'pending')) {
+        if (k.ops.some(o => o.status === 'failed')) say(opsSummary(k) + '.');
+        return;
+      }
+    }
+  } finally { live.following.delete(command); }
+}
 // What to tell the host when a change did not go through. Each case says whether it was carried out.
 const liveTrouble = err => {
   const st = err && err.status, res = err && err.result;
@@ -2720,57 +2846,99 @@ function startLive() {
 // ------------------------------------------------------------------ replay
 const replay = { data: null, t: 0, playing: false, speed: 4, last: 0, name: '' };
 const mmss = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+// Who an enemy row is (recordings of semantics 3 on): "s4" is the scenario's spawn 4 counted from 0, "m12" a marker the
+// Game Master placed, and "v1" after either marks the gunner of gun truck 1. '' when the recording does not know.
+const whoOf = q => (typeof q[6] === 'string' ? q[6] : '');
+function whoName(who) {
+  const m = /^(?:([sm])(\d+))?(?:v(\d+))?$/.exec(who || '');
+  if (!m || !who) return '';
+  const said = [];
+  if (m[1] === 's') said.push('spawn #' + (+m[2] + 1));
+  if (m[1] === 'm') said.push('marker ' + m[2]);
+  if (m[3]) said.push('gun truck ' + m[3]);
+  return said.join(', ');
+}
 function loadReplay(obj, name) {
   if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
   // Only moments that are whole are kept: a time, players and enemies, each with a place. A damaged file is read as far as it goes.
   const row = q => Array.isArray(q) && q.length >= 4 && [1, 2, 3].every(k => typeof q[k] === 'number' && isFinite(q[k]));
-  const frames = obj.frames.filter(f => Array.isArray(f) && typeof f[0] === 'number' && isFinite(f[0]) && Array.isArray(f[1]) && Array.isArray(f[2])).map(f => [f[0], f[1].filter(row), f[2].filter(row)]);
+  // An identity that cannot be read is dropped, so that enemy is simply not known.
+  const clean = q => { if (q.length > 6 && !whoName(whoOf(q))) q.length = 6; return q; };
+  const frames = obj.frames.filter(f => Array.isArray(f) && typeof f[0] === 'number' && isFinite(f[0]) && Array.isArray(f[1]) && Array.isArray(f[2])).map(f => [f[0], f[1].filter(row), f[2].filter(row).map(clean)]);
   if (!frames.length) throw new Error('It is a replay, but none of its recorded moments can be read.');
-  // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
-  const born = new Map();
-  for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
-  // A gun truck's gunner reports "Evade" for as long as he lives (plugin 0.17.0 recorded that). He is where the truck is.
-  const trucks = (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && /gun truck/.test(String(e[2])) && Array.isArray(e[3])).map(e => e[3]);
-  if (trucks.length) {
-    const crew = new Set(), seen = new Set();
-    for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
-    if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
+  const semantics = typeof obj.semantics === 'number' ? obj.semantics : 1, linked = semantics >= 3;
+  if (!linked) {
+    // Older recordings do not say who an enemy is, so what follows is worked out by guessing.
+    // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
+    const born = new Map();
+    for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
+    // A gun truck's gunner reports "Evade" for as long as he lives (plugin 0.17.0 recorded that). He is where the truck is.
+    const trucks = (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && /gun truck/.test(String(e[2])) && Array.isArray(e[3])).map(e => e[3]);
+    if (trucks.length) {
+      const crew = new Set(), seen = new Set();
+      for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
+      if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
+    }
   }
+  const text = k => (typeof obj[k] === 'string' ? obj[k] : '');
   replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3 && typeof e[0] === 'number'),
-    legacy: !(obj.semantics >= 2), plugin: typeof obj.plugin === 'string' ? obj.plugin : '', run: typeof obj.run === 'string' ? obj.run : '',
+    semantics, linked, legacy: semantics < 2, plugin: text('plugin'), run: text('run'), session: text('session'), scenario: text('scenario'), scenarioHash: text('scenarioHash'),
     start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
   replay.t = replay.data.start; replay.playing = false; replay.name = name;
   if (state.mode === '3d') setMode('2d');
   $('tabReplay').hidden = false; showTab('replay');
   syncReplay(); invalidate();
-  return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events. Press Play.';
+  return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events.' +
+    (linked ? '' : ' An older recording: it links enemies by a guess.') + ' Press Play.';
 }
 // The mission in a few numbers, worked out from the recording. A row with a time can be jumped to.
 function replayStats(d) {
   const fr = d.frames, rows = [], alert = q => !!q[5] && q[5] !== 'I';
+  // Who each row id was, and how to call an enemy: by who it is when the recording says so, by its row id otherwise.
+  const who = new Map();
+  for (const f of fr) for (const q of f[2]) if (!who.get(q[0]) && whoOf(q)) who.set(q[0], whoOf(q));
+  const call = id => (whoName(who.get(id)) || 'enemy ' + id);
   rows.push(['Length', mmss(d.end - d.start)]);
   let first = null, contact = 0, most = 0; const seen = new Set();
   fr.forEach((f, i) => {
     most = Math.max(most, f[2].length); for (const q of f[2]) seen.add(q[0]);
-    const who = f[2].find(alert);
-    if (who && !first) { let near = Infinity; for (const p of f[1]) near = Math.min(near, Math.hypot(p[1] - who[1], p[2] - who[2], p[3] - who[3])); first = { t: f[0], id: who[0], dist: near, at: [who[1], who[2], who[3]] }; }
-    if (who && i > 0) contact += f[0] - fr[i - 1][0];
+    const one = f[2].find(alert);
+    if (one && !first) { let near = Infinity; for (const p of f[1]) near = Math.min(near, Math.hypot(p[1] - one[1], p[2] - one[2], p[3] - one[3])); first = { t: f[0], id: one[0], dist: near, at: [one[1], one[2], one[3]] }; }
+    if (one && i > 0) contact += f[0] - fr[i - 1][0];
   });
-  rows.push(['Players first noticed', first ? mmss(first.t) + ', by enemy ' + first.id + (isFinite(first.dist) ? ' from ' + Math.round(first.dist) + ' m' : '') : 'never', first ? first.t : null, first ? first.at : null]);
+  rows.push(['Players first noticed', first ? mmss(first.t) + ', by ' + call(first.id) + (isFinite(first.dist) ? ' from ' + Math.round(first.dist) + ' m' : '') : 'never', first ? first.t : null, first ? first.at : null]);
   rows.push(['Time with the enemy alerted', mmss(contact)]);
-  const downs = d.events.filter(e => e[1] === 'down'), minutes = Math.max(1 / 60, (d.end - d.start) / 60);
-  rows.push(['Enemies seen in all', String(seen.size)]);
+  const kind = k => d.events.filter(e => e[1] === k), downs = kind('down'), minutes = Math.max(1 / 60, (d.end - d.start) / 60);
+  // An enemy made again after an edit is the same enemy: the writer links it to the one taken out, and so does this count.
+  let again = 0;
+  if (d.linked) {
+    const waiting = new Map();
+    for (const e of d.events) {
+      const w = typeof e[4] === 'number' ? who.get(e[4]) : '';
+      if (!w) continue;
+      if (e[1] === 'remade') waiting.set(w, (waiting.get(w) || 0) + 1);
+      else if (e[1] === 'appears' && waiting.get(w)) { waiting.set(w, waiting.get(w) - 1); again++; }
+    }
+  }
+  rows.push(['Enemies seen in all', String(seen.size - again)]);
   rows.push(['Most at one time', String(most)]);
   rows.push(['Enemies down', downs.length + (downs.length ? ' (' + (downs.length / minutes).toFixed(1) + ' a minute)' : '')]);
-  if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]), downs[0][0], downs[0][3]]);
-  const taken = d.events.filter(e => e[1] === 'removed'), asked = d.events.filter(e => e[1] === 'command');
-  if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
+  if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]) + (d.linked && typeof downs[0][4] === 'number' ? ', ' + call(downs[0][4]) : ''), downs[0][0], downs[0][3]]);
+  const taken = kind('removed'), remade = kind('remade'), gone = kind('gone'), asked = kind('command'), ended = kind('end');
+  if (d.linked) {
+    if (taken.length) rows.push(['Taken out by an edit', String(taken.length)]);
+    if (remade.length) rows.push(['Made again after an edit', String(remade.length)]);
+    if (gone.length) rows.push(['Gone for a reason not known', String(gone.length), gone[0][0], gone[0][3]]);
+  } else if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
   if (asked.length) rows.push(['Game Master requests', String(asked.length)]);
-  if (d.legacy) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'an edit that took an enemy out counts as down here']);
+  if (ended.length) rows.push(['Recording ended', mmss(ended[ended.length - 1][0]) + ', ' + ended[ended.length - 1][2], ended[ended.length - 1][0], null]);
+  if (!d.linked) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'enemies are linked by a guess, and every enemy that left counts as down' + (d.legacy ? ', even one an edit took out' : '')]);
+  if (d.scenario) rows.push(['Scenario', d.scenario + (d.scenarioHash ? ' (' + d.scenarioHash.replace(/^[a-z0-9]+:/, '').slice(0, 8) + ')' : '')]);
   if (d.run) rows.push(['Run record', d.run]);
-  d.players.forEach((name, who) => {
+  if (d.session) rows.push(['Session', d.session]);
+  d.players.forEach((name, n) => {
     let dist = 0, last = null, lastT = null;
-    for (const f of fr) { const p = f[1].find(q => q[0] === who); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
+    for (const f of fr) { const p = f[1].find(q => q[0] === n); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
     if (lastT === null) return;
     rows.push([name + ' walked', Math.round(dist) + ' m']);
     if (lastT < d.end - 3) rows.push([name + ' last seen', mmss(lastT), lastT, [last[1], last[2], last[3]]]);
@@ -2790,7 +2958,7 @@ function replayNow() {
   const { a, b, k } = replayFrame(replay.t);
   const mix = (list, next) => list.map(p => {
     const q = next.find(n => n[0] === p[0]);
-    return { id: p[0], pos: q ? [p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k, p[3] + (q[3] - p[3]) * k] : [p[1], p[2], p[3]], yaw: p[4], state: p[5] };
+    return { id: p[0], pos: q ? [p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k, p[3] + (q[3] - p[3]) * k] : [p[1], p[2], p[3]], yaw: p[4], state: p[5], who: whoOf(p) };
   });
   return { players: mix(a[1], b[1]).map(p => Object.assign(p, { name: replay.data.players[p.id] || 'Player' })), enemies: mix(a[2], b[2]) };
 }
@@ -3148,7 +3316,7 @@ function tryOut() {
 $('tryWhat').addEventListener('change', syncTry);
 $('tryGo').addEventListener('click', tryOut);
 
-window.missionlabEditor = { readyRows, readyReport, scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+window.missionlabEditor = { readyRows, readyReport, reportBundle, scrubReport, EDITOR_VERSION, scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

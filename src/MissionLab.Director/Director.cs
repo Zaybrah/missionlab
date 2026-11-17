@@ -120,8 +120,7 @@ namespace MissionLab
             OperationsManager om = OperationsManager.singleton;
             if (om == null) { log.LogInfo("the game mode could not be read; mission left unchanged"); return true; }
             var mode = om.CurrentGameMode;
-            bool pveRaid = mode == OperationsManager.GameMode.StandardPVE || mode == OperationsManager.GameMode.PVE_HVTKILL ||
-                           mode == OperationsManager.GameMode.PVE_FINDINTEL || mode == OperationsManager.GameMode.PVE_ASSETDESTROY;
+            bool pveRaid = LiveLink.PveRaid(mode);
             if (!pveRaid)
             {
                 log.LogInfo("game mode " + mode + " is not a PvE raid; MissionLab stays out of it and the mission is left unchanged");
@@ -296,7 +295,7 @@ namespace MissionLab
                     s.HearingRange = s.Indoor ? tHear : Math.Max(tHear, s.HearingRange);
                     s.Fov = s.Indoor ? tFov : Math.Max(tFov, s.Fov);
                 }
-                // More than positions: a wave on alert, an ambush, locked doors, intel somewhere else.
+                // More than positions: a wave on alert, an ambush, locked doors, and intel somewhere else when RandomIntel is on.
                 if (DirectorPlugin.RandomExtras.Value)
                 {
                     try { RandomExtras.Add(plan, raid, nav, new Rng(seed ^ 0xE87A5), infils); }

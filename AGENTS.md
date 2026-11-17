@@ -45,7 +45,7 @@ Rules that are never negotiable:
 | `missionlab-plan/1` (scenario) | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
 | `missionlab-mission/1` | `Director.WriteRecord` | `missions/last.json` + timestamped copies |
 | `missionlab-run/1` | `RunRecord` | `runs/` (pruned to 60) |
-| `missionlab-replay/1` (`semantics:2`) | `Replay` | `replays/` |
+| `missionlab-replay/1` (`semantics:3`: rows carry `who` ids; 1 and 2 still open) | `Replay` | `replays/` |
 | `missionlab-recon/1`, `missionlab-movement/2` | Recon `ReconDump`, `MovementTracker` | `recon/` |
 | `.mlgeo` (`MLGEO2\n\0`) | `MapExport` | `maps/` (local only) |
 
@@ -66,19 +66,22 @@ The navmesh input is `OPERATOR_Data/NavMeshData/*.bytes`: a zip holding `graph0_
 
 ## Development Commands
 ```bash
-./test.sh                                                   # CI equivalent: tests/Pure, 150 checks, no game files
-dotnet run --project tests/Pure -c Release                  # same suite from a Windows shell (verified: ALL 150 CHECKS PASSED)
+./test.sh                                                   # CI equivalent: tests/Pure, editor page in sync (tools/editor/build.py --check), editor checks (node tests/editor/run.mjs); no game files
+dotnet run --project tests/Pure -c Release                  # the C# suite alone from a Windows shell
+node tests/editor/run.mjs                                   # the editor checks alone: fixtures, strict-reader parity with the plugin, editor -> C# -> editor round trip
 dotnet run --project tests/Pure -- --read examples/*.json   # strict-read scenario files exactly as the plugin does; exit 1 if refused
 ./test.sh --map <NavMeshData/x.bytes> <recon/x.late.json>   # adds CoreTest: generator determinism + placement rules, seeds 1 2 3
 dotnet run --project tests/CoreTest -c Release -- --check <scenario.json> <navmesh.bytes> [recon.json]  # placement report (lenient reader)
-OPERATOR_REFS=/path/to/refs ./build.sh                      # -> dist/MissionLab.Director.dll, dist/MissionLab.Recon.dll
+OPERATOR_REFS=/path/to/OPERATOR ./build.sh                  # -> dist/MissionLab.Director.dll, dist/MissionLab.Recon.dll (or: python3 tools/build.py --refs <dir>)
 python3 tools/package.py --check                            # -> dist/MissionLab-<Version>.zip, unpacked and verified
 python3 tools/preview/render_plan.py <nav.bytes> <recon.json|-> <plan_dir> <out.png> "<title>" 1 2 3
 ```
 - **`build.sh`:**
-  - Linux or WSL only. The path to `csc` is hard-coded as `/usr/lib/dotnet/sdk/*/Roslyn/bincore/csc.dll` (an apt install of dotnet).
-  - `OPERATOR_REFS` must contain the managed DLLs in `dotnet/` (the game's .NET 6 BCL), `BepInEx/core/` and `BepInEx/interop/`. `refs/` is gitignored for this.
-- **CI** (`.github/workflows/test.yml`) runs only `./test.sh`. Director and Recon compile errors show up **only** in `build.sh`.
+  - A thin wrapper around `tools/build.py` (Python 3 stdlib; Windows, Linux, macOS), run with the first working `python3`/`python`. Arguments pass through.
+  - References come from `--refs <dir>` or `OPERATOR_REFS`; the OPERATOR game folder itself works. It must contain `dotnet/` (the game's .NET 6 BCL), `BepInEx/core/` and `BepInEx/interop/`; missing folders or key assemblies stop the build with exit 2 before compiling. `refs/` is gitignored for this.
+  - Only managed DLLs are referenced (native ones such as `coreclr.dll` make csc fail with CS0009), through a response file `dist/refs.rsp` (400+ refs overflow the Windows command line).
+  - `csc.dll` is taken from `CSC` if set, else from the newest SDK in `dotnet --list-sdks` that has `Roslyn/bincore/csc.dll`.
+- **CI** (`.github/workflows/test.yml`) sets up .NET 8, Python 3 and Node 20 and runs `./test.sh`. Director and Recon compile errors show up **only** in `build.sh`.
 - There is no linter or formatter config. Match the style of the surrounding code.
 - `CoreTest` crashes when run with no arguments. Use `test.sh --map` or the modes listed at the top of `tests/CoreTest/Program.cs`.
 
@@ -150,7 +153,8 @@ Other rules for the format:
 - There are two readers. The strict `ScenarioFile.Read` handles user files at mission start. The lenient `FromJson` clamps and defaults, and is used for runs, Game Master and live edits, and `CoreTest --check`.
 
 **Editor JS**
-- One IIFE with `'use strict'`, 2-space indent, a single global `state` object, user messages through `say()`, localStorage wrapped in try/catch. No npm and no build step.
+- One IIFE with `'use strict'`, 2-space indent, a single global `state` object, user messages through `say()`, localStorage wrapped in try/catch. No npm.
+- The page is built: edit the parts in `tools/editor/src/*.js`/`*.html` (joined in file-name order by `python3 tools/editor/build.py`), never `tools/editor/index.html`. `build.py --check` fails on a stale page; tests and `package.py` run it.
 - Keep the literals `src="three.min.js"` (checked by `package.py`) and `'__ML_PAGE_STAMP__'` (replaced by LiveLink).
 
 ## Important Files

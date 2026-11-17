@@ -15,6 +15,26 @@ if (args.Length >= 2 && args[0] == "--read")
     }
     return refused == 0 ? 0 : 1;
 }
+// "--roundtrip <scenario.json> ..." writes each file back the way the plugin does (FromJson, then ToJson), for tests/editor/run.mjs.
+// Each file starts with a line "#missionlab-roundtrip <path>"; no line of the JSON can begin with '#'.
+if (args.Length >= 2 && args[0] == "--roundtrip")
+{
+    // Written as UTF-8 bytes: on Windows the console's code page would turn letters of other scripts into question marks.
+    var utf8 = new System.Text.UTF8Encoding(false);
+    int broken = 0;
+    using (Stream stdout = Console.OpenStandardOutput())
+    {
+        foreach (string path in args.Skip(1))
+        {
+            string written;
+            try { written = MissionPlan.FromJson(File.ReadAllText(path)).ToJson(); }
+            catch (Exception e) { written = "not read: " + e.Message.Replace('\n', ' ').Replace('\r', ' '); broken++; }
+            byte[] bytes = utf8.GetBytes("#missionlab-roundtrip " + path + "\n" + written + "\n");
+            stdout.Write(bytes, 0, bytes.Length);
+        }
+    }
+    return broken == 0 ? 0 : 1;
+}
 int failures = 0, checks = 0;
 void Check(string what, bool ok, string more = "")
 {
@@ -235,6 +255,48 @@ Console.WriteLine("resilience");
     Check("the page gets the newest few, newest last", led.RecentJson(3).Contains("c10") && led.RecentJson(3).EndsWith("\"said\":\"\"}]") && !led.RecentJson(3).Contains("\"c9\""), led.RecentJson(3));
     Check("only plain numbers are accepted", CommandLedger.Clean("a-B_9") == "a-B_9" && CommandLedger.Clean("a b") == "" && CommandLedger.Clean("x\"y") == "" && CommandLedger.Clean(new string('a', 65)) == "" && CommandLedger.Clean(null) == "");
 }
+{   // A batch reports each part; queued spawns settle later; a refreshed page can read the parts back (ML-006).
+    var led = new CommandLedger(8);
+    led.Begin("b1", "s1", "/api/markers", 1, out _);
+    var parts = new Outcome();
+    parts.Add(new CommandOp("move", "3", 0, CommandLedger.Applied, ""));
+    parts.Add(new CommandOp("add", "7", 1, CommandLedger.Pending, "its enemy is on its way"));
+    parts.Add(new CommandOp("remove", "4", -1, CommandLedger.Failed, "it is \"being\" spawned"));
+    led.Record("b1", parts);
+    Check("a repeat before the game answered is told to wait", !led.Begin("b1", "s1", "/api/markers", 2, out var early) && !early.Done);
+    led.Finish("b1", CommandLedger.Applied, 200, "{}", "");
+    led.TryGet("b1", out var b1);
+    Check("some failed, some did not: partial, not applied", b1.Done && b1.Status == CommandLedger.Partial, b1.Status);
+    string read = led.JsonOf("b1");
+    var doc = System.Text.Json.JsonDocument.Parse(read).RootElement;
+    var ops = doc.GetProperty("ops");
+    Check("the parts can be read back by number, each with its own outcome", ops.GetArrayLength() == 3 && ops[1].GetProperty("ref").GetString() == "7" && ops[1].GetProperty("at").GetInt32() == 1
+          && ops[2].GetProperty("status").GetString() == "failed" && ops[2].GetProperty("said").GetString() == "it is \"being\" spawned" && doc.GetProperty("left").GetInt32() == 0, read);
+    Check("a queued spawn hears what became of it", led.Settle("b1", "7", CommandLedger.Applied, "its enemy exists") && !led.Settle("b1", "7", CommandLedger.Failed, "again"));
+    Check("still partial: the removal failed", led.TryGet("b1", out b1) && b1.Status == CommandLedger.Partial && led.JsonOf("b1").Contains("its enemy exists"));
+    Check("the short list in every state answer leaves the parts out", !led.RecentJson(5).Contains("\"ops\"") && led.RecentJson(5).Contains("\"done\":true"), led.RecentJson(5));
+
+    var waits = new Outcome();
+    waits.Add(new CommandOp("add", "1", 0, CommandLedger.Applied, ""));
+    waits.Add(new CommandOp("add", "2", 1, CommandLedger.Pending, ""));
+    Check("applied and pending: pending", waits.Overall(CommandLedger.Applied) == CommandLedger.Pending);
+    led.Begin("b2", "s1", "/api/markers", 3, out _); led.Record("b2", waits); led.Finish("b2", CommandLedger.Applied, 200, "{}", "");
+    Check("a mission that ends fails what never came", led.Abandon("the mission ended") == 1 && led.TryGet("b2", out var b2) && b2.Status == CommandLedger.Partial);
+    var asked = new Outcome(); asked.Add(new CommandOp("order", "5", 0, CommandLedger.Unconfirmed, "told to walk there"));
+    Check("only asked for is unconfirmed, never applied", asked.Overall(CommandLedger.Applied) == CommandLedger.Unconfirmed);
+    Check("nothing to report keeps the answer's own status", new Outcome().Overall(CommandLedger.Applied) == CommandLedger.Applied);
+    var all = new Outcome(); all.Add(new CommandOp("save", "", -1, CommandLedger.Failed, "disk full"));
+    Check("every part failed: failed", all.Overall(CommandLedger.Applied) == CommandLedger.Failed);
+    led.Begin("b3", "s1", "/api/command", 4, out _); led.Record("b3", all); led.Finish("b3", CommandLedger.Failed, 500, "{}", "");
+    Check("an answer that failed as a whole stays failed", led.TryGet("b3", out var b3) && b3.Status == CommandLedger.Failed);
+
+    var huge = new Outcome();
+    for (int i = 0; i < Outcome.Keep + 50; i++) huge.Add(new CommandOp("add", i.ToString(), i, CommandLedger.Applied, ""));
+    huge.Add(new CommandOp("add", "late", 999, CommandLedger.Failed, "no room"));
+    Check("a huge batch lists a bounded number of parts and counts the rest", huge.Ops.Count == Outcome.Keep && huge.LeftOut == 51, huge.Ops.Count + " listed, " + huge.LeftOut + " left out");
+    Check("a failure is listed even when the list is full", huge.Ops.Exists(o => o.Ref == "late") && huge.Overall(CommandLedger.Applied) == CommandLedger.Partial);
+    Check("the bounded list is valid JSON", System.Text.Json.JsonDocument.Parse("{" + huge.Json() + "}").RootElement.GetProperty("ops").GetArrayLength() == Outcome.Keep);
+}
 
 // ---------------------------------------------------------------- shared reinforcement waves (ML-002)
 Console.WriteLine("reinforcement waves");
@@ -381,6 +443,18 @@ Console.WriteLine("files");
         }
     }
 }
+
+// ---------------------------------------------------------------- simulated clock: repeats, messages, waves, reset (ML-010)
+Console.WriteLine("simulated clock");
+Clocks.Run(Check);
+
+// ---------------------------------------------------------------- synthetic maps: islands, floors, insertion clearance (ML-010)
+Console.WriteLine("synthetic maps");
+SyntheticMaps.Run(Check);
+
+// ---------------------------------------------------------------- message queue: spacing, red at once, cap, reset (ML-010)
+Console.WriteLine("message queue");
+Messages.Run(Check);
 
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;

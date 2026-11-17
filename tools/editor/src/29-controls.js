@@ -18,9 +18,11 @@ function syncSide() {
   state.enemies.forEach((e, i) => {
     const w = warningFor(e); if (w) warn++;
     const li = document.createElement('li'), b = document.createElement('button');
+    const op = liveOp(e);       // the last change to this marker failed or is still on its way: it is not shown as live
     b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
+    if (op) b.title = (b.title ? b.title + ' ' : '') + 'The last change to enemy ' + (i + 1) + (op.status === 'failed' ? ' failed: ' : ' is still on its way into the game: ') + (op.said || 'no reason given') + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', op ? op.status : w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -329,7 +331,10 @@ $('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkil
 $('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
 $('needsGm').addEventListener('change', ev => missionEdit(() => { state.gameMaster = ev.target.checked; }));
 $('repeatRun').addEventListener('change', ev => api('/api/repeat', { file: ev.target.value }).then(s => { live.rev = null; live.runsFor = null; say(ev.target.value ? 'The next mission you host repeats that run: same roll. It needs the same scenario and number of players to come out the same.' : 'The next mission gets a new roll.'); return applyLive(s); }).catch(e => say(liveTrouble(e))));
-$('readyCopy').addEventListener('click', () => { const text = readyReport(); (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); }); });
+$('readyCopy').addEventListener('click', async () => {
+  const text = readyReport($('readyBundle').checked ? await reportBundle() : null);
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard. Its first lines list what it holds.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); });
+});
 $('liveRecover').addEventListener('click', () => api('/api/recover', {}).then(s => { live.rev = null; return applyLive(s); }).catch(e => say(liveTrouble(e))));
 // What the running game says about the wave, in words.
 function waveNow() {
@@ -345,11 +350,23 @@ function waveNow() {
 function readyRows(st, s) {
   const rows = [], add = (ok, text) => rows.push({ ok, text });
   if (!st) { add(false, 'The game does not answer. Is OPERATOR running with MissionLab installed?'); return rows; }
-  add(true, 'MissionLab ' + (st.plugin || '?') + ' answers on port ' + (st.port || '?') + '.');
+  add(true, 'MissionLab ' + (st.plugin || '?') + ' answers on port ' + (st.port || '?') + (st.plugin === EDITOR_VERSION ? '; this page is the same release.' : '.'));
+  // Page and plugin come out of one ZIP; when they differ, the step that brings them together again is named.
+  if (st.plugin && st.plugin !== EDITOR_VERSION) {
+    const served = String(location.port) === String(st.port) ? '' : ', or open the page the game serves at http://localhost:' + st.port;
+    add(false, 'This page is MissionLab ' + EDITOR_VERSION + ', the game runs MissionLab ' + st.plugin + '. Copy index.html and three.min.js from the MissionLab ' + st.plugin + ' ZIP into BepInEx/MissionLab/web/ and reload this page' + served + '. To use ' + EDITOR_VERSION + ' instead, install its ZIP whole, plugin included, and restart the game.');
+  }
   if (st.startError) add(false, st.startError);
+  // Another game version only warns: everything stays usable, as most of it usually still works.
   add(st.game === st.testedGame, st.game === st.testedGame ? 'OPERATOR ' + st.game + ': the version this MissionLab was tried with.' : 'OPERATOR ' + (st.game || '?') + ': this MissionLab was tried with ' + st.testedGame + '. It may not work, or only in part.');
   add(st.role !== 'client', st.role === 'host' ? 'You are the host.' : st.role === 'client' ? 'You joined someone else: MissionLab only works for the host. Nothing here changes that mission.' : 'No mission yet: host one to use the live tools.');
-  if (st.role === 'host') add(!!st.mission, st.mission ? 'The mission is running and the map is known.' : 'A mission is starting, or its map data was not found.');
+  if (st.mode) add(!!st.pve || st.role !== 'host', st.pve ? 'Game mode ' + st.mode + ': a PvE raid, the kind MissionLab works in.' : 'Game mode ' + st.mode + ': not a PvE raid. MissionLab leaves such a mission as the game made it; host a PvE raid to use it.');
+  else if (st.role === 'host') add(false, 'The game mode could not be read, so MissionLab leaves this mission as the game made it.');
+  if (st.role === 'host') add(!!st.mission, st.mission ? 'The mission is running on the map data ' + (st.map || '?') + '.' : 'A mission is starting, or its map data was not found; without it MissionLab leaves the mission as the game made it.');
+  const compat = { tested: [true, 'has been played through with this release: the tested baseline.'],
+    experimental: [false, 'has been tried, but not played through with this release: expect parts of it not to work.'],
+    untested: [false, 'has not been played through with this release. It may well work; try it before you rely on it.'] }[st.compat];
+  if (compat) add(compat[0], 'The map ' + (st.map || '?') + ' in ' + (st.mode || 'this mode') + ' as ' + (st.role || '?') + ' ' + compat[1]);
   add(!!st.library, st.library ? 'The 3D view works without the internet.' : 'The 3D view needs the internet: three.min.js is not beside the page.');
   if (st.rejected) add(false, st.rejected);
   for (const h of st.health || []) if (h.paused) add(false, 'The part "' + h.name + '" is paused: ' + (h.lastError || 'unknown error') + '.');
@@ -368,17 +385,58 @@ function syncReady(s) {
     for (const r of rows) { const li = document.createElement('li'); li.className = r.ok ? 'yes' : 'no'; li.textContent = (r.ok ? 'OK: ' : 'Look: ') + r.text; list.appendChild(li); }
   });
 }
-// The report holds versions and states only: no player names, no folders, no scenario text.
-function readyReport() {
-  const st = live.status || {}, lines = ['MissionLab report', 'made ' + new Date().toISOString()];
-  lines.push('plugin ' + (st.plugin || '?') + ', OPERATOR ' + (st.game || '?') + ' (tried with ' + (st.testedGame || '?') + '), role ' + (st.role || '?') + ', mission ' + (st.mission ? 'yes' : 'no') + ', 3D library beside the page ' + (st.library ? 'yes' : 'no'));
+// A report goes to other people: folders and the names of players are taken out of everything in it, error texts included.
+function scrubReport(text) {
+  // Drive folders (also as written inside JSON, and with spaces in folder names), network shares and the usual home and
+  // system folders of Linux and macOS. Taking out a little too much is better than leaving a user name in.
+  let out = String(text).replace(/(^|[^A-Za-z0-9])[A-Za-z]:[\\/](?:[^\\/\n"'<>|]*[\\/])*[^\s"',;)\\/]*/g, '$1(folder)').replace(/(^|[\s"'(=])(?:\\\\){1,2}[^\s"',;)]+/g, '$1(folder)')
+    .replace(/(^|[\s"'(=])\/(?:home|Users|mnt|media|run|tmp|var|opt|srv)\/(?:[^\\/\n"'<>|]*\/)*[^\s"',;)\/]*/g, '$1(folder)');
+  const names = new Set();
+  for (const p of [...(live.players || []), ...((replay.data && replay.data.players) || [])]) {
+    const n = typeof p === 'string' ? p : p && typeof p.name === 'string' ? p.name : '';
+    if (n.trim().length >= 3) names.add(n);
+  }
+  for (const n of names) out = out.split(n).join('(player)');
+  return out;
+}
+const byteSize = text => new TextEncoder().encode(text).length;
+// The optional parts of a report: the scenario on the page and the resolved plan of the game's last run, each with why it is missing.
+async function reportBundle() {
+  const st = live.status || {}, out = {};
+  out.scenario = state.enemies.length > 0 && !state.example ? { name: fileName(), text: scenarioText() }
+    : { name: fileName(), missing: state.example ? 'the page shows the example, not a scenario' : 'no enemies are placed' };
+  if (!st.run) out.run = { name: '', missing: 'the game has written no run record yet' };
+  else {
+    try {
+      const r = await fetch('/api/runfile/' + encodeURIComponent(st.run), { cache: 'no-store' });
+      out.run = r.ok ? { name: st.run, text: await r.text() } : { name: st.run, missing: 'the game did not hand it over (status ' + r.status + ')' };
+    } catch (e) { out.run = { name: st.run, missing: 'the game did not answer' }; }
+  }
+  return out;
+}
+// Versions and states first; with a bundle, the scenario and the resolved run follow. The first lines list what the report holds.
+// Map files, 3D geometry, replays and game files are never part of it.
+function readyReport(extra) {
+  const st = live.status || {}, lines = [];
+  lines.push('page ' + EDITOR_VERSION + ', plugin ' + (st.plugin || '?') + ', OPERATOR ' + (st.game || '?') + ' (tried with ' + (st.testedGame || '?') + '), role ' + (st.role || '?') + ', mission ' + (st.mission ? 'yes' : 'no') + ', 3D library beside the page ' + (st.library ? 'yes' : 'no'));
+  lines.push('mode ' + (st.mode || '?') + (st.pve ? ' (PvE raid)' : '') + ', map data ' + (st.map || 'none') + ', compatibility ' + (st.compat || 'no map in use'));
   lines.push('session ' + (st.session || 'none') + ', run record ' + (st.run || 'none') + ', repeat ' + (st.repeat || 'no'));
   if (st.startError) lines.push('start: ' + st.startError);
   if (st.rejected) lines.push('refused: ' + st.rejected);
   for (const h of st.health || []) lines.push('part "' + h.name + '": ' + (h.paused ? 'paused' : h.ok ? 'ok' : h.failures + ' failures') + (h.lastError ? ', last error: ' + h.lastError : ''));
   for (const c of st.commands || []) lines.push('change ' + c.path + ': ' + c.status + (c.said ? ' (' + c.said + ')' : ''));
   for (const r of readyRows(live.status, null)) if (!r.ok) lines.push('look: ' + r.text);
-  return lines.join('\n');
+  const summary = scrubReport(lines.join('\n')), parts = [], contents = ['- summary of versions and states: ' + byteSize(summary) + ' bytes'];
+  for (const [key, label] of [['scenario', 'scenario'], ['run', 'resolved run']]) {
+    const p = extra && extra[key];
+    if (!p) continue;
+    if (typeof p.text !== 'string') { contents.push('- ' + label + (p.name ? ' ' + p.name : '') + ': not included, ' + p.missing); continue; }
+    const text = scrubReport(p.text);
+    contents.push('- ' + label + ' ' + p.name + ': ' + byteSize(text) + ' bytes');
+    parts.push('', '--- ' + label + ' ' + p.name + ' ---', text);
+  }
+  return ['MissionLab report', 'made ' + new Date().toISOString(), 'Contents:', ...contents,
+    'Never included: game files, map files, 3D geometry, replays, player names, folders.', '', summary, ...parts].join('\n');
 }
 // The list of earlier runs is asked for when the page connects and whenever a mission has written a new record.
 function syncRuns(s) {

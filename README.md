@@ -13,7 +13,7 @@ Only the host runs it. If anything fails before the swap, the mission is left
 exactly as shipped.
 
 - Config: `BepInEx/config/missionlab.director.cfg`. `[General]`: Enabled, Seed, EnemyCount, Scenes, MoveTarget,
-  RandomExtras, FairPlay, TellPlayers, Scenario. `[Replay]`: Enabled, Keep. `[GameMaster]`: Enabled, BlockGameKeys
+  RandomExtras, RandomIntel, FairPlay, TellPlayers, Scenario. `[Replay]`: Enabled, Keep. `[GameMaster]`: Enabled, BlockGameKeys
   and every key. `[LiveLink]`: Enabled, Port. `[Advanced]`: UseHook. Each setting is explained in the file itself.
 - Record of each mission (seed + every position): `BepInEx/MissionLab/missions/`
 - Replay a mission: put its seed in the config.
@@ -250,6 +250,29 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
+### New in 0.24.3 (not run in the game yet)
+The rest of v0.24 in `docs/backlog.md` that can be done without the game (ML-006, ML-009, ML-010, ML-011 preparation, ML-012).
+- **Each part of a change has its own result.** A change from the page that moves three enemies and adds one says
+  per part whether it was applied, failed, is waiting for the game to make the enemy, or was only asked for
+  ("unconfirmed"). The page marks a failed or waiting enemy in the list, follows a change that was still running when
+  the page stopped waiting, and then takes the game's own list again. `GET /api/command/<id>` gives the parts after a reload.
+- **Recordings know who is who** (replay `semantics` 3). Every enemy row carries its scenario number (`s4`), the
+  Game Master marker (`m12`) or the gun truck (`v1`); a moved enemy keeps its name. "Down" is written only when the
+  game says the enemy is dead, "gone" when it left for a reason the mod does not know, and the recording says why it
+  ended. The header names the session, the run record and the scenario fingerprint. Older recordings still open, with
+  a note that they link enemies by a guess.
+- **Is everything ready?** compares the page's version with the plugin's and says how to put it right; it shows the
+  game mode, the map data and whether this map and mode are tested. "Copy a report" can add the scenario on the page
+  and the last run's resolved plan, lists what it holds, and takes out folders and player names.
+- **Safer defaults.** Moved intel (new setting `RandomIntel`) and a moved target person (`MoveTarget`) are off by
+  default until they have been seen working for a player without the mod. Existing config files keep their values.
+- **A co-op acceptance mission** (`examples/clean_house_acceptance.json`) and a record to fill in with a friend
+  (`docs/coop-record.md`). The Status section below is now a table of what is tested, experimental, unavailable or untested.
+- **Builds on Windows too:** `python3 tools/build.py --refs <OPERATOR folder>` (or `./build.sh`) finds the compiler
+  itself and checks the game references before it starts.
+- **The editor's tests are in the repository** and run with `./test.sh` and on GitHub, without game files. The page is
+  put together from `tools/editor/src` by `tools/editor/build.py`; the result is the same single page.
+
 ### New in 0.24.1
 Fixes after the run of 17 November, and the next tickets of the backlog (ML-007, ML-008, ML-009, ML-012).
 - **Doors that stand open.** Telling a door it is "not closed" only unlatches it. The mod now swings it, trying four ways
@@ -291,8 +314,8 @@ The first part of `docs/backlog.md`; `docs/backlog-status.md` says where each ti
 
 ### Tests
 `./test.sh` runs the tests that need nothing of the game (scenario model, dice, trigger rules, completion check,
-reinforcement waves): .NET 8 SDK only. `./test.sh --map <navmesh.bytes> <recon.json>` adds the checks that read
-one of your own map files.
+reinforcement waves, and the editor's own checks): the .NET 8 SDK, Python 3 and Node 18 or newer (without Node the editor
+checks are skipped). `./test.sh --map <navmesh.bytes> <recon.json>` adds the checks that read one of your own map files.
 
 ### New in 0.23
 - **Messages take turns.** Two messages at the same moment used to push each other off the screen.
@@ -324,8 +347,8 @@ finding to go to the thing. The tab shows how many need a look.
 The studio allows the mod on two conditions (see "Permission" below), and two settings in the
 config (`BepInEx/config/missionlab.director.cfg`, section `General`) go with them:
 - `TellPlayers = true`: when others are in the mission, a notice on every screen a few seconds in
-  says that the host runs MissionLab. The notice uses the same call as trigger messages, which has
-  not been seen in the game yet.
+  says that the host runs MissionLab. The notice uses the same call as trigger messages, which the
+  host has seen on screen; that a player without the mod sees it has not been checked yet.
 - `FairPlay = Off`: whether missions are marked with the game's own "cheated" flag (the end screen
   then says cheating was detected, and there are no achievements). `Off` never marks,
   `ModEndedWins` marks a mission that a trigger or the Game Master ends as a success, `Always`
@@ -355,14 +378,50 @@ in the running mission. "Save in the game" writes the scenario file. The page it
 are in the `[LiveLink]` config section.
 
 ## Status
-Tested in game as solo host on Suburb (Clean House), Mexico Depot and Georgia:
-generated layouts, scenario files, patrol routes, Game Master mode in the game and in
-the browser, zones, the scenario picker and the empty map.
+Every result below is from OPERATOR 0.09.5 with BepInEx 6.0.0-be.785 (IL2CPP), the only game version tried. Statuses:
+**tested** = seen to work in the game on the named build, map and mode; **experimental** = built and switched on, but
+the last run failed or the fix has not run in the game yet; **unavailable** = tried and the game does not do it, so the
+mod does not use it; **untested** = never run in that combination. "Solo" means a modded host alone; "co-op" means a
+modded host with a friend who has no mod. Build 0.24.1 and later (this release, 0.24.3) have not run in the game yet;
+their additions are covered only by `./test.sh` and the editor tests. Sources: `docs/findings.md` (what was seen, run by
+run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the record to fill in for the next co-op run.
 
-Tested in co-op on Clean House (0.13.0, host with the mod, one friend without it): the
-friend could join, saw the enemies where the host saw them, and saw the zone enemies
-appear. Moved intel in co-op, target-person placement and the remaining maps are not
-confirmed yet. See `docs/findings.md` for what is known about the game's internals.
+| Capability | Status | Build, map, mode | Evidence and what is still open |
+|---|---|---|---|
+| Client joins a modded host; scenario enemies, enemies spawned later and zone enemies appear for the client | tested | 0.13.0, Clean House, co-op | Findings, co-op 0.13.0. Nothing added after 0.13 has been seen by a client |
+| Everything else in co-op on 0.14 to 0.24.3 (triggers, doors, messages, intel, extraction, waves, endings, live edits) | untested | 0.24.3, Clean House, co-op | ML-011 not started; `docs/coop-record.md` lists every check |
+| Rejoin or late join; a modded player who is not the host | untested | any | ML-011 |
+| Generated layouts | tested | build not recorded (before 0.15), Suburb and Mexico Depot Day, solo | Findings: enemies on every planned point; Mexico Depot 31 of 31, patrols walking |
+| Generated layouts on Georgia | untested | Georgia | Only the game's own target person is recorded there; an earlier note said layouts ran, with no build or record |
+| Maps other than Suburb, Mexico Depot and Georgia | untested | any | Findings, "Not yet verified" |
+| Scenario files and patrol routes | tested | 0.15 to 0.24.0, Clean House, solo | Findings, runs 0.15.0 to 0.24.0; patrols walked their routes |
+| The scenario picker in the lobby, the empty map | tested | build not recorded, Clean House, solo | An earlier status note only; no run in the findings records them |
+| A scenario that cannot be finished is refused, the game's own mission runs | tested | 0.24.0, Clean House, solo | Two refused missions with the refusal test (ML-001) |
+| Trigger engine: time with repeat and cap, zone, hold, alarm, door, enemies down, tagged down, intel, all-of, countdown | tested | 0.24.0, Clean House by night, solo | Findings, 17 November; repeat fired at 60, 150 and 240 s and stopped |
+| Messages on screen, taking turns; briefing | tested | 0.24.0, Clean House, solo | Findings: messages took turns. Never confirmed on a client's screen |
+| Shared respawn wave | tested | 0.24.0, Clean House, solo | One death, one player back (ML-002). The whole squad dead at once: untested |
+| Respawn by trigger (`"respawn": true`) | tested | 0.22.0, Clean House, solo | The dead host was back within a second |
+| Failed ending (red message, back to the lobby without a result screen) | tested | 0.22.0 and 0.24.0, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used |
+| Success ending | tested | 0.17.0, Clean House, solo | The mission ended 2.5 s after the call; the end screen said cheating was detected |
+| Door locked or unlocked at the start and by a trigger | tested | 0.15.0 to 0.24.0, Clean House, solo | Findings: our doors hold after the game's own roll |
+| Door that stands open | experimental | 0.24.1 and later, untried | 0.24.0: the call unlatched doors but did not swing them; 0.24.1 tries four ways |
+| Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | experimental | 0.24.1 and later, untried | 0.24.0: a call moved nobody; 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
+| Moved intel (`objectives` in a scenario) | untested | Clean House, solo and co-op | No run in the findings records it as seen; how an unmodded client sees it is an open question there |
+| Random layouts laying the intel elsewhere (`RandomIntel`) | experimental, off by default | 0.24.3 | Off until moved intel is seen on an unmodded client. The rest of `RandomExtras` (waves, ambush, locked doors) stays on |
+| Target person placement (`hvt`, `MoveTarget`) | untested | any | Only the game's own target was seen, on Georgia |
+| Insertion chosen by the scenario | tested | 0.15.2, Clean House, solo | The host started on Alpha 2. A client's insertion: untested |
+| Placed weapons | tested | 0.19.0, Clean House by night, solo | Picked up and used |
+| Placed grenades and landmines | untested | 0.17.0, Clean House, solo | Placed without error but not seen |
+| Two sides, lights out, suicide bomber type, gun truck (with the plugin's fallback) | tested | 0.15.0 to 0.20.0, Clean House, solo | Findings |
+| Skill and night vision | experimental | 0.21.0 and 0.22.0, Clean House, solo | Applied by the log; the difference was hardly noticed in play |
+| Weather and time of day | unavailable | Suburb, Mexico Depot, Georgia | The game has no weather object on these maps |
+| Noise to alert enemies (`HeardTarget`, `ShotFired`) | unavailable | 0.19.0 and 0.20.0, Clean House, solo | Nobody reacted; replaced by patrol orders |
+| Game Master mode in the game and in the browser, recordings | tested | 0.15 to 0.24.0, Clean House, solo | Findings, every run |
+| Notice to other players that the host runs MissionLab (`TellPlayers`) | untested | co-op | Uses the message call that works solo; never seen by a client |
+| PvP, wave survival and other modes left alone | untested | any | Not tried in the game |
+| Scenario contract, run records, recording identities, readiness check, release ZIP | untested in the game | 0.24.1 to 0.24.3 | Covered by `./test.sh` and the editor tests only (ML-006 to ML-009, ML-012) |
+
+See `docs/findings.md` for what is known about the game's internals.
 
 ## Source layout
 - `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model, scenario reader, trigger rules (no game references)
@@ -377,8 +436,8 @@ confirmed yet. See `docs/findings.md` for what is known about the game's interna
 - `tools/preview`            Python scripts that draw a plan on a map's walkable surface
 - `docs/scenario.schema.json` the scenario format as a JSON Schema
 
-Build: `./build.sh` (Roslyn against `<game>/dotnet`, `BepInEx/core`, `BepInEx/interop`;
-set `OPERATOR_REFS` to a folder containing those). Built for Unity 6000.3.8f1,
+Build: `python3 tools/build.py --refs <OPERATOR folder>` (or set `OPERATOR_REFS` and run `./build.sh`). It compiles with
+Roslyn from the newest installed .NET SDK against the game's `dotnet`, `BepInEx/core` and `BepInEx/interop`; the game folder itself works. Built for Unity 6000.3.8f1,
 BepInEx 6.0.0-be.785, game code dated 7 July 2026.
 
 Install: unzip the release ZIP (`python3 tools/package.py` after `./build.sh`) into the OPERATOR folder. By hand: copy
