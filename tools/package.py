@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Builds the release ZIP: dist/MissionLab-<version>.zip. Unzip it into the OPERATOR game folder.
+
+  python3 tools/package.py            make the ZIP from dist/ (run ./build.sh first)
+  python3 tools/package.py --check    make it, unpack it into a scratch folder and check what is inside
+
+The ZIP holds no game file: only the two plugins, the editor page with its 3D library, example scenarios and a short text.
+"""
+import hashlib, os, re, sys, tempfile, zipfile
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def read(path): return open(os.path.join(HERE, path), 'rb').read()
+version = re.search(r'public const string Version = "([^"]+)"', read('src/MissionLab.Director/DirectorPlugin.cs').decode()).group(1)
+tested = re.search(r'TestedGame = "([^"]+)"', read('src/MissionLab.Director/LiveLink.cs').decode()).group(1)
+TEXT = f"""MissionLab {version}
+An unofficial, free mod toolkit for OPERATOR. It is not made or supported by Vector Interactive.
+
+Tried with OPERATOR {tested} and BepInEx 6 (IL2CPP build be.785). Only the host needs it; friends join without it.
+It stays out of PvP modes.
+
+Install
+1. Install BepInEx 6 for IL2CPP games into the OPERATOR folder and start the game once, so BepInEx can set itself up.
+2. Unzip this file into the OPERATOR folder, so that the BepInEx folder here lands on the one that is there.
+3. Start the game and host a co-op mission. Open http://localhost:8765 in a browser on the same PC for the editor and the
+   live tools. "Is everything ready?" on that page says what is missing, if anything.
+
+What is in here
+  BepInEx/plugins/MissionLab/MissionLab.Director.dll   the mod
+  BepInEx/plugins/MissionLab/MissionLab.Recon.dll      read-only helper that writes down what each map contains
+  BepInEx/MissionLab/web/                              the editor page and its 3D library (three.js, MIT licence)
+  BepInEx/MissionLab/scenarios/examples/               example scenarios; move one up a folder to use it
+
+Remove
+  Delete BepInEx/plugins/MissionLab and BepInEx/MissionLab. Your own scenarios are in BepInEx/MissionLab/scenarios.
+
+Problems
+  BepInEx/LogOutput.log holds what the mod did in the last game start. The page has "Copy a report".
+"""
+FILES = [
+    ('BepInEx/plugins/MissionLab/MissionLab.Director.dll', 'dist/MissionLab.Director.dll'),
+    ('BepInEx/plugins/MissionLab/MissionLab.Recon.dll', 'dist/MissionLab.Recon.dll'),
+    ('BepInEx/MissionLab/web/index.html', 'tools/editor/index.html'),
+    ('BepInEx/MissionLab/web/three.min.js', 'tools/editor/three.min.js'),
+    ('BepInEx/MissionLab/web/three.LICENSE.txt', 'tools/editor/three.LICENSE.txt'),
+]
+for name in sorted(os.listdir(os.path.join(HERE, 'examples'))):
+    if name.endswith('.json'): FILES.append(('BepInEx/MissionLab/scenarios/examples/' + name, 'examples/' + name))
+out = os.path.join(HERE, 'dist', f'MissionLab-{version}.zip')
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for arc, src in FILES:
+        info = zipfile.ZipInfo(arc, date_time=(2026, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED; info.external_attr = 0o644 << 16
+        z.writestr(info, read(src))                      # fixed dates: the same sources give the same ZIP
+    info = zipfile.ZipInfo('MissionLab-README.txt', date_time=(2026, 1, 1, 0, 0, 0)); info.external_attr = 0o644 << 16
+    z.writestr(info, TEXT.replace('\n', '\r\n'))
+digest = hashlib.sha256(open(out, 'rb').read()).hexdigest()
+print(f'{os.path.relpath(out, HERE)}  {os.path.getsize(out)} bytes  sha256 {digest}')
+if '--check' in sys.argv:
+    problems = []
+    with tempfile.TemporaryDirectory() as scratch, zipfile.ZipFile(out) as z:
+        z.extractall(scratch)
+        names = z.namelist()
+        for arc, src in FILES:
+            got = open(os.path.join(scratch, arc), 'rb').read()
+            if got != read(src): problems.append(arc + ' differs from its source')
+        dll = open(os.path.join(scratch, FILES[0][0]), 'rb').read()
+        if version.encode('utf-16-le') not in dll and version.encode() not in dll: problems.append('the plugin in the ZIP does not carry version ' + version + ': run ./build.sh first')
+        page = open(os.path.join(scratch, 'BepInEx/MissionLab/web/index.html'), encoding='utf-8').read()
+        if 'src="three.min.js"' not in page: problems.append('the page does not look for its 3D library beside itself')
+        for n in names:
+            low = n.lower()
+            if low.endswith(('.mlgeo', '.bytes', '.assets', '.bundle')) or 'interop' in low or 'assembly-csharp' in low: problems.append('a game file is in the ZIP: ' + n)
+            if n.startswith('/') or '..' in n: problems.append('unsafe path: ' + n)
+        if 'MissionLab-README.txt' not in names: problems.append('the README is missing')
+        if not any(n.startswith('BepInEx/MissionLab/scenarios/examples/') for n in names): problems.append('no example scenario')
+    print(f'{len(names)} files' + ('' if problems else ', all as expected, no game file among them'))
+    for p in problems: print('PROBLEM: ' + p)
+    sys.exit(1 if problems else 0)

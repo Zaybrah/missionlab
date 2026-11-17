@@ -246,7 +246,26 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
-### New in 0.24 (not yet run in the game)
+### New in 0.24.1
+Fixes after the run of 17 November, and the next tickets of the backlog (ML-007, ML-008, ML-009, ML-012).
+- **Doors that stand open.** Telling a door it is "not closed" only unlatches it. The mod now swings it, trying four ways
+  one after the other, and the log says which way did it. A door asked to stand open is unlocked first.
+- **Orders are followed up.** A called enemy and a hunter stood still in that run. The mod now keeps at each ordered
+  enemy once a second until it has arrived, and falls back on the game's own call for backup. The log says how far each
+  enemy got, and by which way.
+- **The file format is a contract.** A scenario with a wrong type, a number used twice, a link to nothing, an unknown
+  kind or a newer format is not used, and is named with its place in the file, for example `triggers[2].after`. The
+  editor refuses the same files for the same reasons. `docs/scenario.schema.json` describes the format.
+- **A record of each run** in `BepInEx/MissionLab/runs`: scenario fingerprint, roll, players, what the dice left out, the
+  scenario as played. No player names, no folders. The page can repeat an earlier run ("Dice").
+- **Recordings tell "down" from "taken out".** An enemy the mod removed or made again after an edit is no longer counted
+  as down. What the Game Master asked for is recorded apart from what happened.
+- **Is everything ready?** on the page: plugin and game version, host or not, map data, the 3D library, a blocked port,
+  a paused part. "Copy a report" gives a short text without names or folders.
+- **3D without the internet:** the page's 3D library now sits beside the page.
+- **A release ZIP:** `python3 tools/package.py --check` builds `dist/MissionLab-<version>.zip` and checks what is in it.
+
+### New in 0.24 (run in the game on 17 November: refusal, shared wave, trigger engine)
 The first part of `docs/backlog.md`; `docs/backlog-status.md` says where each ticket stands.
 - **A scenario that cannot be finished is refused.** After the dice have fallen the plugin checks that the
   extraction can still open and that the scenario's own target person is still there. If not, nothing of the

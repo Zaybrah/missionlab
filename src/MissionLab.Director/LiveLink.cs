@@ -35,6 +35,8 @@ namespace MissionLab
         private static string _webDir, _navDir, _mapsDir;
         private static volatile string _navFile;        // map file of the mission in progress
         internal static int Port;
+        internal static string StartError = "";       // why the browser link is not there ("": it is)
+        internal const string TestedGame = "0.09.5";  // the version of OPERATOR this build was tried with
         internal static bool Running;
         internal static float LastRequestAt = -100f;    // game time of the last request from the browser
         internal static volatile string PageStamp = "";  // changes whenever the editor page on disk changes
@@ -58,7 +60,12 @@ namespace MissionLab
                 Running = true;
                 DirectorPlugin.L.LogInfo("browser Game Master: http://localhost:" + port + " (this computer only)");
             }
-            catch (Exception e) { DirectorPlugin.L.LogWarning("the browser link could not start on port " + port + " (" + e.Message + "). Change [LiveLink] Port in the settings if another program uses it."); }
+            catch (Exception e)
+            {
+                // The usual reasons: a second copy of the game or of the mod is already running, or another program holds the port.
+                StartError = "The browser link could not start on port " + port + ": " + e.Message + ". Either a second copy of the game or of MissionLab is running, or another program uses that port. Close the other one, or change [LiveLink] Port in BepInEx/config/missionlab.director.cfg.";
+                Director.Banner = "MissionLab: " + StartError; Director.BannerUntil = UnityEngine.Time.unscaledTime + 30f;
+                DirectorPlugin.L.LogWarning(StartError); }
         }
 
         // Worker thread. No game objects here.
@@ -67,6 +74,12 @@ namespace MissionLab
             // Only the page this server hands out may talk to it; another website open in the browser may not.
             if (r.Headers.TryGetValue("Origin", out string origin) && origin != "http://localhost:" + Port && origin != "http://127.0.0.1:" + Port)
                 return HttpResponse.Error(403, "this address only answers its own page");
+            if (r.Path == "/three.min.js")
+            {
+                // The page's 3D library, kept beside the page so that 3D works without the internet.
+                string lib = Path.Combine(_webDir, "three.min.js");
+                return File.Exists(lib) ? new HttpResponse { ContentType = "application/javascript", Body = File.ReadAllBytes(lib) } : HttpResponse.Error(404, "not installed");
+            }
             if (r.Path == "/" || r.Path == "/index.html")
             {
                 string page = Path.Combine(_webDir, "index.html");
@@ -146,7 +159,13 @@ namespace MissionLab
             _navFile = GameMaster.LiveNavFile();
             if (UnityEngine.Time.frameCount % 240 == 0) PageStamp = Stamp(Path.Combine(_webDir, "index.html"));
             if (UnityEngine.Time.frameCount % 30 == 0)
-                _status = "{\"mission\":" + (GameMaster.LiveNavFile() != null ? "true" : "false") + GameMaster.Standing() + "}";
+            {
+                string role = "menu";
+                try { role = Mirror.NetworkServer.active ? "host" : Mirror.NetworkClient.active ? "client" : "menu"; } catch { }
+                string game = ""; try { game = UnityEngine.Application.version; } catch { }
+                _status = "{\"mission\":" + (GameMaster.LiveNavFile() != null ? "true" : "false") + ",\"role\":\"" + role + "\",\"game\":\"" + game.Replace("\"", "") + "\",\"testedGame\":\"" + TestedGame
+                        + "\",\"port\":" + Port + ",\"library\":" + (File.Exists(Path.Combine(_webDir, "three.min.js")) ? "true" : "false") + GameMaster.Standing() + "}";
+            }
             for (int n = 0; n < 8 && Jobs.TryDequeue(out Job job); n++)
             {
                 Interlocked.Decrement(ref _waiting);

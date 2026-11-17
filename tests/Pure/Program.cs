@@ -1,6 +1,20 @@
 using MissionLab.Core;
 
 // The asset-free suite: nothing here reads a map file or needs the game. Run with ./test.sh
+// One extra use: "dotnet run --project tests/Pure -- --read <scenario.json> ..." reads files the way the plugin does and says what it finds.
+if (args.Length >= 2 && args[0] == "--read")
+{
+    int refused = 0;
+    foreach (string path in args.Skip(1))
+    {
+        var findings = ScenarioFile.Read(File.ReadAllText(path), out MissionPlan read);
+        var stops = read == null ? new List<Finding>() : Completion.Check(read, null, 0);
+        Console.WriteLine(Path.GetFileName(path) + ": " + (read == null ? "REFUSED" : Completion.Blocks(stops) ? "read, but cannot be finished as written" : "ok, " + read.Spawns.Count + " enemies, " + read.Triggers.Count + " triggers"));
+        foreach (Finding f in findings.Concat(stops)) Console.WriteLine("  " + f.Level + " " + f.Code + " " + f);
+        if (read == null) refused++;
+    }
+    return refused == 0 ? 0 : 1;
+}
 int failures = 0, checks = 0;
 void Check(string what, bool ok, string more = "")
 {

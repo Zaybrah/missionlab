@@ -7,7 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="three.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"><\/script>')</script>
 <style>
 :root {
   /* Layout: one column of controls on the left, the map takes everything else.
@@ -190,6 +191,10 @@ body.live .offline { display: none !important; }
 #banner[hidden] { display: none; }
 #liveAlert { margin: 8px 12px 0; padding: 8px 10px; border: 1px solid currentColor; border-radius: 6px; font-size: 13px; line-height: 1.4; }
 #liveAlert .btn { margin-top: 6px; }
+#readyBox { margin: 8px 0; font-size: 12.5px; }
+#readyBox summary { cursor: pointer; }
+#readyList { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+#readyList li.no { font-weight: 600; }
 #drop { position: absolute; inset: 12px; border: 2px dashed var(--friend); border-radius: 12px; display: none; align-items: center; justify-content: center; font: 600 22px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--friend); background: color-mix(in srgb, var(--panel) 80%, transparent); pointer-events: none; }
 body.dragging #drop { display: flex; }
 
@@ -223,6 +228,11 @@ body.dragging #drop { display: flex; }
       <span class="chip info" id="liveChip">Live</span>
       <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
       <div class="field"><label for="nextMission">Next mission uses</label><select id="nextMission" title="What the next mission you host will load. In the game lobby, F8 steps through the same list."></select></div>
+      <div class="field"><label for="repeatRun">Dice</label><select id="repeatRun" title="A new roll, or the roll of an earlier mission: the same scenario, roll and number of players give the same setup again."><option value="">A new roll</option></select></div>
+      <details id="readyBox"><summary>Is everything ready? <span id="readySum"></span></summary>
+        <ul id="readyList"></ul>
+        <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names.">Copy a report</button>
+      </details>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div id="gmBox" hidden>
         <div class="field"><label for="gmText">Tell players</label><input id="gmText" type="text" maxlength="120" placeholder="A message on every screen" title="{enemies}, {players} and {time} become the numbers of the moment"></div>
@@ -2318,6 +2328,8 @@ $('tag').addEventListener('change', ev => editPicked(list => { const v = cleanTa
 $('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkill = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; }));
 $('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
 $('needsGm').addEventListener('change', ev => missionEdit(() => { state.gameMaster = ev.target.checked; }));
+$('repeatRun').addEventListener('change', ev => api('/api/repeat', { file: ev.target.value }).then(s => { live.rev = null; live.runsFor = null; say(ev.target.value ? 'The next mission you host repeats that run: same roll. It needs the same scenario and number of players to come out the same.' : 'The next mission gets a new roll.'); return applyLive(s); }).catch(e => say(liveTrouble(e))));
+$('readyCopy').addEventListener('click', () => { const text = readyReport(); (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); }); });
 $('liveRecover').addEventListener('click', () => api('/api/recover', {}).then(s => { live.rev = null; return applyLive(s); }).catch(e => say(liveTrouble(e))));
 // What the running game says about the wave, in words.
 function waveNow() {
@@ -2328,6 +2340,60 @@ function waveNow() {
   if (w.state === 'pending') return ' Now: the game has been asked for a wave; waiting to see someone back.' + left;
   if (w.state === 'failed') return ' Now: the last wave failed (' + (w.error || 'no reason given') + '). It was not counted.' + left;
   return ' Now: nobody is waiting.' + left;
+}
+// Is everything ready? Asked from an address the game answers without its main thread, so it also works in the lobby and when the game is busy.
+function readyRows(st, s) {
+  const rows = [], add = (ok, text) => rows.push({ ok, text });
+  if (!st) { add(false, 'The game does not answer. Is OPERATOR running with MissionLab installed?'); return rows; }
+  add(true, 'MissionLab ' + (st.plugin || '?') + ' answers on port ' + (st.port || '?') + '.');
+  if (st.startError) add(false, st.startError);
+  add(st.game === st.testedGame, st.game === st.testedGame ? 'OPERATOR ' + st.game + ': the version this MissionLab was tried with.' : 'OPERATOR ' + (st.game || '?') + ': this MissionLab was tried with ' + st.testedGame + '. It may not work, or only in part.');
+  add(st.role !== 'client', st.role === 'host' ? 'You are the host.' : st.role === 'client' ? 'You joined someone else: MissionLab only works for the host. Nothing here changes that mission.' : 'No mission yet: host one to use the live tools.');
+  if (st.role === 'host') add(!!st.mission, st.mission ? 'The mission is running and the map is known.' : 'A mission is starting, or its map data was not found.');
+  add(!!st.library, st.library ? 'The 3D view works without the internet.' : 'The 3D view needs the internet: three.min.js is not beside the page.');
+  if (st.rejected) add(false, st.rejected);
+  for (const h of st.health || []) if (h.paused) add(false, 'The part "' + h.name + '" is paused: ' + (h.lastError || 'unknown error') + '.');
+  if (s && s.page && PAGE_STAMP.indexOf('ML_PAGE_STAMP') < 0 && s.page !== PAGE_STAMP) add(false, 'This page is older than the one the game serves. Reload it.');
+  return rows;
+}
+function syncReady(s) {
+  const now = Date.now();
+  if (now - live.statusAt < 3000) return;
+  live.statusAt = now;
+  fetch('/api/status', { cache: 'no-store' }).then(r => r.json()).catch(() => null).then(st => {
+    live.status = st;
+    const rows = readyRows(st, s), bad = rows.filter(r => !r.ok).length, list = $('readyList');
+    $('readySum').textContent = bad ? bad + (bad === 1 ? ' thing needs' : ' things need') + ' a look' : 'Yes';
+    list.textContent = '';
+    for (const r of rows) { const li = document.createElement('li'); li.className = r.ok ? 'yes' : 'no'; li.textContent = (r.ok ? 'OK: ' : 'Look: ') + r.text; list.appendChild(li); }
+  });
+}
+// The report holds versions and states only: no player names, no folders, no scenario text.
+function readyReport() {
+  const st = live.status || {}, lines = ['MissionLab report', 'made ' + new Date().toISOString()];
+  lines.push('plugin ' + (st.plugin || '?') + ', OPERATOR ' + (st.game || '?') + ' (tried with ' + (st.testedGame || '?') + '), role ' + (st.role || '?') + ', mission ' + (st.mission ? 'yes' : 'no') + ', 3D library beside the page ' + (st.library ? 'yes' : 'no'));
+  lines.push('session ' + (st.session || 'none') + ', run record ' + (st.run || 'none') + ', repeat ' + (st.repeat || 'no'));
+  if (st.startError) lines.push('start: ' + st.startError);
+  if (st.rejected) lines.push('refused: ' + st.rejected);
+  for (const h of st.health || []) lines.push('part "' + h.name + '": ' + (h.paused ? 'paused' : h.ok ? 'ok' : h.failures + ' failures') + (h.lastError ? ', last error: ' + h.lastError : ''));
+  for (const c of st.commands || []) lines.push('change ' + c.path + ': ' + c.status + (c.said ? ' (' + c.said + ')' : ''));
+  for (const r of readyRows(live.status, null)) if (!r.ok) lines.push('look: ' + r.text);
+  return lines.join('\n');
+}
+// The list of earlier runs is asked for when the page connects and whenever a mission has written a new record.
+function syncRuns(s) {
+  const sel = $('repeatRun'); if (!sel || !s || typeof s.run !== 'string') return;
+  const key = s.run + '|' + (s.repeat || '');
+  if (live.runsFor === key || document.activeElement === sel) return;
+  live.runsFor = key;
+  fetch('/api/runs', { cache: 'no-store' }).then(r => r.json()).then(d => {
+    sel.textContent = ''; sel.append(new Option('A new roll', ''));
+    for (const r of (d && d.runs) || []) {
+      const when = String(r.startedUtc || '').slice(11, 16), what = r.scenario || 'generated layout';
+      sel.append(new Option(when + ' UTC, ' + what + ', roll ' + r.roll + ', ' + r.players + (r.players === 1 ? ' player' : ' players') + (r.outcome === 'refused' ? ', refused' : ''), r.file));
+    }
+    sel.value = (d && d.repeat) || '';
+  }).catch(() => { live.runsFor = null; });
 }
 // A refused scenario and a part of the mod that is paused are shown at the top of the live box, mission or not.
 function syncStanding(s) {
@@ -2612,7 +2678,7 @@ $('copy').addEventListener('click', async () => {
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
 // players and enemies where they are right now. Every change you make here is carried out in the game.
 const PAGE_STAMP = '__ML_PAGE_STAMP__';        // filled in by the game when it serves this page
-const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, session: null, trig: new Map(), wave: null };
+const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, status: null, statusAt: 0, runsFor: null, session: null, trig: new Map(), wave: null };
 // Reading the game's state is a plain request. A change carries a number of its own and the mission it was made for:
 // the game carries a number out once, and refuses a change that was meant for another mission.
 const newCommand = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -2656,7 +2722,10 @@ const replay = { data: null, t: 0, playing: false, speed: 4, last: 0, name: '' }
 const mmss = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
 function loadReplay(obj, name) {
   if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
-  const frames = obj.frames.filter(f => Array.isArray(f) && Array.isArray(f[1]) && Array.isArray(f[2]));
+  // Only moments that are whole are kept: a time, players and enemies, each with a place. A damaged file is read as far as it goes.
+  const row = q => Array.isArray(q) && q.length >= 4 && [1, 2, 3].every(k => typeof q[k] === 'number' && isFinite(q[k]));
+  const frames = obj.frames.filter(f => Array.isArray(f) && typeof f[0] === 'number' && isFinite(f[0]) && Array.isArray(f[1]) && Array.isArray(f[2])).map(f => [f[0], f[1].filter(row), f[2].filter(row)]);
+  if (!frames.length) throw new Error('It is a replay, but none of its recorded moments can be read.');
   // A new enemy's first moments were recorded as a state it was not in (plugins before 0.17). They count as idle here.
   const born = new Map();
   for (const f of frames) for (const q of f[2]) { if (!born.has(q[0])) born.set(q[0], f[0]); if (f[0] - born.get(q[0]) < 2 && q[5] && q[5] !== 'I') q[5] = 'I'; }
@@ -2667,7 +2736,8 @@ function loadReplay(obj, name) {
     for (const f of frames) for (const q of f[2]) { if (seen.has(q[0])) continue; seen.add(q[0]); if (trucks.some(t => Math.hypot(t[0] - q[1], t[2] - q[3]) < 4)) crew.add(q[0]); }
     if (crew.size) for (const f of frames) for (const q of f[2]) if (crew.has(q[0]) && q[5] !== 'I') q[5] = 'I';
   }
-  replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3),
+  replay.data = { players: Array.isArray(obj.players) ? obj.players : [], frames, events: (Array.isArray(obj.events) ? obj.events : []).filter(e => Array.isArray(e) && e.length >= 3 && typeof e[0] === 'number'),
+    legacy: !(obj.semantics >= 2), plugin: typeof obj.plugin === 'string' ? obj.plugin : '', run: typeof obj.run === 'string' ? obj.run : '',
     start: frames[0][0], end: frames[frames.length - 1][0], scene: obj.scene || '', navFile: obj.navFile || '' };
   replay.t = replay.data.start; replay.playing = false; replay.name = name;
   if (state.mode === '3d') setMode('2d');
@@ -2693,6 +2763,11 @@ function replayStats(d) {
   rows.push(['Most at one time', String(most)]);
   rows.push(['Enemies down', downs.length + (downs.length ? ' (' + (downs.length / minutes).toFixed(1) + ' a minute)' : '')]);
   if (downs.length) rows.push(['First enemy down', mmss(downs[0][0]), downs[0][0], downs[0][3]]);
+  const taken = d.events.filter(e => e[1] === 'removed'), asked = d.events.filter(e => e[1] === 'command');
+  if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
+  if (asked.length) rows.push(['Game Master requests', String(asked.length)]);
+  if (d.legacy) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'an edit that took an enemy out counts as down here']);
+  if (d.run) rows.push(['Run record', d.run]);
   d.players.forEach((name, who) => {
     let dist = 0, last = null, lastT = null;
     for (const f of fr) { const p = f[1].find(q => q[0] === who); if (!p) continue; if (last) dist += Math.hypot(p[1] - last[1], p[3] - last[3]); last = p; lastT = f[0]; }
@@ -2816,6 +2891,8 @@ async function applyLive(s) {
   live.session = s && typeof s.session === 'string' ? s.session : null;
   live.trig = new Map(((s && s.triggerState) || []).map(t => [t.id, t])); live.wave = (s && s.respawn) || null;
   syncStanding(s);
+  syncRuns(s);
+  syncReady(s);
   live.mission = !!(s && s.mission); live.things = s && Array.isArray(s.things) ? s.things : []; live.tried = (s && s.tried) || '';
   syncTry();
   if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
@@ -3071,7 +3148,7 @@ function tryOut() {
 $('tryWhat').addEventListener('change', syncTry);
 $('tryGo').addEventListener('click', tryOut);
 
-window.missionlabEditor = { scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+window.missionlabEditor = { readyRows, readyReport, scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

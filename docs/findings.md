@@ -243,6 +243,21 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
 - An enemy turned or moved on the page is taken out and made again (the 0.7 s "re-make"); in the
   recording that reads as "down" followed by "appears".
 
+## Run of 17 November 2026 (0.24.0, Clean House by night, and the refusal test)
+
+- **The trigger engine works in the game.** Timer repeat at 60, 150 and 240 s; door, hold, alarm, enemies down, tagged
+  enemies down, intel, all-of; countdown lines and the failed ending. The messages took turns.
+- **Shared wave:** death at 225.5 s, announced, asked for at 235.5 s, one player seen back at 235.6 s.
+- **Refusal:** two missions with the refusal test, both refused with the reason; the game's own mission ran.
+- **Doors did not stand open.** `CMD_SetDoorClosed(false)` unlatches a door; it does not swing it. One of the two
+  doors asked for was also locked by the map. 0.24.1 unlocks and swings (push, push the other way, turn, set angle).
+- **A call moved nobody, again.** "3 accepted, walkable ground at -19.4, -19.2", and in 45 s none of the three came
+  closer. A hunter 52 m away stood still for 30 s as well; one 11 m away drifted about. The Game Master's order of
+  16 November did move two enemies, both after a fight. So a one-stop patrol route is not reliable for fresh enemies.
+  0.24.1 loops the route, gives the spot to the navigation agent each second, and falls back on
+  `ExecuteBackupResponse` and `CalledBackup`, logging which step gets an enemy moving.
+- BepInEx keeps one log: starting the game again erased the log of the feature-test run. The recording kept its events.
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.

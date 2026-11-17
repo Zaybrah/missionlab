@@ -232,7 +232,7 @@ namespace MissionLab
         internal static string Standing()
         {
             return ",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"repeat\":" + Q(Director.RepeatFile) + ",\"run\":" + Q(RunRecord.LastFile) + ",\"session\":" + Q(Director.Session) + ",\"rejected\":" + Q(Director.Rejected ?? "")
-                 + ",\"health\":" + DirectorPlugin.HealthJson() + ",\"commands\":" + LiveLink.Ledger.RecentJson(12);
+                 + ",\"startError\":" + Q(LiveLink.StartError) + ",\"health\":" + DirectorPlugin.HealthJson() + ",\"commands\":" + LiveLink.Ledger.RecentJson(12);
         }
 
         internal static void Say(string text)
