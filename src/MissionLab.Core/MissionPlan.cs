@@ -7,7 +7,6 @@ namespace MissionLab.Core
 {
     public enum SpawnRole { Guard, Wander, Patrol }
 
-    /// <summary>One enemy position and how the enemy behaves there.</summary>
     /// <summary>
     /// Something that happens during the mission, and what follows from it. When it fires, the enemies bound
     /// to it appear and its doors lock or unlock.
@@ -100,10 +99,6 @@ namespace MissionLab.Core
         public bool HasWish => Hour.HasValue || Rain.HasValue || Sandstorm.HasValue;
     }
 
-    /// <summary>
-    /// What a scenario wants of one of the map's doors. A door is known by where its hinge is, which never moves.
-    /// Left out, a setting stays with the game, which locks some doors by chance.
-    /// </summary>
     /// <summary>Something the game can place for all players: a weapon on the ground, an intel item, a mine.</summary>
     public sealed class ThingPlan
     {
@@ -115,6 +110,10 @@ namespace MissionLab.Core
         public string Key => Name + "|" + System.Math.Round(Pos.X, 1) + "|" + System.Math.Round(Pos.Y, 1) + "|" + System.Math.Round(Pos.Z, 1) + "|" + System.Math.Round(Yaw) + "|" + Trigger;
     }
 
+    /// <summary>
+    /// What a scenario wants of one of the map's doors. A door is known by where its hinge is, which never moves.
+    /// Left out, a setting stays with the game, which locks some doors by chance.
+    /// </summary>
     public sealed class DoorPlan
     {
         public string Name;             // for the reader only
@@ -126,6 +125,7 @@ namespace MissionLab.Core
         public int Chance = 100;        // percent: how often this setting applies at all; otherwise the door is left to the game
     }
 
+    /// <summary>One enemy position and how the enemy behaves there.</summary>
     public sealed class SpawnPlan
     {
         public int Group;

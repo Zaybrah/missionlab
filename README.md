@@ -12,7 +12,9 @@ players' insertion points, and hands the result to the game's own spawner.
 Only the host runs it. If anything fails before the swap, the mission is left
 exactly as shipped.
 
-- Config: `BepInEx/config/missionlab.director.cfg` (Enabled, Seed, EnemyCount, Scenes, Scenario, UseHook)
+- Config: `BepInEx/config/missionlab.director.cfg`. `[General]`: Enabled, Seed, EnemyCount, Scenes, MoveTarget,
+  RandomExtras, FairPlay, TellPlayers, Scenario. `[Replay]`: Enabled, Keep. `[GameMaster]`: Enabled, BlockGameKeys
+  and every key. `[LiveLink]`: Enabled, Port. `[Advanced]`: UseHook. Each setting is explained in the file itself.
 - Record of each mission (seed + every position): `BepInEx/MissionLab/missions/`
 - Replay a mission: put its seed in the config.
 - Scenario files: every `.json` in `BepInEx/MissionLab/scenarios/` that was made for the
@@ -23,7 +25,9 @@ exactly as shipped.
 - A scenario fits a mission when its `scene` lists the scene (`"Suburb Day, Suburb Night"`)
   or, with no `scene`, when its `navFile` is the map file the mission uses. A position off
   the walkable surface becomes a fixed sentry. Sense values of 0 mean "the map's usual".
-  Check a file: `dotnet tests/CoreTest/bin/CoreTest.dll --check <scenario.json> <navmesh.bytes>`.
+  Check a file: `dotnet run --project tests/Pure -- --read <scenario.json>` reads it the way the plugin does and says
+  whether it would be refused; `dotnet run --project tests/CoreTest -c Release -- --check <scenario.json> <navmesh.bytes> [recon.json]`
+  shows which enemies are off the walkable surface or on ground cut off from the rest of the map.
 - Game Master mode (host only, F8): every enemy gets a marker drawn over the 3D view, and
   the game's own key binds are switched off while it is open. F9 switches the game's free
   camera, which flies through walls. Left click places an enemy at the crosshair; aim where
@@ -361,17 +365,25 @@ appear. Moved intel in co-op, target-person placement and the remaining maps are
 confirmed yet. See `docs/findings.md` for what is known about the game's internals.
 
 ## Source layout
-- `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model (no game references)
+- `src/MissionLab.Core`      pure C#: navmesh reader, seeded generator, plan model, scenario reader, trigger rules (no game references)
 - `src/MissionLab.Director`  the plugin that applies a plan in game
 - `src/MissionLab.Recon`     the observer plugin
+- `tests/Pure`               the tests that need nothing of the game (`./test.sh`, also on GitHub)
 - `tests/CoreTest`           offline checks of the generator against real map data
+- `tests/fixtures`           scenario files the tests read, and the findings expected for the broken ones
+- `examples`                 hand-made scenarios, shipped in the ZIP
+- `tools/editor`             the scenario editor page and its 3D library
+- `tools/package.py`         builds the release ZIP from `dist/`
 - `tools/preview`            Python scripts that draw a plan on a map's walkable surface
+- `docs/scenario.schema.json` the scenario format as a JSON Schema
 
 Build: `./build.sh` (Roslyn against `<game>/dotnet`, `BepInEx/core`, `BepInEx/interop`;
 set `OPERATOR_REFS` to a folder containing those). Built for Unity 6000.3.8f1,
 BepInEx 6.0.0-be.785, game code dated 7 July 2026.
 
-Install: copy both DLLs to `BepInEx/plugins/MissionLab/`. Remove: delete that folder.
+Install: unzip the release ZIP (`python3 tools/package.py` after `./build.sh`) into the OPERATOR folder. By hand: copy
+both DLLs to `BepInEx/plugins/MissionLab/`, and `tools/editor/index.html` with `three.min.js` to
+`BepInEx/MissionLab/web/` for the browser link. Remove: delete `BepInEx/plugins/MissionLab/`.
 
 ## Permission
 In November 2026 the maker of MissionLab sent Vector Interactive a video of the mod and asked

@@ -3,7 +3,9 @@ using System.Text.Json;
 using MissionLab.Core;
 
 // usage: CoreTest <navmesh.bytes> <recon.json|-> <outDir> <enemies> <seed>... [--infil x,y,z]...
-//        CoreTest --check <scenario.json> <navmesh.bytes>     validate a hand-edited scenario file
+//        CoreTest --check <scenario.json> <navmesh.bytes> [recon.json]   where a hand-edited scenario's enemies stand on the map
+//                 (read leniently; for the plugin's strict reading: dotnet run --project tests/Pure -- --read <scenario.json>)
+//        CoreTest --http <port>                                         the plugin's little web server on its own, for curl
 if (args.Length == 2 && args[0] == "--http")
 {
     // A stand-alone run of the plugin's little web server, to test it with curl.

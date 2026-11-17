@@ -2,8 +2,8 @@
 
 ## Project Overview
 MissionLab is an unofficial, free mod toolkit for the game **OPERATOR** (Unity IL2CPP, BepInEx 6.0.0-be.785, tested with game `0.09.5`). It is made up of:
-- **MissionLab.Director.dll** (`missionlab.director`, `0.24.1`). It runs only on the host and only in PvE. It replaces a mission's enemy layout with a seeded generated layout or a scenario file. It also provides Game Master mode (F8), a browser link at `http://localhost:8765`, replays and run records.
-- **MissionLab.Recon.dll** (`missionlab.recon`, `0.2.4`). A read-only observer that writes mission contents and enemy movement to JSON.
+- **MissionLab.Director.dll** (`missionlab.director`, version in `DirectorPlugin.Version`). It runs only on the host and only in PvE. It replaces a mission's enemy layout with a seeded generated layout or a scenario file. It also provides Game Master mode (F8), a browser link at `http://localhost:8765`, replays and run records.
+- **MissionLab.Recon.dll** (`missionlab.recon`, versioned separately in its own `Plugin.Version`). A read-only observer that writes mission contents and enemy movement to JSON.
 - **Scenario editor** (`tools/editor/index.html`). A single offline page that also runs live through the browser link.
 
 Rules that are never negotiable:
@@ -80,7 +80,7 @@ python3 tools/preview/render_plan.py <nav.bytes> <recon.json|-> <plan_dir> <out.
   - `OPERATOR_REFS` must contain the managed DLLs in `dotnet/` (the game's .NET 6 BCL), `BepInEx/core/` and `BepInEx/interop/`. `refs/` is gitignored for this.
 - **CI** (`.github/workflows/test.yml`) runs only `./test.sh`. Director and Recon compile errors show up **only** in `build.sh`.
 - There is no linter or formatter config. Match the style of the surrounding code.
-- `CoreTest` crashes when run with no arguments. The README path `tests/CoreTest/bin/CoreTest.dll` is stale; use `dotnet run --project`.
+- `CoreTest` crashes when run with no arguments. Use `test.sh --map` or the modes listed at the top of `tests/CoreTest/Program.cs`.
 
 ## Code Conventions & Common Patterns
 **C# layout**
@@ -133,7 +133,8 @@ python3 tools/preview/render_plan.py <nav.bytes> <recon.json|-> <plan_dir> <out.
 
 **Determinism (a contract)**
 - All randomness goes through Core `Rng` (SplitMix64). `System.Random` is used only to pick among several scenario files that fit.
-- The salts `^0x5EED` (variants) and `^0xE87A5` (extras) are fixed, and so are the order and number of draws in `Generator`, `Variants` and `Extras`. Changing any of them changes the layout for every seed and breaks repeat-run, which compares `_repeat.Resolved == plan.ToJson()`.
+- The salts `^0x5EED` (variants) and `^0xE87A5` (extras) are fixed, and so are the order and number of draws in `Generator`, `Variants` and `Extras`. Changing any of them changes the layout for every seed.
+- Repeat-run compares the recorded `resolved` text byte for byte with a fresh `plan.ToJson()` (`Director.cs`, `RunRecord.Read`). Any change to `ToJson` output therefore makes older run records report "different".
 - Wherever iteration order affects the result, use ordered collections (`List`, `SortedDictionary`).
 
 **Scenario format changes** (ML-007 contract). Update all of these together:
@@ -155,7 +156,7 @@ Other rules for the format:
 ## Important Files
 - `src/MissionLab.Director/DirectorPlugin.cs`: the entry point. It holds:
   - `public const string Version` (`package.py` reads it with a regex);
-  - every `Config.Bind` (`[General] [Replay] [GameMaster] [Advanced] [LiveLink]`). The README's config list is incomplete; this file is the source of truth;
+  - every `Config.Bind` (`[General] [Replay] [GameMaster] [Advanced] [LiveLink]`). This is the source of truth for settings and their defaults;
   - the Harmony patch classes;
   - `DirectorBehaviour`, the only `Update`/`OnGUI` loop.
 - `src/MissionLab.Director/Director.cs`: `OnRaidStart` → `TryApply` → `Apply`, and `WriteRecord`.
@@ -172,7 +173,7 @@ Other rules for the format:
   - an API added in .NET 7+ passes the net8.0 tests but breaks the plugin.
   - C# 11+ syntax is forbidden: raw strings, `required`, list patterns, `file` types, collection expressions.
 - **Tests:** net8.0 console projects with no packages. Any newer SDK builds them, but they need the .NET 8 runtime.
-- **Python 3:** `package.py` uses only the standard library. The preview scripts need numpy and matplotlib (there is no requirements file). Don't commit `tools/preview/__pycache__/`; `.gitignore` misses it.
+- **Python 3:** `package.py` uses only the standard library. The preview scripts need numpy and matplotlib (there is no requirements file).
 - **Git:**
   - Commit subjects look like `0.24.1: <summary>; ML-007, ML-008` or `ML-008 and ML-009: <summary>`.
   - There is one branch per minor version (`v0.24` is current). `main` is stale.

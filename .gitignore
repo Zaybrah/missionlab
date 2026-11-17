@@ -10,3 +10,4 @@ refs/
 tests/*/bin/
 tests/*/obj/
 tests/CoreTest/NuGet.config
+__pycache__/

@@ -182,11 +182,6 @@ namespace MissionLab
         }
     }
 
-    /// <summary>
-    /// Runs right after the game's mission spawner has set itself up on the host.
-    /// It has to be "after": the game fills its spawn list during that setup, and
-    /// only spawns enemies a couple of seconds later.
-    /// </summary>
     /// <summary>While a scenario holds the extraction back, the game's own "you may extract now" is noted and not carried out.</summary>
     [HarmonyPatch(typeof(RaidManager), nameof(RaidManager.EnableGlobalExtraction))]
     internal static class ExtractionHoldPatch
@@ -224,6 +219,11 @@ namespace MissionLab
         }
     }
 
+    /// <summary>
+    /// Runs right after the game's mission spawner has set itself up on the host.
+    /// It has to be "after": the game fills its spawn list during that setup, and
+    /// only spawns enemies a couple of seconds later.
+    /// </summary>
     [HarmonyPatch(typeof(RaidManager), nameof(RaidManager.OnStartServer))]
     internal static class RaidStartPatch
     {
