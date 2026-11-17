@@ -208,7 +208,7 @@ namespace MissionLab.Core
             for (int i = 0; i < things.Count; i++)
             {
                 ThingPlan t = things[i];
-                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append((t.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
+                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append(Guard.Esc(t.Name)).Append("\",\"pos\":[")
                   .Append(F(t.Pos.X)).Append(',').Append(F(t.Pos.Y)).Append(',').Append(F(t.Pos.Z)).Append("],\"yaw\":").Append(F(t.Yaw));
                 if (t.Trigger > 0) sb.Append(",\"trigger\":").Append(t.Trigger);
                 if (t.Chance < 100) sb.Append(",\"chance\":").Append(System.Math.Max(1, t.Chance));
@@ -227,7 +227,7 @@ namespace MissionLab.Core
             foreach (DoorPlan d in doors)
             {
                 if (!d.HasWish) continue;
-                sb.Append(first ? "" : ",").Append("{\"name\":\"").Append((d.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
+                sb.Append(first ? "" : ",").Append("{\"name\":\"").Append(Guard.Esc(d.Name)).Append("\",\"pos\":[")
                   .Append(F(d.Pos.X)).Append(',').Append(F(d.Pos.Y)).Append(',').Append(F(d.Pos.Z)).Append(']');
                 if (d.Locked.HasValue) sb.Append(",\"locked\":").Append(d.Locked.Value ? "true" : "false");
                 if (d.EnemiesCanOpen.HasValue) sb.Append(",\"enemiesCanOpen\":").Append(d.EnemiesCanOpen.Value ? "true" : "false");
@@ -248,7 +248,7 @@ namespace MissionLab.Core
             for (int i = 0; i < items.Count; i++)
             {
                 ObjectivePlan o = items[i];
-                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append((o.Name ?? "").Replace("\\", "/").Replace("\"", "'")).Append("\",\"pos\":[")
+                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append(Guard.Esc(o.Name)).Append("\",\"pos\":[")
                   .Append(F(o.Pos.X)).Append(',').Append(F(o.Pos.Y)).Append(',').Append(F(o.Pos.Z)).Append("],\"yaw\":").Append(F(o.Yaw)).Append('}');
             }
             return sb.Append(']').ToString();
@@ -263,7 +263,7 @@ namespace MissionLab.Core
             for (int i = 0; i < zones.Count; i++)
             {
                 TriggerPlan z = zones[i];
-                string Text(string t) => (t ?? "").Replace("\\", "/").Replace("\"", "'");
+                string Text(string t) => Guard.Esc(t);
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append(Text(z.Name)).Append("\",\"when\":\"").Append(z.When).Append('"');
                 if (TriggerPlan.Placed(z.When) || z.When == TriggerPlan.OnDoor)
                     sb.Append(",\"pos\":[").Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius));
@@ -300,7 +300,7 @@ namespace MissionLab.Core
             var inv = CultureInfo.InvariantCulture;
             string F(float f) => System.Math.Round(f, 2).ToString(inv);
             string P(V3 v) => "[" + F(v.X) + "," + F(v.Y) + "," + F(v.Z) + "]";
-            string S(string t) => t == null ? "null" : "\"" + t.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            string S(string t) => t == null ? "null" : "\"" + Guard.Esc(t) + "\"";
             sb.Append("{\"group\":").Append(s.Group);
             sb.Append(",\"role\":").Append(S(s.Role.ToString()));
             sb.Append(",\"pos\":").Append(P(s.Pos));
@@ -338,7 +338,7 @@ namespace MissionLab.Core
             var sb = new StringBuilder(96);
             var inv = CultureInfo.InvariantCulture;
             if (p.ExtractionAfter != 0) sb.Append(",\"extraction\":{\"after\":").Append(p.ExtractionAfter).Append('}');
-            if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(p.Insertion.Replace("\\", "/").Replace("\"", "'")).Append('"');
+            if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(Guard.Esc(p.Insertion)).Append('"');
             if (p.GameMaster) sb.Append(",\"gameMaster\":true");
             if (TriggerPlan.OnOff(p.Power) != "") sb.Append(",\"power\":\"").Append(p.Power).Append('"');
             if (p.Skill == "recruit" || p.Skill == "veteran") sb.Append(",\"skill\":\"").Append(p.Skill).Append('"');
@@ -359,7 +359,7 @@ namespace MissionLab.Core
         {
             var sb = new StringBuilder(4096);
             var inv = CultureInfo.InvariantCulture;
-            string S(string s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            string S(string s) => s == null ? "null" : "\"" + Guard.Esc(s) + "\"";
             sb.Append("{\"schema\":").Append(S(Schema));
             if (!string.IsNullOrWhiteSpace(Title)) sb.Append(",\"name\":").Append(S(Title.Trim()));
             if (Briefing.Count > 0) { sb.Append(",\"briefing\":["); for (int i = 0; i < Briefing.Count; i++) sb.Append(i > 0 ? "," : "").Append(S(Briefing[i])); sb.Append(']'); }

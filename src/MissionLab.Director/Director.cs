@@ -42,6 +42,7 @@ namespace MissionLab
         // One mission, one session. Changes sent by the page carry the session they were made for; a change for another mission is refused.
         internal static string Session = "";
         private static int _sessions;
+        private static string _refusedFile = "";            // set while a scenario asked for by name is read and found wrong
         internal static string Rejected = "";              // why the scenario was not used for this mission ("": it was, or there was none)
         internal static void NewSession()
         {
@@ -188,7 +189,15 @@ namespace MissionLab
             }
 
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
+            _refusedFile = "";
             MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
+            if (plan == null && _refusedFile != "")
+            {
+                // The scenario asked for by name has something wrong with it. Nothing has been changed yet: the game's own mission runs.
+                Rejected = _refusedFile;
+                Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
+                return true;
+            }
             bool fromFile = plan != null;
             long seed; int enemies; string source;
             var later = new HashSet<SpawnPlan>();
@@ -419,7 +428,22 @@ namespace MissionLab
         {
             why = null;
             MissionPlan plan;
-            try { plan = MissionPlan.FromJson(File.ReadAllText(path)); }
+            try
+            {
+                // Read strictly: anything wrong is named with its place in the file, and the scenario is not used.
+                string label = Path.GetFileNameWithoutExtension(path);
+                var findings = ScenarioFile.Read(File.ReadAllText(path), out plan);
+                foreach (Finding f in findings) if (f.Level == Finding.Note) DirectorPlugin.L.LogInfo("scenario '" + label + "': " + f);
+                if (plan == null)
+                {
+                    var errors = findings.FindAll(f => f.Level == Finding.Error);
+                    why = "has " + errors.Count + (errors.Count == 1 ? " problem" : " problems") + ": " + string.Join("; ", errors.GetRange(0, Math.Min(3, errors.Count)).ConvertAll(f => f.ToString()))
+                        + (errors.Count > 3 ? "; and " + (errors.Count - 3) + " more" : "");
+                    foreach (Finding f in errors) DirectorPlugin.L.LogWarning("scenario '" + label + "': " + f);
+                    if (askedByName) _refusedFile = "Scenario '" + label + "' was not used: it " + why + ". The file was not changed. The game's own mission runs.";
+                    return null;
+                }
+            }
             catch (Exception e) { why = "could not be read (" + e.Message + ")"; return null; }
             if (plan.Spawns.Count == 0) { why = "has no enemies"; return null; }
 

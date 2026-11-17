@@ -9,6 +9,7 @@ namespace MissionLab.Core
         public const string Error = "error", Note = "note";
         public string Level = Error;
         public string Path = "";         // where in the file, e.g. "triggers[2].after"
+        public string Code = "";         // a short fixed word for the kind of finding, the same in the editor: tests compare these, never the wording
         public string Text = "";
         public override string ToString() => (Path == "" ? "" : Path + ": ") + Text;
     }

@@ -1,0 +1,24 @@
+{
+ "about": "For each file in invalid/: the errors both the plugin and the editor must report, as 'code path', in this order.",
+ "future_version.json": ["future-version schema"],
+ "wrong_types.json": [
+  "bad-id triggers[0].id", "wrong-type triggers[0].delay", "wrong-type triggers[0].warn",
+  "wrong-type triggers[1].radius", "missing-field triggers[1].pos",
+  "wrong-type triggers[2]",
+  "missing-field spawns[0].pos", "wrong-type spawns[0].chance", "wrong-type spawns[0].hvt",
+  "wrong-type spawns[1].trigger", "wrong-type spawns[1].tag",
+  "wrong-type spawns[2]",
+  "missing-field things[0].pos",
+  "wrong-type doors[0].name", "wrong-type doors[0].open",
+  "wrong-type respawn.after", "wrong-type respawn.times",
+  "wrong-type nvg", "wrong-type seed"
+ ],
+ "duplicate_ids.json": ["duplicate-id triggers[1].id", "bad-id triggers[2].id"],
+ "missing_refs.json": [
+  "missing-ref triggers[0].after", "missing-ref triggers[1].of[1]", "wrong-type triggers[1].of[2]", "self-ref triggers[2].after",
+  "missing-ref spawns[0].trigger", "missing-ref extraction.after", "missing-ref things[0].trigger"
+ ],
+ "unknown_values.json": ["unknown-kind triggers[0].when", "unknown-value triggers[1].power", "unknown-value triggers[1].end", "unknown-value triggers[1].extraction", "unknown-value spawns[0].skill", "unknown-value power"],
+ "not_json.json": ["not-json "],
+ "no_spawns.json": ["unknown-format schema"]
+}

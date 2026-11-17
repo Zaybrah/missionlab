@@ -1,0 +1,495 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/Zaybrah/missionlab/blob/main/docs/scenario.schema.json",
+ "title": "MissionLab scenario, missionlab-plan/1",
+ "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger numbers are unique, and every link points at a trigger that exists. Keys that are not listed are ignored.",
+ "type": "object",
+ "required": [
+  "spawns"
+ ],
+ "properties": {
+  "schema": {
+   "type": "string",
+   "description": "The format. A file with a higher number is refused by this version",
+   "pattern": "^missionlab-plan/1$"
+  },
+  "name": {
+   "type": "string",
+   "description": "The mission's name"
+  },
+  "scene": {
+   "type": "string",
+   "description": "The game scene it is for; * for any; several separated by commas"
+  },
+  "navFile": {
+   "type": "string",
+   "description": "The map file it is for, when no scene is named"
+  },
+  "seed": {
+   "type": "integer",
+   "description": "The roll used when the layout was generated"
+  },
+  "notes": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "description": "For people; not used"
+  },
+  "briefing": {
+   "type": "array",
+   "maxItems": 4,
+   "items": {
+    "type": "string"
+   },
+   "description": "Lines shown one after the other at the start"
+  },
+  "gameMaster": {
+   "type": "boolean",
+   "description": "The mission is meant to be run by a Game Master: triggers fired by hand may be part of its way out"
+  },
+  "power": {
+   "type": "string",
+   "description": "Lights at the start",
+   "enum": [
+    "",
+    "on",
+    "off"
+   ]
+  },
+  "skill": {
+   "type": "string",
+   "description": "For every enemy without a skill of its own",
+   "enum": [
+    "",
+    "recruit",
+    "veteran"
+   ]
+  },
+  "nvg": {
+   "type": "boolean",
+   "description": "Every enemy sees in the dark"
+  },
+  "respawn": {
+   "type": "object",
+   "properties": {
+    "after": {
+     "type": "number",
+     "description": "Seconds from the first death to the wave"
+    },
+    "times": {
+     "type": "integer",
+     "description": "Waves per mission; absent for no limit"
+    }
+   },
+   "description": "A shared reinforcement wave: everyone who is dead comes back together"
+  },
+  "extraction": {
+   "type": "object",
+   "properties": {
+    "after": {
+     "type": "integer",
+     "description": "The extraction stays shut until this trigger has fired"
+    }
+   },
+   "description": "The extraction"
+  },
+  "insertion": {
+   "type": "string",
+   "description": "The insertion every player gets, by its name in the game"
+  },
+  "weather": {
+   "type": "object",
+   "description": "Weather and time of day, on maps that have them"
+  },
+  "objectives": {
+   "type": "array",
+   "items": {
+    "type": "object"
+   },
+   "description": "Where the game's objective items are put"
+  },
+  "triggers": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/trigger"
+   }
+  },
+  "doors": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/door"
+   }
+  },
+  "things": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/thing"
+   }
+  },
+  "spawns": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/spawn"
+   }
+  },
+  "groups": {
+   "type": "integer",
+   "description": "How many groups the enemies form; written by the plugin, for people"
+  },
+  "requestedEnemies": {
+   "type": "integer",
+   "description": "How many enemies were asked for when the layout was generated; written by the plugin"
+  }
+ },
+ "$defs": {
+  "vec3": {
+   "type": "array",
+   "minItems": 3,
+   "items": {
+    "type": "number"
+   },
+   "description": "[x, y, z] in the game's metres"
+  },
+  "trigger": {
+   "type": "object",
+   "required": [
+    "id"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "description": "A whole number from 1, unique in the file",
+     "minimum": 1
+    },
+    "name": {
+     "type": "string",
+     "description": "For people"
+    },
+    "when": {
+     "type": "string",
+     "description": "What it waits for. Absent means zone",
+     "enum": [
+      "zone",
+      "hold",
+      "alert",
+      "intel",
+      "time",
+      "after",
+      "down",
+      "all",
+      "any",
+      "door"
+     ]
+    },
+    "pos": {
+     "$ref": "#/$defs/vec3",
+     "description": "zone and hold: the middle; door: the door's hinge"
+    },
+    "radius": {
+     "type": "number",
+     "description": "zone and hold: metres"
+    },
+    "facePlayer": {
+     "type": "boolean",
+     "description": "The enemies it brings face whoever set it off"
+    },
+    "delay": {
+     "type": "number",
+     "description": "Seconds between its condition and its firing; for time: seconds from the start of the mission"
+    },
+    "item": {
+     "type": "string",
+     "description": "intel: the item that has to be taken; empty for any"
+    },
+    "after": {
+     "type": "integer",
+     "description": "after: the trigger it waits for; 0 means it is fired by hand"
+    },
+    "hold": {
+     "type": "number",
+     "description": "hold: seconds a player has to stay inside"
+    },
+    "count": {
+     "type": "integer",
+     "description": "down: how many enemies; 0 for all of them"
+    },
+    "tag": {
+     "type": "string",
+     "description": "down: only enemies that carry this tag"
+    },
+    "of": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "description": "all and any: the triggers it waits for"
+    },
+    "chance": {
+     "type": "number",
+     "description": "Percent: on other missions the trigger sits out",
+     "minimum": 1,
+     "maximum": 100
+    },
+    "warn": {
+     "type": "boolean",
+     "description": "Tell the players how long is left: at the start of the wait, at five minutes, one minute and ten seconds"
+    },
+    "everyone": {
+     "type": "boolean",
+     "description": "zone and hold: every living player has to be inside"
+    },
+    "repeat": {
+     "type": "number",
+     "description": "Seconds after which it may fire again; 0 means once"
+    },
+    "times": {
+     "type": "integer",
+     "description": "With repeat: how often it fires in all; 0 for no limit"
+    },
+    "rally": {
+     "type": "number",
+     "description": "Metres: enemies this close walk to the trigger's place when it fires"
+    },
+    "hunt": {
+     "type": "boolean",
+     "description": "The enemies it brings walk to the nearest player"
+    },
+    "respawn": {
+     "type": "boolean",
+     "description": "Dead players come back when it fires"
+    },
+    "power": {
+     "type": "string",
+     "description": "Lights",
+     "enum": [
+      "",
+      "on",
+      "off"
+     ]
+    },
+    "message": {
+     "type": "string",
+     "description": "Shown on every screen; {enemies}, {players} and {time} are filled in. At most 120 characters"
+    },
+    "red": {
+     "type": "boolean",
+     "description": "The message is a red warning"
+    },
+    "end": {
+     "type": "string",
+     "description": "Ends the mission",
+     "enum": [
+      "",
+      "success",
+      "failed"
+     ]
+    },
+    "extraction": {
+     "type": "string",
+     "description": "open: it opens the extraction",
+     "enum": [
+      "",
+      "open"
+     ]
+    },
+    "doors": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/door"
+     },
+     "description": "Doors it locks, unlocks, opens or closes"
+    }
+   }
+  },
+  "spawn": {
+   "type": "object",
+   "required": [
+    "pos"
+   ],
+   "properties": {
+    "pos": {
+     "$ref": "#/$defs/vec3",
+     "description": "Where the enemy stands"
+    },
+    "group": {
+     "type": "integer"
+    },
+    "role": {
+     "type": "string",
+     "description": "Guard, Wander, Patrol, and the special kinds of the game"
+    },
+    "yaw": {
+     "type": "number",
+     "description": "Degrees, 0 is north"
+    },
+    "indoor": {
+     "type": "boolean"
+    },
+    "defensive": {
+     "type": "boolean"
+    },
+    "detectionRange": {
+     "type": "number"
+    },
+    "hearingRange": {
+     "type": "number"
+    },
+    "fov": {
+     "type": "number"
+    },
+    "wanderDistance": {
+     "type": "number"
+    },
+    "patrolWaitSeconds": {
+     "type": "number"
+    },
+    "fixed": {
+     "type": "boolean",
+     "description": "A sentry that does not move"
+    },
+    "prone": {
+     "type": "boolean"
+    },
+    "type": {
+     "type": "string",
+     "description": "The game's enemy type; empty for the map's usual"
+    },
+    "patrol": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/vec3"
+     },
+     "description": "The stops of a patrol route"
+    },
+    "trigger": {
+     "type": "integer",
+     "description": "The trigger that brings this enemy; 0 or absent: there from the start"
+    },
+    "hvt": {
+     "type": "boolean",
+     "description": "The target person, in missions that have one"
+    },
+    "vehicle": {
+     "type": "boolean",
+     "description": "A gun truck"
+    },
+    "chance": {
+     "type": "number",
+     "description": "Percent",
+     "minimum": 1,
+     "maximum": 100
+    },
+    "lot": {
+     "type": "integer",
+     "description": "Enemies with the same lot share one roll"
+    },
+    "either": {
+     "type": "integer",
+     "description": "Either/or set"
+    },
+    "option": {
+     "type": "integer",
+     "description": "Which option of the set this enemy belongs to"
+    },
+    "team": {
+     "type": "integer",
+     "description": "The side it fights for"
+    },
+    "minPlayers": {
+     "type": "integer",
+     "description": "Only there with at least this many players"
+    },
+    "skill": {
+     "type": "string",
+     "description": "",
+     "enum": [
+      "",
+      "recruit",
+      "veteran"
+     ]
+    },
+    "nvg": {
+     "type": "boolean",
+     "description": "Sees in the dark"
+    },
+    "tag": {
+     "type": "string",
+     "description": "A name of your choosing, for 'tagged enemies down' triggers"
+    }
+   }
+  },
+  "door": {
+   "type": "object",
+   "required": [
+    "pos"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "The door's name in the game, for people; the door is found by pos"
+    },
+    "pos": {
+     "$ref": "#/$defs/vec3",
+     "description": "Where the door's hinge is"
+    },
+    "locked": {
+     "type": [
+      "boolean",
+      "null"
+     ],
+     "description": "true: locked, false: unlocked, absent: as the game decides"
+    },
+    "enemiesCanOpen": {
+     "type": [
+      "boolean",
+      "null"
+     ],
+     "description": "false: enemies cannot open it"
+    },
+    "open": {
+     "type": [
+      "boolean",
+      "null"
+     ],
+     "description": "true: stands open (and is unlocked), false: closed; in a trigger: what the trigger does to it"
+    },
+    "chance": {
+     "type": "number",
+     "description": "Percent, 1 to 100: the door setting is only used on that share of missions",
+     "minimum": 1,
+     "maximum": 100
+    }
+   }
+  },
+  "thing": {
+   "type": "object",
+   "required": [
+    "name",
+    "pos"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "The game's name of the thing, such as AKM"
+    },
+    "pos": {
+     "$ref": "#/$defs/vec3"
+    },
+    "yaw": {
+     "type": "number"
+    },
+    "trigger": {
+     "type": "integer",
+     "description": "Placed when this trigger fires; 0 or absent: from the start"
+    },
+    "chance": {
+     "type": "number",
+     "description": "Percent",
+     "minimum": 1,
+     "maximum": 100
+    }
+   }
+  }
+ }
+}

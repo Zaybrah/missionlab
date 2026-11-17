@@ -1,0 +1,10 @@
+{
+ "schema": "missionlab-plan/1",
+ "seed": "seven",
+ "nvg": "yes",
+ "respawn": { "after": "soon", "times": 2.5 },
+ "triggers": [ { "id": "one", "when": "alert", "delay": "long", "warn": 1 }, { "id": 2, "when": "zone", "pos": [1, 2], "radius": "big" }, "not a trigger" ],
+ "doors": [ { "name": 7, "pos": [0, 0, 0], "open": "wide" } ],
+ "things": [ { "name": "AKM", "pos": "there" } ],
+ "spawns": [ { "pos": "here", "chance": "high", "hvt": "true" }, { "pos": [1, 0, 1], "trigger": 2.5, "tag": 5 }, 12 ]
+}

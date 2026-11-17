@@ -1,0 +1,7 @@
+{
+ "schema": "missionlab-plan/1",
+ "extraction": { "after": 4 },
+ "triggers": [ { "id": 1, "when": "after", "after": 9 }, { "id": 2, "when": "all", "of": [1, 7, "x"] }, { "id": 3, "when": "after", "after": 3 } ],
+ "things": [ { "name": "AKM", "pos": [0, 0, 0], "trigger": 6 } ],
+ "spawns": [ { "pos": [0, 0, 0], "trigger": 5 }, { "pos": [1, 0, 0], "trigger": 2 } ]
+}

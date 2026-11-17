@@ -306,6 +306,49 @@ Console.WriteLine("files");
             if (Completion.Blocks(Completion.Check(p, gone, 1))) refused++; else passed++;
         }
         Check("the extraction-and-chance fixture is refused on the rolls that break it, and only on those", refused > 8 && passed > 8, refused + " refused, " + passed + " passed");
+        // The contract (ML-007): files that must be refused, each with the place in the file. The editor is held to the same list.
+        var expected = System.Text.Json.JsonDocument.Parse(Fixture("expected.json")).RootElement;
+        foreach (string file in Directory.GetFiles(Path.Combine(root, "tests", "fixtures", "invalid"), "*.json"))
+        {
+            string name = Path.GetFileName(file), before = File.ReadAllText(file);
+            var findings = ScenarioFile.Read(before, out MissionPlan notRead);
+            string got = string.Join(" | ", findings.Where(f => f.Level == Finding.Error).Select(f => f.Code + " " + f.Path));
+            string want = expected.TryGetProperty(name, out var list) ? string.Join(" | ", list.EnumerateArray().Select(x => x.GetString())) : "(not listed in expected.json)";
+            Check("invalid/" + name + " is refused with the listed places", got == want && notRead == null, "got  " + got + "\n        want " + want);
+            Check("invalid/" + name + " is left as it was", File.ReadAllText(file) == before);
+        }
+        foreach (string good in new[] { "all_fields.json", "extraction_chance_defect.json" })
+            Check(good + " passes the strict reader", !ScenarioFile.Blocks(ScenarioFile.Read(Fixture(good), out MissionPlan ok)) && ok != null, string.Join(" | ", ScenarioFile.Read(Fixture(good), out _).Select(f => f.ToString())));
+        var legacy = ScenarioFile.Read(Fixture("legacy_minimal.json"), out MissionPlan oldPlan);
+        Check("a file without a format line is read, with a note", oldPlan != null && legacy.Count == 1 && legacy[0].Level == Finding.Note && legacy[0].Code == "no-version");
+        // Text with quotes, backslashes and a control character is written as valid JSON and reads back the same.
+        var odd = Plan("{\"name\":\"The \\\"quiet\\\" house \\\\ north\",\"insertion\":\"Alpha \\\"2\\\"\",\"triggers\":[{\"id\":1,\"when\":\"alert\",\"name\":\"Say \\\"hi\\\"\",\"message\":\"C:\\\\path and a \\\"quote\\\"\"}],\"things\":[{\"name\":\"A\\\\K\",\"pos\":[0,0,0]}]," + OneEnemy + "}");
+        string oddOut = odd.ToJson(); var oddBack = Plan(oddOut);
+        Check("quotes and backslashes survive writing and reading", oddBack.Title == "The \"quiet\" house \\ north" && oddBack.Insertion == "Alpha \"2\"" && oddBack.Triggers[0].Name == "Say \"hi\"" && oddBack.Triggers[0].Message == "C:\\path and a \"quote\"" && oddBack.Things[0].Name == "A\\K" && oddBack.ToJson() == oddOut, oddOut);
+
+        // docs/scenario.schema.json must name every key the plugin writes: the schema and the code cannot drift apart unnoticed.
+        var schema = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "docs", "scenario.schema.json"))).RootElement;
+        var missing = new SortedSet<string>();
+        void Keys(System.Text.Json.JsonElement obj, System.Text.Json.JsonElement props, string where) { foreach (var p in obj.EnumerateObject()) if (!props.TryGetProperty(p.Name, out _)) missing.Add(where + "." + p.Name); }
+        void Listed(System.Text.Json.JsonElement rootObj, string list, string def)
+        {
+            if (!rootObj.TryGetProperty(list, out var arr)) return;
+            foreach (var one in arr.EnumerateArray())
+            {
+                Keys(one, schema.GetProperty("$defs").GetProperty(def).GetProperty("properties"), def);
+                if (def == "trigger" && one.TryGetProperty("doors", out var td)) foreach (var door in td.EnumerateArray()) Keys(door, schema.GetProperty("$defs").GetProperty("door").GetProperty("properties"), "door");
+            }
+        }
+        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson() };
+        foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json")) written.Add(Plan(File.ReadAllText(file)).ToJson());
+        foreach (string text in written)
+        {
+            var w = System.Text.Json.JsonDocument.Parse(text).RootElement;
+            Keys(w, schema.GetProperty("properties"), "scenario");
+            Listed(w, "triggers", "trigger"); Listed(w, "spawns", "spawn"); Listed(w, "doors", "door"); Listed(w, "things", "thing");
+        }
+        Check("the schema names every key the plugin writes", missing.Count == 0, string.Join(", ", missing));
+
         // What ships in examples/ must read, write back to the same text, and be possible to finish as written.
         foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json"))
         {

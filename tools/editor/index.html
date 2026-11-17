@@ -554,6 +554,8 @@ const state = {
   weather: { hour: null, rain: null, sandstorm: null },     // null: left to the game
   respawnAfter: 0, respawnTimes: 0,   // the scenario's respawn rule: seconds a player stays dead (0: the game's rule), and how often
   gameMaster: false,         // the mission is meant to be run by a Game Master
+  refused: null,             // the last file that was not loaded, with what is wrong in it
+  readNotes: [],             // what was adjusted when the last file was read
   allSkill: '', allNvg: false,   // every enemy of the scenario: 'recruit' or 'veteran', and night vision
   order: null,               // ids of live enemies waiting for a click on the map that tells them where to go
   power: '',                 // 'off' or 'on': the breaker box when the mission starts ('': left to the game)
@@ -976,8 +978,96 @@ function scenarioText() {
   return JSON.stringify(head, null, 1).replace(/\n}$/, ',\n "spawns": [\n' + o.spawns.map(s => '  ' + JSON.stringify(s)).join(',\n') + '\n ]\n}\n');
 }
 const isVec = p => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every(v => typeof v === 'number' && isFinite(v));
+// The scenario file's contract, missionlab-plan/1, as the plugin reads it (ScenarioFile.cs holds the same rules, and
+// tests/fixtures/invalid holds files both must judge alike). Returns findings: level, a short fixed code, the place in the
+// file and a sentence. Nothing is quietly dropped or bent into shape: an error means the file is not loaded.
+const PLAN_VERSION = 1, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
+const SPAWN_FIELDS = ['n:yaw', 'n:detectionRange', 'n:hearingRange', 'n:fov', 'n:wanderDistance', 'n:patrolWaitSeconds', 'n:chance', 'i:group', 'i:trigger', 'i:lot', 'i:either', 'i:option', 'i:team', 'i:minPlayers',
+  'b:indoor', 'b:defensive', 'b:fixed', 'b:prone', 'b:hvt', 'b:vehicle', 'b:nvg', 's:role', 's:type', 's:skill', 's:tag'];
+const TRIGGER_FIELDS = ['n:radius', 'n:delay', 'n:hold', 'n:chance', 'n:repeat', 'n:rally', 'i:count', 'i:times', 'i:after', 'b:facePlayer', 'b:warn', 'b:everyone', 'b:red', 'b:hunt', 'b:respawn',
+  's:name', 's:when', 's:item', 's:message', 's:power', 's:end', 's:extraction', 's:tag'];
+const THING_FIELDS = ['s:name', 'n:yaw', 'n:chance', 'i:trigger'], DOOR_FIELDS = ['s:name', 'b:locked', 'b:enemiesCanOpen', 'b:open', 'n:chance'];
+function scenarioProblems(obj) {
+  const found = [], bad = (code, path, text) => found.push({ level: 'error', code, path, text }), note = (code, path, text) => found.push({ level: 'note', code, path, text });
+  const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v), has = (o, k) => o[k] !== undefined && o[k] !== null;
+  const whole = v => typeof v === 'number' && Number.isInteger(v), spot = v => Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every(n => typeof n === 'number');
+  const join = (at, key) => at === '' ? key : at + '.' + key;
+  const types = (o, at, fields) => { for (const f of fields) { const key = f.slice(2); if (!has(o, key)) continue; const v = o[key];
+    const ok = f[0] === 'n' ? typeof v === 'number' : f[0] === 'i' ? whole(v) : f[0] === 'b' ? typeof v === 'boolean' : typeof v === 'string';
+    if (!ok) bad('wrong-type', join(at, key), '"' + key + '" must be ' + (f[0] === 'n' ? 'a number' : f[0] === 'i' ? 'a whole number' : f[0] === 'b' ? 'true or false' : 'text')); } };
+  const value = (o, at, key, allowed) => { if (has(o, key) && typeof o[key] === 'string' && !allowed.includes(o[key])) bad('unknown-value', join(at, key), '"' + o[key] + '" is not a value this version knows for "' + key + '"'); };
+  const doorsOf = (list, at) => { if (!Array.isArray(list)) return bad('wrong-type', at, '"doors" is a list');
+    list.forEach((d, i) => { const one = at + '[' + i + ']'; if (!isObj(d)) return bad('wrong-type', one, 'a door is an object');
+      if (!(has(d, 'pos') && spot(d.pos))) bad('missing-field', one + '.pos', 'a door needs "pos": [x, y, z], the place of its hinge'); types(d, one, DOOR_FIELDS); }); };
+  let root = obj;
+  if (isObj(root) && isObj(root.plan)) root = root.plan;
+  if (!isObj(root)) { bad('wrong-type', '', 'a scenario is a JSON object'); return found; }
+  if (!has(root, 'schema')) note('no-version', 'schema', 'the file names no format; it is read as missionlab-plan/' + PLAN_VERSION);
+  else {
+    const sv = typeof root.schema === 'string' ? root.schema : '', m = /^missionlab-plan\/(\d+)$/.exec(sv), v = m ? +m[1] : 0;
+    if (v <= 0) { bad('unknown-format', 'schema', '"' + sv + '" is not a MissionLab scenario format'); return found; }
+    if (v > PLAN_VERSION) { bad('future-version', 'schema', 'this file is missionlab-plan/' + v + '; this version of MissionLab reads missionlab-plan/' + PLAN_VERSION + '. Update MissionLab to use it. The file was not changed'); return found; }
+  }
+  const ids = new Set(), link = (o, at) => { if (has(o, 'trigger') && whole(o.trigger) && o.trigger !== 0 && !ids.has(o.trigger)) bad('missing-ref', at + '.trigger', 'there is no trigger ' + o.trigger); };
+  if (has(root, 'triggers')) {
+    if (!Array.isArray(root.triggers)) bad('wrong-type', 'triggers', '"triggers" is a list');
+    else {
+      for (const t of root.triggers) if (isObj(t) && has(t, 'id') && whole(t.id)) ids.add(t.id);
+      const seen = new Set();
+      root.triggers.forEach((t, i) => {
+        const at = 'triggers[' + i + ']';
+        if (!isObj(t)) return bad('wrong-type', at, 'a trigger is an object');
+        let me = 0;
+        if (!has(t, 'id') || !whole(t.id) || t.id < 1) bad('bad-id', at + '.id', 'a trigger needs a whole number from 1 as its "id"');
+        else { me = t.id; if (seen.has(me)) bad('duplicate-id', at + '.id', 'trigger number ' + me + ' is used twice'); seen.add(me); }
+        types(t, at, TRIGGER_FIELDS);
+        const when = has(t, 'when') && typeof t.when === 'string' ? t.when : 'zone';
+        if (!PLAN_KINDS.includes(when)) return bad('unknown-kind', at + '.when', '"' + when + '" is not a kind of trigger this version knows');
+        if ((when === 'zone' || when === 'hold' || when === 'door') && !(has(t, 'pos') && spot(t.pos))) bad('missing-field', at + '.pos', 'a ' + when + ' trigger needs "pos": [x, y, z]');
+        if (when === 'after' && has(t, 'after') && whole(t.after)) {
+          if (t.after !== 0 && t.after === me) bad('self-ref', at + '.after', 'the trigger waits for itself');
+          else if (t.after !== 0 && !ids.has(t.after)) bad('missing-ref', at + '.after', 'there is no trigger ' + t.after);
+        }
+        if ((when === 'all' || when === 'any') && has(t, 'of')) {
+          if (!Array.isArray(t.of)) bad('wrong-type', at + '.of', '"of" is a list of trigger numbers');
+          else t.of.forEach((one, j) => { const op = at + '.of[' + j + ']'; if (!whole(one)) bad('wrong-type', op, 'a trigger number is a whole number'); else if (!ids.has(one)) bad('missing-ref', op, 'there is no trigger ' + one); });
+        }
+        value(t, at, 'power', ['', 'on', 'off']); value(t, at, 'end', ['', 'success', 'failed']); value(t, at, 'extraction', ['', 'open']);
+        if (has(t, 'doors')) doorsOf(t.doors, at + '.doors');
+      });
+    }
+  }
+  if (!has(root, 'spawns') || !Array.isArray(root.spawns)) bad('wrong-type', 'spawns', 'a scenario needs "spawns": a list of enemies');
+  else root.spawns.forEach((e, i) => {
+    const at = 'spawns[' + i + ']';
+    if (!isObj(e)) return bad('wrong-type', at, 'an enemy is an object');
+    if (!(has(e, 'pos') && spot(e.pos))) bad('missing-field', at + '.pos', 'an enemy needs "pos": [x, y, z]');
+    types(e, at, SPAWN_FIELDS); value(e, at, 'skill', ['', 'recruit', 'veteran']); link(e, at);
+  });
+  if (has(root, 'extraction')) {
+    if (!isObj(root.extraction)) bad('wrong-type', 'extraction', '"extraction" is an object');
+    else if (has(root.extraction, 'after')) { const a = root.extraction.after; if (!whole(a)) bad('wrong-type', 'extraction.after', 'a trigger number is a whole number'); else if (a !== 0 && !ids.has(a)) bad('missing-ref', 'extraction.after', 'there is no trigger ' + a); }
+  }
+  if (has(root, 'things')) {
+    if (!Array.isArray(root.things)) bad('wrong-type', 'things', '"things" is a list');
+    else root.things.forEach((th, i) => { const at = 'things[' + i + ']'; if (!isObj(th)) return bad('wrong-type', at, 'a thing is an object');
+      if (!(has(th, 'pos') && spot(th.pos))) bad('missing-field', at + '.pos', 'a thing needs "pos": [x, y, z]'); types(th, at, THING_FIELDS); link(th, at); });
+  }
+  if (has(root, 'doors')) doorsOf(root.doors, 'doors');
+  if (has(root, 'respawn')) { if (!isObj(root.respawn)) bad('wrong-type', 'respawn', '"respawn" is an object: {"after": seconds, "times": waves}'); else types(root.respawn, 'respawn', ['n:after', 'i:times']); }
+  types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed']);
+  value(root, '', 'power', ['', 'on', 'off']); value(root, '', 'skill', ['', 'recruit', 'veteran']);
+  return found;
+}
 // Accepts a scenario, or a mission record written by the Director (the plan sits under "plan").
 function loadScenario(obj, name) {
+  // Read strictly. A file with something wrong in it is not loaded: what is on the page stays, and the file itself is never touched.
+  const found = scenarioProblems(obj), wrong = found.filter(f => f.level === 'error');
+  if (wrong.length) {
+    state.refused = { name, errors: wrong };
+    return name + ' was not loaded: ' + wrong.length + (wrong.length === 1 ? ' problem' : ' problems') + '. First: ' + (wrong[0].path ? wrong[0].path + ': ' : '') + wrong[0].text + '. The file was not changed; the Mission tab lists them all.';
+  }
+  state.refused = null; state.readNotes = found.filter(f => f.level === 'note').map(f => name + ': ' + f.text + '. Saving writes the current format; Undo brings back what was here before.');
   const record = obj && obj.plan && Array.isArray(obj.plan.spawns);
   const root = record ? obj.plan : obj;
   const list = [];
@@ -2866,6 +2956,8 @@ function missionCheck() {
       done.add(z.id);
     };
     for (const z of state.zones) walk(z, []); }
+  if (state.refused) for (const f of state.refused.errors.slice(0, 12)) add('problem', state.refused.name + ' was not loaded. ' + (f.path ? f.path + ': ' : '') + f.text + '.', toMission);
+  for (const n of state.readNotes || []) add('note', n, toMission);
   if (state.respawnAfter > 0) add('note', 'Reinforcement wave: everyone who is dead comes back together, ' + Math.round(state.respawnAfter) + ' s after the first death. If the whole squad is dead at once the game may end the mission before the wave comes: that has not been tried.', toMission);
   const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
   for (const z of state.zones) {
@@ -2979,7 +3071,7 @@ function tryOut() {
 $('tryWhat').addEventListener('change', syncTry);
 $('tryGo').addEventListener('click', tryOut);
 
-window.missionlabEditor = { tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
+window.missionlabEditor = { scenarioProblems, tagsOf, doorOf, zonesOut, syncTry, tryOut, missionCheck, eitherSets, selectThing, thingsOut, state, live, view3d, openFiles, scenarioText, fileName, groundAt, levelsAt, toScreen, fit, setMode, click3d, selectDoor, doorLine, showAt, replay, loadReplay, showTab, canSee, dangers, picked, setSquad, placeSquad, squadData, addWaves };   // for automated tests
 })();
 </script>
 </body>

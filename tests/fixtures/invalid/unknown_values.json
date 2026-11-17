@@ -1,0 +1,6 @@
+{
+ "schema": "missionlab-plan/1",
+ "power": "dim",
+ "triggers": [ { "id": 1, "when": "teleport" }, { "id": 2, "when": "alert", "power": "dim", "end": "draw", "extraction": "shut" } ],
+ "spawns": [ { "pos": [0, 0, 0], "skill": "hero" } ]
+}
