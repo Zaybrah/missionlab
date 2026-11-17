@@ -193,7 +193,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); _title = ""; _briefing = new List<string>();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); Openings.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -210,6 +210,7 @@ namespace MissionLab
             ApplySides(gm);
             Hunters(gm, now);
             RespawnRule(raid, now);
+            SwingDoors(now);
             PumpSpawns(raid, gm, now);
             if (!_keysOk || !DirectorPlugin.GmEnabled.Value) return;
             try { Keys(raid, gm); }
@@ -701,9 +702,67 @@ namespace MissionLab
             return count <= 0 ? EverAlive.Count > 0 && alive == 0 : EverAlive.Count - alive >= count;
         }
 
+        // Seen on 17 November: telling a door it is "not closed" only unlatches it; it stays shut. To stand open it has to be
+        // swung. How the game likes that best is not known yet, so four ways are tried one after the other, a second and a
+        // half apart, until the door is open enough for an enemy to walk through. The log says which way did it.
+        private sealed class Opening { public IntPtr Door; public string Name; public float NextAt; public int Way = -1; }
+        private static readonly List<Opening> Openings = new List<Opening>();
+        private static readonly string[] Ways = { "a push, as a player gives it", "a push the other way", "turning it by hand", "setting its angle" };
+
         private static void SetDoorOpen(DoorV2 d, bool open)
         {
-            try { d.UserCode_CMD_SetDoorClosed__Boolean(!open); } catch { d.RPC_SetDoorClosed(!open); }
+            if (!open)
+            {
+                Openings.RemoveAll(o => o.Door == d.Pointer);
+                try { d.UserCode_CMD_SetDoorClosed__Boolean(true); } catch { d.RPC_SetDoorClosed(true); }
+                return;
+            }
+            try { if (d.CurrentlyLocked) d.Server_SetDoorLocked(false); } catch { }        // a door that stands open is not locked
+            try { d.UserCode_CMD_SetDoorClosed__Boolean(false); } catch { try { d.RPC_SetDoorClosed(false); } catch { } }
+            if (!Openings.Exists(o => o.Door == d.Pointer)) Openings.Add(new Opening { Door = d.Pointer, Name = d.name, NextAt = Time.unscaledTime + 0.5f });
+        }
+
+        private static void SwingDoors(float now)
+        {
+            if (Openings.Count == 0) return;
+            PlayerNetworking player = null;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count && player == null; i++) if (players[i] != null) player = players[i].PlayerSpawnedObject;
+            if (player == null) return;                                   // a push needs someone to give it: wait for the first player
+            for (int i = Openings.Count - 1; i >= 0; i--)
+            {
+                Opening o = Openings[i];
+                if (now < o.NextAt) continue;
+                DoorV2 d = null;
+                foreach (DoorV2 one in Doors()) if (one.Pointer == o.Door) { d = one; break; }
+                bool gone = d == null; try { gone = gone || d.isDead; } catch { gone = true; }
+                if (gone) { Openings.RemoveAt(i); continue; }
+                bool isOpen = false; try { isOpen = d.IsOpenEnoughForAI; } catch { }
+                if (isOpen)
+                {
+                    DirectorPlugin.L.LogInfo("door '" + o.Name + "' stands open" + (o.Way < 0 ? " already" : " (by " + Ways[o.Way] + ")"));
+                    if (o.Way >= 0) Replay.Event("note", "door '" + o.Name + "' stands open (by " + Ways[o.Way] + ")");
+                    Openings.RemoveAt(i); continue;
+                }
+                if (o.Way >= Ways.Length - 1)
+                {
+                    DirectorPlugin.L.LogWarning("door '" + o.Name + "' could not be made to stand open: " + Ways.Length + " ways were tried");
+                    Replay.Event("note", "door '" + o.Name + "' could not be opened");
+                    Openings.RemoveAt(i); continue;
+                }
+                o.Way++; o.NextAt = now + 1.5f;
+                try
+                {
+                    switch (o.Way)
+                    {
+                        case 0: d.AddForceAndUnlatch(4f, player); break;
+                        case 1: d.AddForceAndUnlatch(-4f, player); break;
+                        case 2: d.AddDirectRotation(80f, player); break;
+                        default: d.SetRotationHotReload(80f); break;
+                    }
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("door '" + o.Name + "': " + Ways[o.Way] + " failed: " + e.Message); }
+            }
         }
 
         /// <summary>Enemies of a "hunt" trigger set off for the nearest player a moment after they appear.</summary>
@@ -1235,7 +1294,7 @@ namespace MissionLab
             return set;
         }
 
-        private static BrainAI Find(GameManager gm, IntPtr ptr)
+        internal static BrainAI Find(GameManager gm, IntPtr ptr)
         {
             var ai = gm.allAI;
             for (int i = 0; ai != null && i < ai.Count; i++) if (ai[i] != null && ai[i].Pointer == ptr) return ai[i];

@@ -23,7 +23,7 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; }
+        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
@@ -50,6 +50,7 @@ namespace MissionLab
         internal static void Tick(float now)
         {
             WatchFlag();
+            FollowUp(now);
             if (Pending.Count > 0 && now >= _nextMessageAt)
                 try { RaidManager raid = RaidManager.singleton; string next = Pending.Dequeue(); if (raid != null) Show(raid, next, false); } catch { }
             if (_respawnsOffAt >= 0f && now >= _respawnsOffAt) RestoreRespawns("twelve seconds have passed");
@@ -308,6 +309,115 @@ namespace MissionLab
         /// Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody.)
         /// within: only enemies this close to the spot (0: any distance). only: just these enemies (null: all).
         /// </summary>
+        // An order is followed up. Seen on 17 November: a patrol route of one stop was taken by enemies after a fight, but not by
+        // fresh ones: a called enemy and a hunter stood still. So the mod now keeps at it once a second until the enemy has
+        // arrived, starts fighting, or ninety seconds are over, and it tries more than one way:
+        //   step 0: the patrol route (now one that loops) and the spot given straight to the navigation agent;
+        //   step 1: after 6 s without progress, the game's own answer to a call for backup;
+        //   step 2: after 14 s without progress, the call for backup itself.
+        // The log says how far each enemy got and at which step, so the next version can keep the way that works.
+        private sealed class March
+        {
+            public IntPtr Bot; public Vector3 To, From; public float Since, NextLook; public int Step; public GameObject Stop;
+            public BrainAI.IdleStates Was; public bool Hunter, Reported; public int Overruled;
+        }
+        private static readonly Dictionary<IntPtr, March> Marches = new Dictionary<IntPtr, March>();
+        internal static int Marching => Marches.Count;
+
+        private static Transform PlayerNear(Vector3 spot)
+        {
+            Transform best = null; float bd = float.MaxValue;
+            var players = PlayerMaster.AllPlayerMasters;
+            for (int i = 0; players != null && i < players.Count; i++)
+            {
+                PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                if (body == null) continue;
+                float d = (body.transform.position - spot).sqrMagnitude;
+                if (d < bd) { bd = d; best = body.transform; }
+            }
+            return best;
+        }
+
+        private static void Push(BrainAI b, March m, bool route)
+        {
+            if (route)
+                try
+                {
+                    if (m.Stop == null) { m.Stop = new GameObject("MissionLab order " + Orders.Count); Orders.Add(m.Stop); }
+                    m.Stop.transform.position = m.To;
+                    AIPatrol way = b.aiPatrol;
+                    if (way == null) { way = new AIPatrol(); b.aiPatrol = way; }
+                    var stops = new Il2Generic.List<Transform>(); stops.Add(m.Stop.transform);
+                    way.patrolPoints = stops; way.currentWayPointIndex = 0; way.Looping = true;
+                    way.patrolWaitTime = 0f; way.onReachDestination = AIPatrol.OnReachDestination.MoveImmediately;
+                    b.patrolTimer = 0f;
+                    b.idleStates = BrainAI.IdleStates.Patrol;
+                }
+                catch { }
+            try
+            {
+                AgentController legs = b.agent; var feet = legs == null ? null : legs.Agent;
+                if (feet != null)
+                {
+                    if (!route && (feet.destination - m.To).sqrMagnitude > 1f) m.Overruled++;     // something else gave it another spot since the last look
+                    feet.isStopped = false; feet.canMove = true; feet.destination = m.To; feet.SearchPath();
+                }
+            }
+            catch { }
+            if (!route) return;
+            if (m.Step == 1) try { b.ExecuteBackupResponse(m.To, b.transform, m.Hunter ? PlayerNear(m.To) : null); } catch { try { b.ExecuteBackupResponse(m.To, b.transform, PlayerNear(m.To)); } catch { } }
+            if (m.Step == 2) try { b.CalledBackup(m.To, b.transform, PlayerNear(m.To)); } catch { }
+        }
+
+        private static readonly string[] Steps = { "the patrol route and the spot given to its legs", "the game's answer to a call for backup", "a call for backup" };
+
+        private static void FollowUp(float now)
+        {
+            if (Marches.Count == 0) return;
+            GameManager gm = GameManager.instance;
+            if (gm == null) { Marches.Clear(); return; }
+            var inv = CultureInfo.InvariantCulture;
+            foreach (March m in new List<March>(Marches.Values))
+            {
+                if (now < m.NextLook) continue;
+                m.NextLook = now + 1f;
+                BrainAI b = GameMaster.Find(gm, m.Bot);
+                if (b == null) { Marches.Remove(m.Bot); continue; }
+                try
+                {
+                    GameMaster.EnemyPose(b, out Vector3 at, out _);
+                    Vector3 gone = at - m.From, togo = at - m.To; gone.y = 0f; togo.y = 0f;
+                    float moved = gone.magnitude, left = togo.magnitude, age = now - m.Since;
+                    string end = null;
+                    BrainAI.States state = b.CurrentState;
+                    if (left < 2.5f) end = "arrived after " + age.ToString("0", inv) + " s, by " + Steps[m.Step];
+                    else if (age > 2f && (state == BrainAI.States.TargetSighted || state == BrainAI.States.WasSighted || state == BrainAI.States.Suppress || state == BrainAI.States.FallBack))
+                        end = "is in a fight after " + moved.ToString("0.#", inv) + " m; the order is dropped";
+                    else if (age > 90f) end = "did not arrive: " + moved.ToString("0.#", inv) + " m in 90 s, " + left.ToString("0", inv) + " m short (all three ways tried)";
+                    if (end != null)
+                    {
+                        DirectorPlugin.L.LogInfo("order: an enemy " + end);
+                        Replay.Event("note", "order: an enemy " + end);
+                        try { if (b.idleStates == BrainAI.IdleStates.Patrol) b.idleStates = m.Was == BrainAI.IdleStates.Patrol ? BrainAI.IdleStates.Idle : m.Was; } catch { }
+                        Marches.Remove(m.Bot);
+                        continue;
+                    }
+                    if (!m.Reported && age >= 3f)
+                    {
+                        m.Reported = true;
+                        string legs = "";
+                        try { var feet = b.agent.Agent; legs = ", legs: has a path " + (feet.hasPath ? "yes" : "no") + ", " + feet.remainingDistance.ToString("0", inv) + " m to go, overruled " + m.Overruled + " times"; } catch { }
+                        DirectorPlugin.L.LogInfo("order: after 3 s an enemy has moved " + moved.ToString("0.#", inv) + " m of " + (moved + left).ToString("0", inv) + legs);
+                    }
+                    bool stuck = moved < 1.5f;
+                    if (m.Step == 0 && age >= 6f && stuck) { m.Step = 1; DirectorPlugin.L.LogInfo("order: no progress in 6 s; trying " + Steps[1]); Push(b, m, true); }
+                    else if (m.Step == 1 && age >= 14f && stuck) { m.Step = 2; DirectorPlugin.L.LogInfo("order: no progress in 14 s; trying " + Steps[2]); Push(b, m, true); }
+                    else Push(b, m, false);
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("an order could not be followed up: " + e.Message); Marches.Remove(m.Bot); }
+            }
+        }
+
         /// <summary>What the last order came to: what was asked, where the ground was, and who took it.</summary>
         internal struct WalkResult
         {
@@ -348,8 +458,11 @@ namespace MissionLab
                     GameMaster.EnemyPose(b, out Vector3 at, out _);
                     if (within > 0f && (at - to).sqrMagnitude > within * within) { LastWalk.TooFar++; continue; }
                     float turn = told * 2.4f;                                             // spread around the spot, 2 m out
-                    var stop = new GameObject("MissionLab order " + Orders.Count);
-                    stop.transform.position = Ground(to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f));
+                    var m = new March { Bot = b.Pointer, To = Ground(to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f)), From = at,
+                                        Since = Time.unscaledTime, NextLook = Time.unscaledTime + 1f, Was = b.idleStates, Hunter = hurry };
+                    if (Marches.TryGetValue(b.Pointer, out March earlier)) { m.Was = earlier.Was; m.Stop = earlier.Stop; }   // an order on top of an order
+                    Marches[b.Pointer] = m;
+                    Push(b, m, true);
                     if (hurry && Hurried.Add(b.Pointer))
                         try
                         {
@@ -357,14 +470,6 @@ namespace MissionLab
                             if (!_speedLogged) { _speedLogged = true; DirectorPlugin.L.LogInfo("hurry: patrol speed " + was.ToString("0.##", CultureInfo.InvariantCulture) + " to " + b.PatrolSpeed.ToString("0.##", CultureInfo.InvariantCulture)); }
                         }
                         catch { }
-                    Orders.Add(stop);
-                    AIPatrol route = b.aiPatrol;
-                    if (route == null) { route = new AIPatrol(); b.aiPatrol = route; }
-                    var stops = new Il2Generic.List<Transform>(); stops.Add(stop.transform);
-                    route.patrolPoints = stops; route.currentWayPointIndex = 0; route.Looping = false;
-                    route.patrolWaitTime = 0f; route.onReachDestination = AIPatrol.OnReachDestination.MoveImmediately;
-                    b.patrolTimer = 0f;
-                    b.idleStates = BrainAI.IdleStates.Patrol;
                     told++;
                 }
                 catch { }
