@@ -99,7 +99,7 @@ namespace MissionLab
                         File = Path.GetFileName(path), Scenario = S("scenario"), Hash = S("authoredHash"), Outcome = S("outcome"), Scene = S("scene"), Started = S("startedUtc"), Plugin = S("plugin"),
                         Roll = r.TryGetProperty("roll", out var roll) && roll.ValueKind == System.Text.Json.JsonValueKind.Number ? roll.GetInt64() : 0,
                         Players = r.TryGetProperty("players", out var pl) && pl.ValueKind == System.Text.Json.JsonValueKind.Number ? pl.GetInt32() : 0,
-                        Resolved = r.TryGetProperty("resolved", out var res) && res.ValueKind == System.Text.Json.JsonValueKind.Object ? MissionPlan.FromJson(res.GetRawText()).ToJson() : ""
+                        Resolved = r.TryGetProperty("resolved", out var res) && res.ValueKind == System.Text.Json.JsonValueKind.Object ? res.GetRawText() : ""
                     };
                 }
             }
