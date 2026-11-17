@@ -42,6 +42,17 @@ namespace MissionLab
         // One mission, one session. Changes sent by the page carry the session they were made for; a change for another mission is refused.
         internal static string Session = "";
         private static int _sessions;
+        private static string _scenarioText = "";           // the text of the scenario file last read by name or picked
+        private static RunRecord.Entry _repeat;             // the earlier run the next mission is to repeat (null: a new roll)
+        internal static string RepeatFile => _repeat == null ? "" : _repeat.File;
+        internal static string SetRepeat(string file)
+        {
+            if (string.IsNullOrEmpty(file)) { _repeat = null; return "the next mission gets a new roll"; }
+            RunRecord.Entry e = RunRecord.Read(file);
+            if (e == null) return "that run record could not be read";
+            _repeat = e;
+            return "the next mission repeats the run of roll " + e.Roll + " (" + (e.Scenario == "" ? "a generated layout" : "scenario '" + e.Scenario + "'") + ", " + e.Players + " player(s))";
+        }
         private static string _refusedFile = "";            // set while a scenario asked for by name is read and found wrong
         internal static string Rejected = "";              // why the scenario was not used for this mission ("": it was, or there was none)
         internal static void NewSession()
@@ -189,13 +200,14 @@ namespace MissionLab
             }
 
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
-            _refusedFile = "";
+            _refusedFile = ""; _scenarioText = "";
             MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
             if (plan == null && _refusedFile != "")
             {
                 // The scenario asked for by name has something wrong with it. Nothing has been changed yet: the game's own mission runs.
                 Rejected = _refusedFile;
                 Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
+                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, 0, 0, null, null, null, false, Rejected);
                 return true;
             }
             bool fromFile = plan != null;
@@ -206,7 +218,7 @@ namespace MissionLab
             if (fromFile && Variants.Any(plan))
             {
                 // What the scenario leaves to chance is rolled now, anew for every mission unless a seed is set.
-                long roll = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                long roll = _repeat != null ? _repeat.Roll : DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
                 var rolls = new List<string>();
                 int before = plan.Spawns.Count;
                 int players = 0;
@@ -231,6 +243,8 @@ namespace MissionLab
                     log.LogWarning(Rejected + " Nothing of the mission was changed.");
                     Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
                     SatOut.Clear(); DoorsOut.Clear(); ThingsOut.Clear();
+                    RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, rolledWith, squad, plan, rolledOut, null, false, Rejected);
+                    _repeat = null;
                     return true;
                 }
                 seed = plan.Seed;
@@ -349,6 +363,28 @@ namespace MissionLab
                         " | map: " + navInfo + " | " + senses + " | " + sw.ElapsedMilliseconds + " ms");
             plan.Scene = scene;
             CurrentPlan = plan; CurrentScenarioPath = fromFile ? _lastScenarioPath : null; CurrentScenarioScene = scenarioScene;
+            // What was actually played is written down before anything else can go wrong with it.
+            try
+            {
+                if (fromFile && string.IsNullOrEmpty(_scenarioText) && _lastScenarioPath != null) _scenarioText = File.ReadAllText(_lastScenarioPath);
+                long usedRoll = rolledOut != null ? rolledWith : seed;
+                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", fromFile ? scenarioName : "", fromFile ? _scenarioText : "", usedRoll, squad, plan, rolledOut, null, true, "");
+                if (_repeat != null)
+                {
+                    // Was this the same setup as the run it repeats? The inputs are compared first, then the result.
+                    var changed = new List<string>();
+                    if (_repeat.Hash != RunRecord.Sha(fromFile ? _scenarioText : "")) changed.Add("the scenario file has changed since");
+                    if (_repeat.Players != squad && rolledOut != null) changed.Add(_repeat.Players + " player(s) then, " + squad + " now");
+                    if (_repeat.Plugin != DirectorPlugin.Version) changed.Add("MissionLab " + _repeat.Plugin + " then, " + DirectorPlugin.Version + " now");
+                    bool same = _repeat.Resolved == plan.ToJson();
+                    string said = same ? "this mission repeats the run of roll " + _repeat.Roll + ": the same setup came out" + (changed.Count > 0 ? " (although " + string.Join("; ", changed) + ")" : "")
+                                       : "the run of roll " + _repeat.Roll + " could not be repeated exactly: " + (changed.Count > 0 ? string.Join("; ", changed) : "the same inputs gave another setup, which should not happen: please report it");
+                    log.LogInfo("repeat: " + said);
+                    Banner = "MissionLab: " + said; BannerUntil = Time.unscaledTime + 15f;
+                    _repeat = null;
+                }
+            }
+            catch (Exception e) { log.LogWarning("the run record could not be made: " + e.Message); }
             GameMaster.BeginMission(raid.Pointer, later);
             if (later.Count > 0) log.LogInfo(later.Count + " enemies are held back: a chosen type follows a few seconds after the start, zone enemies when a player reaches their zone");
             WriteRecord(scene, seed, via, source, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
@@ -432,7 +468,9 @@ namespace MissionLab
             {
                 // Read strictly: anything wrong is named with its place in the file, and the scenario is not used.
                 string label = Path.GetFileNameWithoutExtension(path);
-                var findings = ScenarioFile.Read(File.ReadAllText(path), out plan);
+                string text = File.ReadAllText(path);
+                if (askedByName) _scenarioText = text;
+                var findings = ScenarioFile.Read(text, out plan);
                 foreach (Finding f in findings) if (f.Level == Finding.Note) DirectorPlugin.L.LogInfo("scenario '" + label + "': " + f);
                 if (plan == null)
                 {

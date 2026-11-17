@@ -231,7 +231,7 @@ namespace MissionLab
         /// <summary>What the page is told whether or not a mission runs: the session, each part's health, a refused scenario, recent changes.</summary>
         internal static string Standing()
         {
-            return ",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"session\":" + Q(Director.Session) + ",\"rejected\":" + Q(Director.Rejected ?? "")
+            return ",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"repeat\":" + Q(Director.RepeatFile) + ",\"run\":" + Q(RunRecord.LastFile) + ",\"session\":" + Q(Director.Session) + ",\"rejected\":" + Q(Director.Rejected ?? "")
                  + ",\"health\":" + DirectorPlugin.HealthJson() + ",\"commands\":" + LiveLink.Ledger.RecentJson(12);
         }
 
@@ -1423,7 +1423,7 @@ namespace MissionLab
                     if (Special(m.Plan)) continue;                            // the target person is never re-made: it would come back as an ordinary enemy
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
                     if (b == null) continue;                              // not alive: the new facing applies when it spawns
-                    if (!Destroy(b)) continue;
+                    if (!Destroy(b, "made again after an edit")) continue;
                     // The game will not spawn onto a spot that is still occupied, and the old enemy is only gone a moment later.
                     m.Bot = IntPtr.Zero; m.Waiting = true;
                     bool held = m.Plan.Trigger != 0 && !Engine.EverFired(m.Plan.Trigger);      // now bound to a zone nobody has reached: it waits there
@@ -1818,9 +1818,9 @@ namespace MissionLab
             Say("spawning " + list.Count + " waiting enemies");
         }
 
-        private static bool Destroy(BrainAI b)
+        private static bool Destroy(BrainAI b, string why = "removed by the Game Master")
         {
-            try { Mirror.NetworkServer.Destroy(b.gameObject); return true; }
+            try { Replay.Removed(b.Pointer, why); Mirror.NetworkServer.Destroy(b.gameObject); return true; }
             catch (Exception e) { DirectorPlugin.L.LogWarning("could not remove enemy '" + b.name + "': " + e.Message); return false; }
         }
 
@@ -2137,7 +2137,8 @@ namespace MissionLab
         {
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false}";
             EnsureMarkers();
-            string cmd; int id = 0; string what = "", arg = ""; bool hasPos = false; Vector3 pos = Vector3.zero; var ids = new List<int>();
+            string cmd; int id = 0; string what = "", arg = "";
+            string asked = ""; bool hasPos = false; Vector3 pos = Vector3.zero; var ids = new List<int>();
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
                 var root = doc.RootElement;
@@ -2152,6 +2153,8 @@ namespace MissionLab
                     pos = new Vector3(pv[0].GetSingle(), pv[1].GetSingle(), pv[2].GetSingle()); hasPos = true;
                 }
             }
+            asked = cmd + (what != "" ? " " + what : "") + (id != 0 ? " " + id : "");
+            Replay.Event("command", "the Game Master asked: " + asked);          // what was asked; what came of it is recorded by whoever did it
             if (cmd == "order" && hasPos)
             {
                 // The Game Master sends the chosen enemies to a spot on the map.

@@ -181,6 +181,17 @@ namespace MissionLab
                 case "/api/state": return HttpResponse.Json(GameMaster.StateJson());
                 case "/api/markers": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Reconcile(r.BodyText)) : HttpResponse.Error(400, "POST expected");
                 case "/api/command": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Command(r.BodyText)) : HttpResponse.Error(400, "POST expected");
+                case "/api/runs":
+                    return HttpResponse.Json("{\"runs\":" + RunRecord.ListJson(12) + ",\"repeat\":\"" + Director.RepeatFile + "\"}");
+                case "/api/repeat":
+                    if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
+                    {
+                        string file = "";
+                        using (var doc = System.Text.Json.JsonDocument.Parse(r.BodyText))
+                            if (doc.RootElement.TryGetProperty("file", out var f) && f.ValueKind == System.Text.Json.JsonValueKind.String) file = f.GetString();
+                        GameMaster.Say(Director.SetRepeat(file));
+                        return HttpResponse.Json(GameMaster.StateJson());
+                    }
                 case "/api/recover":
                     if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
                     DirectorPlugin.TryAgainNow();

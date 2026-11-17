@@ -27,6 +27,18 @@ namespace MissionLab.Core
 
         public static bool Blocks(List<Finding> findings) => findings.Exists(f => f.Level == Finding.Error);
 
+        /// <summary>
+        /// A fingerprint of a scenario's text, to tell whether two runs used the same file. Line endings do not count.
+        /// It is FNV-1a over the UTF-8 bytes: good for "is this the same text", not a protection against tampering.
+        /// </summary>
+        public static string Hash(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            ulong h = 14695981039346656037UL;
+            foreach (byte b in System.Text.Encoding.UTF8.GetBytes(text.Replace("\r\n", "\n"))) { h ^= b; h *= 1099511628211UL; }
+            return "fnv1a64:" + h.ToString("x16");
+        }
+
         /// <summary>Reads a scenario. plan is null when an error was found. The text itself is never changed.</summary>
         public static List<Finding> Read(string json, out MissionPlan plan)
         {

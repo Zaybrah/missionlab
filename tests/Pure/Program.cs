@@ -326,6 +326,7 @@ Console.WriteLine("files");
         string oddOut = odd.ToJson(); var oddBack = Plan(oddOut);
         Check("quotes and backslashes survive writing and reading", oddBack.Title == "The \"quiet\" house \\ north" && oddBack.Insertion == "Alpha \"2\"" && oddBack.Triggers[0].Name == "Say \"hi\"" && oddBack.Triggers[0].Message == "C:\\path and a \"quote\"" && oddBack.Things[0].Name == "A\\K" && oddBack.ToJson() == oddOut, oddOut);
 
+        Check("the fingerprint of a text is stable, ignores line endings and tells texts apart", ScenarioFile.Hash("a\r\nb") == ScenarioFile.Hash("a\nb") && ScenarioFile.Hash("a\nb") != ScenarioFile.Hash("a\nc") && ScenarioFile.Hash("abc") == "fnv1a64:e71fa2190541574b" && ScenarioFile.Hash("") == "", ScenarioFile.Hash("abc"));
         // docs/scenario.schema.json must name every key the plugin writes: the schema and the code cannot drift apart unnoticed.
         var schema = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "docs", "scenario.schema.json"))).RootElement;
         var missing = new SortedSet<string>();

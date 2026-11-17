@@ -25,6 +25,9 @@ namespace MissionLab
         private static readonly List<string> Names = new List<string>();
 
         internal static string Dir => Path.Combine(DirectorPlugin.BaseDir, "replays");
+        // Enemies the mod itself took out, with the reason: they are recorded as "removed", never as "down".
+        private static readonly Dictionary<int, string> TakenOut = new Dictionary<int, string>();
+        internal static void Removed(IntPtr bot, string why) { if (Ids.TryGetValue(bot, out int id)) TakenOut[id] = why; }
 
         private static string F(float v) => Math.Round(v, 2).ToString(Inv);
         private static string Q(string s) => "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ") + "\"";
@@ -40,7 +43,9 @@ namespace MissionLab
                 string safe = string.IsNullOrEmpty(scene) ? "mission" : scene.Replace(' ', '_');
                 foreach (char c in Path.GetInvalidFileNameChars()) safe = safe.Replace(c, '_');
                 _path = Path.Combine(Dir, DateTime.Now.ToString("yyyyMMdd-HHmmss", Inv) + "_" + safe + ".json");
-                _head = "{\"schema\":\"missionlab-replay/1\",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"scene\":" + Q(scene) + ",\"navFile\":" + Q(navFile) +
+                TakenOut.Clear();
+                RunRecord.LinkReplay(_path);
+                _head = "{\"schema\":\"missionlab-replay/1\",\"semantics\":2,\"run\":" + Q(RunRecord.LastFile) + ",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"scene\":" + Q(scene) + ",\"navFile\":" + Q(navFile) +
                         ",\"startedUtc\":" + Q(DateTime.UtcNow.ToString("o", Inv)) + ",\"step\":" + F(Step) + ",\"plan\":" + (string.IsNullOrEmpty(planJson) ? "null" : planJson);
                 _frames = new StringBuilder(1 << 16); _events = new StringBuilder(1024);
                 _frameCount = 0; _eventCount = 0; _nextId = 1; _lastTaken = 0;
@@ -111,7 +116,12 @@ namespace MissionLab
             // Who was there a moment ago and is not now, went down.
             var gone = new List<int>();
             foreach (var kv in LastSeen) if (!seen.Contains(kv.Key)) gone.Add(kv.Key);
-            foreach (int id in gone) { Event("down", "enemy " + id + " is down", LastSeen[id]); LastSeen.Remove(id); }
+            foreach (int id in gone)
+            {
+                if (TakenOut.TryGetValue(id, out string why)) { Event("removed", "enemy " + id + " is taken out: " + why, LastSeen[id]); TakenOut.Remove(id); }
+                else Event("down", "enemy " + id + " is down", LastSeen[id]);
+                LastSeen.Remove(id);
+            }
             int taken = 0;
             try { taken = raid.collectedItemsCount; } catch { }
             if (taken > _lastTaken) { Event("intel", taken == 1 ? "an intel item is taken" : taken + " intel items are taken"); _lastTaken = taken; }
