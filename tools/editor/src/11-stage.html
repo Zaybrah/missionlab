@@ -1,0 +1,30 @@
+
+<main id="stage">
+  <canvas id="map" aria-label="Map. Click to place or select enemies."></canvas>
+  <canvas id="view3d" aria-label="3D view of the map. Drag to look around, W A S D to fly." hidden></canvas>
+  <div class="float" id="tools" role="toolbar" aria-label="Map tools">
+    <button class="btn mode" type="button" id="mode2d" aria-pressed="true" title="Top-down map">2D</button>
+    <button class="btn mode" type="button" id="mode3d" aria-pressed="false" title="Fly through the map in 3D">3D</button>
+    <span class="sep"></span>
+    <button class="btn tool" type="button" data-tool="select" title="Select and move (V). Drag empty ground to pan.">Select</button>
+    <button class="btn tool" type="button" data-tool="add" title="Click walkable ground to place an enemy (A)">Add enemy</button>
+    <button class="btn tool" type="button" data-tool="route" title="Click to add stops to the selected enemy's patrol route (R)">Draw route</button>
+    <button class="btn tool" type="button" data-tool="zone" title="Click to place a zone. Enemies bound to it appear when a player walks in (Z)">Add zone</button>
+    <button class="btn tool" type="button" data-tool="thing" title="Click to place the thing chosen on the World tab: a weapon, an intel item ...">Add thing</button>
+    <span class="sep"></span>
+    <button class="btn" type="button" id="undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button class="btn" type="button" id="zoomOut" aria-label="Zoom out">−</button>
+    <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
+    <button class="btn" type="button" id="fit">Fit</button>
+    <span class="sep"></span>
+    <button class="btn" type="button" id="layersBtn" hidden title="Switch parts of the 3D map on and off, for example invisible walls">Layers</button>
+    <button class="btn" type="button" id="floorDown" title="Hide the top floor to see the one below (PageDown)">Floor ▼</button>
+    <button class="btn" type="button" id="floorUp" title="Show the next floor up (PageUp)">Floor ▲</button>
+    <label id="floor" title="Hide everything above this height"><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10" aria-label="Show up to height"><output id="ceilingOut" for="ceiling">all floors</output></label>
+  </div>
+  <div class="float" id="layerBox" hidden></div>
+  <div class="float" id="banner" hidden></div>
+  <div class="float" id="status"><span id="hintLine"></span><span id="coords"></span></div>
+  <div id="drop">Drop map, scenario or recon files</div>
+</main>
+
