@@ -222,6 +222,58 @@ Console.WriteLine("resilience");
     Check("only plain numbers are accepted", CommandLedger.Clean("a-B_9") == "a-B_9" && CommandLedger.Clean("a b") == "" && CommandLedger.Clean("x\"y") == "" && CommandLedger.Clean(new string('a', 65)) == "" && CommandLedger.Clean(null) == "");
 }
 
+// ---------------------------------------------------------------- shared reinforcement waves (ML-002)
+Console.WriteLine("reinforcement waves");
+{
+    // after = 20: two deaths 19 seconds apart come back in ONE wave, 20 s after the first death.
+    var r = new WaveRule { After = 20, Times = 2 };
+    var log = new List<string>(); int dead = 0, asks = 0;
+    for (float t = 0; t <= 200; t += 0.5f)
+    {
+        if (t == 10) dead = 1; if (t == 29) dead = 2;
+        int back = r.State == WaveRule.Pending && t >= 31 ? 2 : 0;         // the game brings both back a second after it is asked
+        if (back > 0) dead = 0;
+        var act = r.Step(t, dead, back);
+        if (act == WaveRule.Act.Ask) { asks++; r.Asked(t, true, ""); }
+        if (act != WaveRule.Act.None) log.Add(act + "@" + t);
+        if (t == 20) Check("ten seconds after the first death the page can say ten seconds are left", r.State == WaveRule.Counting && r.SecondsLeft(t) == 10f);
+    }
+    Check("two deaths 19 s apart: one announcement, one wave at 30 s, seen at 31 s", string.Join(" ", log) == "Announce@10 Ask@30 Observed@31", string.Join(" ", log));
+    Check("one wave is counted, one is left", r.Done == 1 && r.WavesLeft == 1 && r.State == WaveRule.Idle && asks == 1);
+}
+{
+    // The game is asked, and nobody comes back: the wave is not counted, and it is tried again a bounded number of times.
+    var r = new WaveRule { After = 5, Times = 1 };
+    int asks = 0, gaveUp = 0; var askedAt = new List<float>();
+    for (float t = 0; t <= 300; t += 0.5f)
+    {
+        var act = r.Step(t, 1, 0);
+        if (act == WaveRule.Act.Ask) { asks++; askedAt.Add(t); r.Asked(t, true, ""); }
+        if (act == WaveRule.Act.GaveUp) gaveUp++;
+        if (t == 7) Check("while a wave is pending the game is not asked again", r.State == WaveRule.Pending && asks == 1);
+    }
+    Check("a wave that nobody saw is not counted", r.Done == 0 && r.WavesLeft == 1 && r.State == WaveRule.Failed && r.Error.Contains("nobody was back"), r.State + " " + r.Error);
+    Check("it is tried three times in all, then left alone", asks == 3 && gaveUp == 3, asks + " asks at " + string.Join(",", askedAt));
+    Check("when everyone is alive again the rule is ready for the next death", r.Step(301, 0, 0) == WaveRule.Act.None && r.State == WaveRule.Idle && r.Step(302, 1, 0) == WaveRule.Act.Announce);
+}
+{
+    // The call itself fails (no game manager, an exception): not counted either. A second wave after the cap never comes.
+    var r = new WaveRule { After = 5, Times = 1 };
+    r.Step(0, 1, 0); Check("the first look starts the clock", r.State == WaveRule.Counting);
+    Check("after the wait the game is to be asked", r.Step(5, 1, 0) == WaveRule.Act.Ask);
+    r.Asked(5, false, "the game's mission keeper was not found");
+    Check("a call that fails leaves the wave unspent and says why", r.State == WaveRule.Failed && r.Done == 0 && r.Error.Contains("mission keeper"));
+    Check("it is asked again ten seconds later", r.Step(14, 1, 0) == WaveRule.Act.None && r.Step(15, 1, 0) == WaveRule.Act.Ask);
+    r.Asked(15, true, ""); Check("this time someone is back: counted", r.Step(16, 0, 1) == WaveRule.Act.Observed && r.Done == 1 && r.Spent);
+    Check("the cap is reached: a later death starts no clock", r.Step(50, 1, 0) == WaveRule.Act.None && r.State == WaveRule.Idle);
+    var off = new WaveRule(); Check("without a rule nothing happens", off.Step(1, 3, 0) == WaveRule.Act.None);
+    var endless = new WaveRule { After = 5 }; Check("no cap: waves left is reported as unlimited", endless.WavesLeft == -1 && !endless.Spent);
+    // One player back and another newly dead at the same moment: still a wave that happened; the clock starts again for the other.
+    var mix = new WaveRule { After = 5 }; mix.Step(0, 1, 0); mix.Step(5, 1, 0); mix.Asked(5, true, "");
+    Check("someone is back while another just died: counted, and the clock runs for the other", mix.Step(6, 1, 1) == WaveRule.Act.Observed && mix.Done == 1 && mix.State == WaveRule.Counting && mix.Since == 6f);
+    r.Reset(); Check("a new mission starts with no wave spent", r.Done == 0 && r.State == WaveRule.Idle);
+}
+
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;
 

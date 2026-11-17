@@ -87,9 +87,8 @@ namespace MissionLab
         private static string _power = "";
         private static string _skillAll = "";       // the scenario's own difficulty: every enemy without a skill of its own
         private static bool _nvgAll;
-        private static float _respawnAfter;         // the scenario's respawn rule
-        private static int _respawnTimes, _respawnsDone;
-        private static float _deadSince = -1f;
+        private static readonly WaveRule Wave = new WaveRule();                 // the scenario's respawn rule: a shared reinforcement wave
+        private static readonly HashSet<IntPtr> WaveDead = new HashSet<IntPtr>();   // who was dead when the game was last asked
         private static float _vehicleCheckAt = -1f;
         private static float _noticeAt = -1f;
         private static string _title = "";
@@ -143,7 +142,7 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
             _weather = plan.Weather ?? new WeatherPlan();
-            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _respawnAfter = plan.RespawnAfter; _respawnTimes = plan.RespawnTimes;
+            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; Wave.After = plan.RespawnAfter; Wave.Times = plan.RespawnTimes;
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
             _title = plan.Title ?? ""; _briefing = new List<string>(plan.Briefing);
             BriefQueue.Clear(); 
@@ -193,7 +192,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _respawnAfter = 0f; _respawnTimes = 0; _respawnsDone = 0; _deadSince = -1f; _title = ""; _briefing = new List<string>();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -203,7 +202,7 @@ namespace MissionLab
             if (_raidPtr == IntPtr.Zero) return;
             RaidManager raid = RaidManager.singleton;
             GameManager gm = GameManager.instance;
-            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End(); Reset(); return; }
+            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End(); Reset(); Director.EndSession("the mission is over"); return; }
 
             Replay.Tick(raid, gm, now);
             TryOuts.Tick(Time.unscaledTime);
@@ -216,8 +215,27 @@ namespace MissionLab
             catch (InvalidOperationException e) { _keysOk = false; DirectorPlugin.L.LogWarning("Game Master keys disabled: " + e.Message); }
         }
 
+        internal static string LastSaid = ""; internal static int SaidCount;
+
+        /// <summary>The mod lets go of what it holds in the game: the camera it opened and the input it took.</summary>
+        internal static void LetGo()
+        {
+            if (_weOpenedCam)
+                try { ScreenshotFreeCamera fc = FreeCam(); if (fc != null && fc.ToggledCam) fc.ToggleOffCamera(); } catch { }
+            _weOpenedCam = false;
+            if (_active) ReleaseInput();
+        }
+
+        /// <summary>What the page is told whether or not a mission runs: the session, each part's health, a refused scenario, recent changes.</summary>
+        internal static string Standing()
+        {
+            return ",\"plugin\":" + Q(DirectorPlugin.Version) + ",\"session\":" + Q(Director.Session) + ",\"rejected\":" + Q(Director.Rejected ?? "")
+                 + ",\"health\":" + DirectorPlugin.HealthJson() + ",\"commands\":" + LiveLink.Ledger.RecentJson(12);
+        }
+
         internal static void Say(string text)
         {
+            LastSaid = text; SaidCount++;
             Director.Banner = "MissionLab GM: " + text;
             Director.BannerUntil = Time.unscaledTime + 7f;
             DirectorPlugin.L.LogInfo(Director.Banner);
@@ -401,7 +419,9 @@ namespace MissionLab
             bool open = ExtractionOpen(raid);
             sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
               .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
-            sb.Append(",\"respawn\":{\"after\":").Append(_respawnAfter.ToString("0.##", Inv)).Append(",\"times\":").Append(_respawnTimes).Append(",\"done\":").Append(_respawnsDone).Append('}');
+            sb.Append(",\"respawn\":{\"after\":").Append(Wave.After.ToString("0.##", Inv)).Append(",\"times\":").Append(Wave.Times).Append(",\"done\":").Append(Wave.Done)
+              .Append(",\"state\":\"").Append(Wave.State).Append("\",\"left\":").Append(Wave.WavesLeft).Append(",\"in\":").Append(Wave.SecondsLeft(Time.unscaledTime).ToString("0", Inv))
+              .Append(",\"error\":").Append(Q(Wave.Error)).Append('}');
             sb.Append(",\"skill\":").Append(Q(_skillAll)).Append(",\"nvg\":").Append(_nvgAll ? "true" : "false");
             sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count + Director.DoorsOut.Count + Director.ThingsOut.Count);
             sb.Append(",\"title\":").Append(Q(_title)).Append(",\"briefing\":[");
@@ -423,7 +443,7 @@ namespace MissionLab
             }
             catch { }
             sb.Append(']');
-            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0').Append(_respawnAfter.ToString("0.##", Inv)).Append('x').Append(_respawnTimes).Append('x').Append(_respawnsDone);
+            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0').Append(Wave.After.ToString("0.##", Inv)).Append('x').Append(Wave.Times).Append('x').Append(Wave.Done).Append(Wave.State);
             sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
             List<string> names = Insertions();
             for (int i = 0; i < names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(names[i]));
@@ -709,28 +729,55 @@ namespace MissionLab
             }
         }
 
-        /// <summary>The scenario's respawn rule: a player who has been dead long enough is brought back, as often as the scenario allows.</summary>
+        /// <summary>
+        /// The scenario's respawn rule: a shared reinforcement wave. The core decides (WaveRule); this asks the game and
+        /// reports what it sees. A wave counts when a player who was dead is alive again, not when the game was asked.
+        /// </summary>
         private static void RespawnRule(RaidManager raid, float now)
         {
-            if (_respawnAfter <= 0f || now - Director.HandledAt < 20f) return;
-            if (_respawnTimes > 0 && _respawnsDone >= _respawnTimes) return;
-            int dead = 0;
+            if (Wave.After <= 0f || now - Director.HandledAt < 20f) return;
+            int dead = 0, back = 0;
             var players = PlayerMaster.AllPlayerMasters;
-            for (int i = 0; players != null && i < players.Count; i++) if (players[i] != null && players[i].PlayerSpawnedObject == null) dead++;
-            if (dead == 0) { _deadSince = -1f; return; }
-            if (_deadSince < 0f) { _deadSince = now; return; }
-            if (now - _deadSince < _respawnAfter) return;
-            _deadSince = -1f; _respawnsDone++;
-            try
+            for (int i = 0; players != null && i < players.Count; i++)
             {
-                string said = TryOuts.RespawnNow(true);
-                TryOuts.Did("bringing players back (the scenario's respawn rule)");
-                string left = _respawnTimes > 0 ? " " + (_respawnTimes - _respawnsDone) + " more left." : "";
-                DirectorPlugin.L.LogInfo("respawn rule: " + dead + " dead for " + _respawnAfter.ToString("0", Inv) + " s; " + said + left);
-                Replay.Event("note", "respawn rule: " + dead + (dead == 1 ? " player is" : " players are") + " brought back");
-                TryOuts.Message(raid, (dead == 1 ? "A player is back in the fight." : dead + " players are back in the fight.") + left);
+                PlayerMaster pm = players[i];
+                if (pm == null) continue;
+                if (pm.PlayerSpawnedObject == null) dead++; else if (WaveDead.Contains(pm.Pointer)) back++;
             }
-            catch (Exception e) { DirectorPlugin.L.LogWarning("the respawn rule could not bring players back: " + e.Message); }
+            switch (Wave.Step(now, dead, back))
+            {
+                case WaveRule.Act.Announce:
+                    DirectorPlugin.L.LogInfo("reinforcement wave: " + dead + " dead; the wave comes in " + Wave.After.ToString("0", Inv) + " s" + (Wave.Times > 0 ? ", " + Wave.WavesLeft + " left" : ""));
+                    Replay.Event("note", "reinforcement wave: the clock runs, " + Wave.After.ToString("0", Inv) + " s");
+                    try { TryOuts.Message(raid, (dead == 1 ? "A player is down." : dead + " players are down.") + " Reinforcement wave in " + TryOuts.Clock(Wave.After) + "."); } catch { }
+                    break;
+                case WaveRule.Act.Ask:
+                    WaveDead.Clear();
+                    for (int i = 0; players != null && i < players.Count; i++) if (players[i] != null && players[i].PlayerSpawnedObject == null) WaveDead.Add(players[i].Pointer);
+                    bool ok = false; string said;
+                    try { said = TryOuts.RespawnNow(true); ok = !said.Contains("was not found"); }
+                    catch (Exception e) { said = e.GetType().Name + ": " + e.Message; }
+                    Wave.Asked(now, ok, ok ? "" : said);
+                    TryOuts.Did("asking for a reinforcement wave");
+                    DirectorPlugin.L.LogInfo("reinforcement wave: the game is asked (try " + Wave.Tries + ", " + dead + " dead): " + said);
+                    Replay.Event("note", "reinforcement wave asked for: " + dead + " dead");
+                    if (!ok) Say("the reinforcement wave could not be asked for: " + said);
+                    break;
+                case WaveRule.Act.Observed:
+                    WaveDead.Clear();
+                    TryOuts.RestoreRespawns("the wave was seen");
+                    string left = Wave.Times > 0 ? " " + Wave.WavesLeft + (Wave.WavesLeft == 1 ? " wave" : " waves") + " left." : "";
+                    DirectorPlugin.L.LogInfo("reinforcement wave " + Wave.Done + " seen: " + back + " back, " + dead + " still dead." + left);
+                    Replay.Event("note", "reinforcement wave " + Wave.Done + ": " + back + (back == 1 ? " player is" : " players are") + " back");
+                    try { TryOuts.Message(raid, (back == 1 ? "A player is" : back + " players are") + " back in the fight." + left); } catch { }
+                    break;
+                case WaveRule.Act.GaveUp:
+                    TryOuts.RestoreRespawns("the wave was not seen");
+                    DirectorPlugin.L.LogWarning("reinforcement wave: " + Wave.Error + " (try " + Wave.Tries + " of " + WaveRule.MaxTries + "). It is not counted.");
+                    Replay.Event("note", "reinforcement wave failed: " + Wave.Error);
+                    Say("reinforcement wave: " + Wave.Error + (Wave.Tries < WaveRule.MaxTries ? "; it is tried again in a moment" : "; it is not tried again"));
+                    break;
+            }
         }
 
         private static void WarnLeft(RaidManager raid, TriggerPlan t, string text, bool red)
@@ -1821,7 +1868,7 @@ namespace MissionLab
         /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
         internal static string StateJson()
         {
-            string page = ",\"page\":" + Q(LiveLink.PageStamp) + "," + Picker.Json();
+            string page = ",\"page\":" + Q(LiveLink.PageStamp) + "," + Picker.Json() + Standing();
             if (!MissionRunning(out RaidManager raid, out GameManager gm)) return "{\"mission\":false" + page + "}";
             if (Time.unscaledTime - Director.HandledAt < 3f) return "{\"mission\":false,\"starting\":true" + page + "}";
             EnsureMarkers(); MapBots(gm, null);
@@ -2000,7 +2047,7 @@ namespace MissionLab
                 _weather = settings.Weather;
                 if (!string.IsNullOrEmpty(settings.Title)) _title = settings.Title;
                 _briefing = new List<string>(settings.Briefing);
-                _respawnAfter = settings.RespawnAfter; _respawnTimes = settings.RespawnTimes;
+                Wave.After = settings.RespawnAfter; Wave.Times = settings.RespawnTimes;
                 _skillAll = settings.Skill ?? ""; _nvgAll = settings.Nvg;          // for enemies that appear from now on
                 if ((settings.Power ?? "") != _power)
                 {
@@ -2080,7 +2127,7 @@ namespace MissionLab
             plan.Doors.AddRange(Director.DoorsOut); plan.Things.AddRange(Director.ThingsOut);            // what lost its roll this time is still part of the scenario
             plan.Title = _title; plan.Briefing = new List<string>(_briefing);
             foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
-            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.RespawnAfter = _respawnAfter; plan.RespawnTimes = _respawnTimes;
+            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.RespawnAfter = Wave.After; plan.RespawnTimes = Wave.Times;
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))

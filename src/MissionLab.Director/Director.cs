@@ -39,6 +39,24 @@ namespace MissionLab
         internal static string CurrentScenarioScene;        // that file's own "scene" value
         private static string _lastScenarioPath;
 
+        // One mission, one session. Changes sent by the page carry the session they were made for; a change for another mission is refused.
+        internal static string Session = "";
+        private static int _sessions;
+        internal static string Rejected = "";              // why the scenario was not used for this mission ("": it was, or there was none)
+        internal static void NewSession()
+        {
+            Session = "m" + (++_sessions) + "-" + (DateTime.UtcNow.Ticks / 10000000L % 100000L);
+            Rejected = "";
+            DirectorPlugin.FreshGuards();
+            DirectorPlugin.L.LogInfo("session " + Session + " begins");
+        }
+        internal static void EndSession(string why)
+        {
+            if (Session == "") return;
+            DirectorPlugin.L.LogInfo("session " + Session + " ends (" + why + ")");
+            Session = ""; Rejected = "";
+        }
+
         private static IntPtr _configReadFor = IntPtr.Zero;
         private static IntPtr _waitingPtr = IntPtr.Zero;
         private static float _waitingSince;
@@ -55,6 +73,7 @@ namespace MissionLab
             IntPtr ptr = raid.Pointer;
             if (_configReadFor != ptr)
             {
+                NewSession();
                 // Read the settings file again for every mission, so edits apply without restarting the game.
                 _configReadFor = ptr;
                 try { DirectorPlugin.Settings.Reload(); }
@@ -174,6 +193,7 @@ namespace MissionLab
             long seed; int enemies; string source;
             var later = new HashSet<SpawnPlan>();
             string scenarioScene = fromFile ? plan.Scene : "";
+            Variants.Out rolledOut = null; long rolledWith = 0; int squad = 0;
             if (fromFile && Variants.Any(plan))
             {
                 // What the scenario leaves to chance is rolled now, anew for every mission unless a seed is set.
@@ -183,12 +203,27 @@ namespace MissionLab
                 int players = 0;
                 try { var all = PlayerMaster.AllPlayerMasters; for (int i = 0; all != null && i < all.Count; i++) if (all[i] != null) players++; } catch { }
                 Variants.Out gone = Variants.Resolve(plan, new Rng(roll ^ 0x5EED), rolls, players);
+                rolledOut = gone; rolledWith = roll; squad = players;
                 SatOut.AddRange(gone.Spawns); DoorsOut.AddRange(gone.Doors); ThingsOut.AddRange(gone.Things);
                 log.LogInfo("left to chance: " + string.Join("; ", rolls) + " | " + plan.Spawns.Count + " of " + before + " enemies are in this mission, " + players + " player(s)" +
                             (gone.Doors.Count + gone.Things.Count > 0 ? ", " + gone.Doors.Count + " door setting(s) and " + gone.Things.Count + " thing(s) left out" : "") + " (roll " + roll + ")");
             }
             if (fromFile)
             {
+                // Can this mission still be finished, now that the dice have fallen? If its own rules make that impossible, the
+                // scenario is not used at all: nothing of the mission has been changed yet, and the game's own mission runs.
+                var broken = Completion.Check(plan, rolledOut, squad);
+                foreach (Finding f in broken) if (f.Level == Finding.Note) log.LogInfo("scenario '" + scenarioName + "': " + f);
+                if (Completion.Blocks(broken))
+                {
+                    string why = string.Join("; ", broken.FindAll(f => f.Level == Finding.Error).ConvertAll(f => f.ToString()));
+                    string with = rolledOut != null ? " This was roll " + rolledWith + " with " + squad + " player(s); Seed = " + rolledWith + " in the settings gives the same result again." : "";
+                    Rejected = "Scenario '" + scenarioName + "' was not used: " + why + "." + with + " The game's own mission runs.";
+                    log.LogWarning(Rejected + " Nothing of the mission was changed.");
+                    Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
+                    SatOut.Clear(); DoorsOut.Clear(); ThingsOut.Clear();
+                    return true;
+                }
                 seed = plan.Seed;
                 source = "scenario '" + scenarioName + "'";
                 // Enemies of a chosen type cannot go through the game's own start-up spawn; they follow a few seconds later.

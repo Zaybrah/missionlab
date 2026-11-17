@@ -23,7 +23,7 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; }
+        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Pending.Clear(); _nextMessageAt = 0f; _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
@@ -52,11 +52,7 @@ namespace MissionLab
             WatchFlag();
             if (Pending.Count > 0 && now >= _nextMessageAt)
                 try { RaidManager raid = RaidManager.singleton; string next = Pending.Dequeue(); if (raid != null) Show(raid, next, false); } catch { }
-            if (_respawnsOffAt >= 0f && now >= _respawnsOffAt)
-            {
-                _respawnsOffAt = -1f;
-                try { GameManagerNetwork g = GameManagerNetwork.instance; if (g != null) { g.SERVER_SetRespawns(false); DirectorPlugin.L.LogInfo("respawn: the game's respawn switch is off again"); } } catch { }
-            }
+            if (_respawnsOffAt >= 0f && now >= _respawnsOffAt) RestoreRespawns("twelve seconds have passed");
             if (_endAt >= 0f && now >= _endAt)
             {
                 _endAt = -1f;
@@ -233,10 +229,11 @@ namespace MissionLab
             GameManagerNetwork g = GameManagerNetwork.instance;
             if (g == null) return "respawn: the game's mission keeper was not found";
             bool before = g.AllowRespawns;
+            if (restore && _respawnsWere == null) _respawnsWere = before;      // what the game's own setting was, to put it back
             g.SERVER_SetRespawns(true);
             g.UserCode_SERVER_RespawnALL();
-            if (restore && !before) _respawnsOffAt = Time.unscaledTime + 5f;
-            return "respawn: the game was asked to bring every player back (respawns were " + (before ? "on" : "off") + (restore && !before ? ", and go off again in 5 s)" : ", now " + (g.AllowRespawns ? "on" : "off") + ")");
+            if (restore) _respawnsOffAt = Time.unscaledTime + 12f;             // at the latest; the wave rule puts it back sooner
+            return "respawn: the game was asked to bring every player back (respawns were " + (before ? "on" : "off") + (restore && !before ? ", and are put back once the wave is seen)" : ", now " + (g.AllowRespawns ? "on" : "off") + ")");
         }
 
         /// <summary>{enemies}, {players} and {time} in a message become the numbers of the moment.</summary>
@@ -487,6 +484,24 @@ namespace MissionLab
 
         // ------------------------------------------------------------------ players and the mission's end
         private static string Respawn() => RespawnNow(false);
+
+        private static bool? _respawnsWere;      // the game's own respawn setting before the mod switched it on for a wave
+
+        /// <summary>Puts the game's own respawn setting back to what it was before a wave: on success, on failure and when the mission ends.</summary>
+        internal static void RestoreRespawns(string why)
+        {
+            _respawnsOffAt = -1f;
+            if (_respawnsWere == null) return;
+            bool was = _respawnsWere.Value; _respawnsWere = null;
+            try
+            {
+                GameManagerNetwork g = GameManagerNetwork.instance;
+                if (g == null) return;
+                if (g.AllowRespawns != was) g.SERVER_SetRespawns(was);
+                DirectorPlugin.L.LogInfo("respawn: the game's own respawn setting is " + (was ? "on" : "off") + " again (" + why + ")");
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the game's respawn setting could not be put back: " + e.Message); }
+        }
 
         internal static string End(bool success)
         {

@@ -5,6 +5,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
+using MissionLab.Core;
 using UnityEngine;
 
 namespace MissionLab
@@ -20,9 +21,45 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.23.0";
+        public const string Version = "0.24.0";
 
         internal static ManualLogSource L;
+
+        // Every part that runs each frame has its own guard: one that keeps failing is paused and tried again later,
+        // and the others carry on. (Before 0.24 eleven errors anywhere, in the whole session, stopped all of them for good.)
+        internal static readonly Guard PickerGuard = new Guard("scenario picker"), LinkGuard = new Guard("browser link"),
+                                      RulesGuard = new Guard("mission rules and Game Master"), StartGuard = new Guard("mission start");
+        private static readonly Guard[] Guards = { PickerGuard, LinkGuard, RulesGuard, StartGuard };
+
+        internal static void Trouble(Guard g, float now, string what, Exception e)
+        {
+            bool was = g.Degraded;
+            float pause = g.Failed(now, e.GetType().Name + ": " + e.Message);
+            if (pause <= 0f) L.LogError(what + " failed: " + e);
+            else L.LogError(what + " failed " + g.Failures + " times in a row; paused for " + pause.ToString("0") + " s, then tried again. Last error: " + e.GetType().Name + ": " + e.Message);
+            if (!was && g.Degraded && g == RulesGuard)
+            {
+                // The mission's own rules have stopped: the host must see that, and the mod lets go of what it holds.
+                try { GameMaster.LetGo(); } catch { }
+                Director.Banner = "MissionLab: the mission rules have stopped after an error. They are tried again shortly; see the page or the log.";
+                Director.BannerUntil = now + 30f;
+            }
+        }
+        internal static void Fine(Guard g, string what) { if (g.Ok()) L.LogInfo(what + " works again"); }
+
+        /// <summary>A new mission: every part gets a fresh start.</summary>
+        internal static void FreshGuards() { foreach (Guard g in Guards) g.Fresh(); }
+        /// <summary>The host asks for another try right now.</summary>
+        internal static void TryAgainNow() { foreach (Guard g in Guards) { g.RetryAt = 0f; g.Pauses = 0; } }
+        internal static bool RulesPaused => RulesGuard.Degraded;
+        internal static string HealthJson()
+        {
+            float now = Time.unscaledTime;
+            var sb = new System.Text.StringBuilder("[");
+            for (int i = 0; i < Guards.Length; i++) sb.Append(i == 0 ? "" : ",").Append(Guards[i].Json(now));
+            return sb.Append(']').ToString();
+        }
+
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> UseHook;
         internal static ConfigEntry<int> Seed;
@@ -204,28 +241,30 @@ namespace MissionLab
         private float _nextPoll;
         private bool _guiOk = true;
         private bool _gmGuiOk = true;
-        private int _errors;
-
         private void Update()
         {
-            if (_errors > 10) return;
             float now = Time.unscaledTime;
-            try { Picker.Tick(); }
-            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("scenario picker failed: " + e); }
-            try { LiveLink.Pump(); }
-            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("browser link failed: " + e); }
-            try { GameMaster.Tick(now); }
-            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("Game Master failed: " + e); }
-            if (now < _nextPoll) return;
+            if (DirectorPlugin.PickerGuard.Due(now))
+                try { Picker.Tick(); DirectorPlugin.Fine(DirectorPlugin.PickerGuard, "the scenario picker"); }
+                catch (Exception e) { DirectorPlugin.Trouble(DirectorPlugin.PickerGuard, now, "the scenario picker", e); }
+            if (DirectorPlugin.LinkGuard.Due(now))
+                try { LiveLink.Pump(); DirectorPlugin.Fine(DirectorPlugin.LinkGuard, "the browser link"); }
+                catch (Exception e) { DirectorPlugin.Trouble(DirectorPlugin.LinkGuard, now, "the browser link", e); }
+            if (DirectorPlugin.RulesGuard.Due(now))
+                try { GameMaster.Tick(now); DirectorPlugin.Fine(DirectorPlugin.RulesGuard, "the mission rules"); }
+                catch (Exception e) { DirectorPlugin.Trouble(DirectorPlugin.RulesGuard, now, "the mission rules", e); }
+            if (now < _nextPoll || !DirectorPlugin.StartGuard.Due(now)) return;
             try
             {
                 // Safety net and retry: check every frame while a mission is waiting to be
                 // handled (its spawn list may appear a moment after the hook), otherwise 4x a second.
                 RaidManager raid = RaidManager.singleton;
+                if (raid == null) Director.EndSession("the mission is over");
                 if (raid == null || raid.Pointer == Director.HandledRaidPtr) { _nextPoll = now + 0.25f; return; }
                 Director.OnRaidStart(raid, "poll");
+                DirectorPlugin.Fine(DirectorPlugin.StartGuard, "the mission start");
             }
-            catch (Exception e) { _errors++; DirectorPlugin.L.LogError("poll failed: " + e); }
+            catch (Exception e) { DirectorPlugin.Trouble(DirectorPlugin.StartGuard, now, "the mission start", e); }
         }
 
         private void OnGUI()

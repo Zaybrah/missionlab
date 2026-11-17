@@ -17,7 +17,18 @@ namespace MissionLab
     /// </summary>
     internal static class LiveLink
     {
-        private sealed class Job { public HttpRequest Req; public HttpResponse Res; public readonly ManualResetEventSlim Done = new ManualResetEventSlim(false); }
+        private sealed class Job
+        {
+            public HttpRequest Req; public HttpResponse Res; public readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
+            public int Phase;              // 0: waiting its turn, 1: the game has begun it, 2: given up before it began (it never runs)
+            public string Command = "";    // the page's own number for this change ("": none)
+            public string Session;         // the mission it was made for (null: not said)
+        }
+
+        internal static readonly CommandLedger Ledger = new CommandLedger(200);
+        private const int MaxWaiting = 64;             // more than this and the page is told to wait: a stuck page cannot pile up work
+        private static int _waiting;
+        private static volatile string _status = "{\"mission\":false}";
 
         private static readonly ConcurrentQueue<Job> Jobs = new ConcurrentQueue<Job>();
         private static MiniHttp _web;
@@ -86,11 +97,46 @@ namespace MissionLab
                 return File.Exists(full) ? HttpResponse.File(full, kind.Item4) : HttpResponse.Error(404, "no such file");
             }
             if (!r.Path.StartsWith("/api/", StringComparison.Ordinal)) return HttpResponse.Error(404, "not found");
-            if (r.Method != "GET" && !r.Headers.ContainsKey("X-MissionLab")) return HttpResponse.Error(403, "not from the editor page");
+            bool change = r.Method != "GET";
+            if (change && !r.Headers.ContainsKey("X-MissionLab")) return HttpResponse.Error(403, "not from the editor page");
+
+            // Answered here, without the game's thread: it works when the game is busy, in the lobby and between missions.
+            if (r.Path == "/api/status") return HttpResponse.Json(_status);
+            if (r.Path.StartsWith("/api/command/", StringComparison.Ordinal) && !change)
+            {
+                string asked = CommandLedger.Clean(Uri.UnescapeDataString(r.Path.Substring("/api/command/".Length)));
+                return asked != "" && Ledger.TryGet(asked, out CommandLedger.Entry known) ? HttpResponse.Json(CommandLedger.Json(known))
+                                                                                         : HttpResponse.Json("{\"command\":\"" + asked + "\",\"status\":\"unknown\"}", 404);
+            }
 
             var job = new Job { Req = r };
+            if (change)
+            {
+                job.Session = r.Headers.TryGetValue("X-MissionLab-Session", out string session) ? session : null;
+                job.Command = r.Headers.TryGetValue("X-MissionLab-Command", out string number) ? CommandLedger.Clean(number) : "";
+                // The same number twice is carried out once: the second time gets what the first one got.
+                if (job.Command != "" && !Ledger.Begin(job.Command, job.Session, r.Path, 0f, out CommandLedger.Entry seen))
+                    return seen.Status == CommandLedger.Pending ? HttpResponse.Json(CommandLedger.Json(seen), 202)
+                                                                : new HttpResponse { Status = seen.Code, Body = System.Text.Encoding.UTF8.GetBytes(seen.Body) };
+            }
+            if (Volatile.Read(ref _waiting) >= MaxWaiting)
+            {
+                string busy = "{\"status\":\"" + CommandLedger.Expired + "\",\"command\":\"" + job.Command + "\",\"error\":\"the game has too much waiting; this was not carried out\"}";
+                if (job.Command != "") Ledger.Finish(job.Command, CommandLedger.Expired, 429, busy, "");
+                return HttpResponse.Json(busy, 429);
+            }
+            Interlocked.Increment(ref _waiting);
             Jobs.Enqueue(job);
-            return job.Done.Wait(4000) ? job.Res : HttpResponse.Error(503, "the game did not answer in time");
+            if (job.Done.Wait(4000)) return job.Res;
+            if (Interlocked.CompareExchange(ref job.Phase, 2, 0) == 0)
+            {
+                // The game never got to it. It is struck off: it will not run later, and not in the next mission either.
+                string late = "{\"status\":\"" + CommandLedger.Expired + "\",\"command\":\"" + job.Command + "\",\"error\":\"the game did not take this in time; it was not carried out and will not run later\"}";
+                if (job.Command != "") Ledger.Finish(job.Command, CommandLedger.Expired, 503, late, "");
+                return HttpResponse.Json(late, 503);
+            }
+            // The game has begun it and is not done: neither carried out for certain nor cancelled.
+            return HttpResponse.Json("{\"status\":\"" + CommandLedger.Pending + "\",\"command\":\"" + job.Command + "\",\"error\":\"the game has begun this and has not finished; ask for its result, do not send it again\"}", 202);
         }
 
         /// <summary>Game thread, every frame.</summary>
@@ -99,11 +145,31 @@ namespace MissionLab
             if (!Running) return;
             _navFile = GameMaster.LiveNavFile();
             if (UnityEngine.Time.frameCount % 240 == 0) PageStamp = Stamp(Path.Combine(_webDir, "index.html"));
+            if (UnityEngine.Time.frameCount % 30 == 0)
+                _status = "{\"mission\":" + (GameMaster.LiveNavFile() != null ? "true" : "false") + GameMaster.Standing() + "}";
             for (int n = 0; n < 8 && Jobs.TryDequeue(out Job job); n++)
             {
+                Interlocked.Decrement(ref _waiting);
+                if (Interlocked.CompareExchange(ref job.Phase, 1, 0) != 0) continue;       // the page stopped waiting before its turn: it never runs
                 LastRequestAt = UnityEngine.Time.unscaledTime;
-                try { job.Res = Answer(job.Req); }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("browser request " + job.Req.Path + " failed: " + e); job.Res = HttpResponse.Error(500, e.GetType().Name + ": " + e.Message); }
+                bool change = job.Req.Method != "GET";
+                string status = CommandLedger.Applied; int said = GameMaster.SaidCount;
+                if (change && job.Session != null && job.Session != Director.Session)
+                {
+                    // Made for another mission: nothing is done.
+                    status = CommandLedger.Stale;
+                    job.Res = HttpResponse.Json("{\"status\":\"stale\",\"command\":\"" + job.Command + "\",\"session\":\"" + Director.Session + "\",\"error\":\"this was meant for another mission; nothing was done\"}", 409);
+                }
+                else
+                    try { job.Res = Answer(job.Req); if (job.Res.Status >= 400) status = CommandLedger.Failed; }
+                    catch (Exception e)
+                    {
+                        status = CommandLedger.Failed;
+                        DirectorPlugin.L.LogWarning("browser request " + job.Req.Path + " failed: " + e);
+                        job.Res = HttpResponse.Error(500, e.GetType().Name + ": " + e.Message);
+                    }
+                if (job.Command != "")
+                    Ledger.Finish(job.Command, status, job.Res.Status, System.Text.Encoding.UTF8.GetString(job.Res.Body), GameMaster.SaidCount != said ? GameMaster.LastSaid : "");
                 job.Done.Set();
             }
         }
@@ -115,6 +181,10 @@ namespace MissionLab
                 case "/api/state": return HttpResponse.Json(GameMaster.StateJson());
                 case "/api/markers": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Reconcile(r.BodyText)) : HttpResponse.Error(400, "POST expected");
                 case "/api/command": return r.Method == "POST" ? HttpResponse.Json(GameMaster.Command(r.BodyText)) : HttpResponse.Error(400, "POST expected");
+                case "/api/recover":
+                    if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
+                    DirectorPlugin.TryAgainNow();
+                    return HttpResponse.Json(GameMaster.StateJson());
                 case "/api/choose":
                     if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
                     using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(r.BodyText)) Picker.Choose(doc.RootElement.GetProperty("value").GetString());
