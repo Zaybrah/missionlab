@@ -1,0 +1,10 @@
+{
+ "schema": "missionlab-plan/1",
+ "name": "Fixture: the extraction waits for a trigger that has a chance",
+ "scene": "Fixture",
+ "extraction": { "after": 1 },
+ "triggers": [
+  { "id": 1, "name": "Phone", "when": "intel", "chance": 50 }
+ ],
+ "spawns": [ { "pos": [0, 0, 0], "role": "Guard" } ]
+}

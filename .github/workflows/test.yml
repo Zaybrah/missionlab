@@ -1,0 +1,12 @@
+# The tests that need nothing of the game. No game file is used or stored here.
+name: tests
+on: [push, pull_request]
+jobs:
+  asset-free:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: ./test.sh

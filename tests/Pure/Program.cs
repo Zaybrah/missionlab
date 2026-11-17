@@ -274,6 +274,56 @@ Console.WriteLine("reinforcement waves");
     r.Reset(); Check("a new mission starts with no wave spent", r.Done == 0 && r.State == WaveRule.Idle);
 }
 
+// ---------------------------------------------------------------- files: fixtures and the examples that ship (ML-010)
+Console.WriteLine("files");
+{
+    string root = AppContext.BaseDirectory;
+    while (root != null && !Directory.Exists(Path.Combine(root, "tests", "fixtures"))) root = Path.GetDirectoryName(root);
+    Check("the repository's fixtures are found", root != null);
+    if (root != null)
+    {
+        string Fixture(string name) => File.ReadAllText(Path.Combine(root, "tests", "fixtures", name));
+        // Every field survives reading and writing, twice over.
+        var all = Plan(Fixture("all_fields.json"));
+        string once = all.ToJson(), twice = Plan(once).ToJson();
+        Check("every field: what is written reads back to the same text", once == twice);
+        foreach (string key in new[] { "\"gameMaster\":true", "\"power\":\"off\"", "\"skill\":\"veteran\"", "\"nvg\":true", "\"respawn\":{\"after\":20,\"times\":2}", "\"everyone\":true", "\"red\":true",
+                                       "\"hold\":15", "\"rally\":30", "\"hunt\":true", "\"extraction\":\"open\"", "\"repeat\":30", "\"times\":3", "\"open\":false", "\"warn\":true", "\"end\":\"failed\"",
+                                       "\"respawn\":true", "\"tag\":\"officer\"", "\"when\":\"door\"", "\"enemiesCanOpen\":false", "\"chance\":25", "\"lot\":3", "\"either\":1", "\"minPlayers\":2", "\"team\":4" })
+            Check("every field: " + key + " is kept", once.Contains(key), key);
+        Check("every field: eleven triggers, five enemies, a door and a thing", all.Triggers.Count == 11 && all.Spawns.Count == 5 && all.Doors.Count == 1 && all.Things.Count == 1);
+        Check("every field: the scenario can be finished as written", !Completion.Blocks(Completion.Check(all, null, 0)), Broken(all));
+        // A file from the first version: only a scene and positions.
+        var old = Plan(Fixture("legacy_minimal.json"));
+        Check("a file of the first version reads with plain defaults", old.Spawns.Count == 2 && old.Triggers.Count == 0 && old.ExtractionAfter == 0 && !old.GameMaster && old.RespawnAfter == 0f && old.Spawns[0].Chance == 100 && old.Spawns[0].Tag == "");
+        Check("and gains none of the newer keys when written", !old.ToJson().Contains("respawn") && !old.ToJson().Contains("gameMaster") && !old.ToJson().Contains("tag"));
+        // The defect of ML-001, as a file: half the rolls must be refused, the other half must pass.
+        int refused = 0, passed = 0;
+        for (long seed = 1; seed <= 40; seed++)
+        {
+            var p = Plan(Fixture("extraction_chance_defect.json"));
+            var gone = Variants.Resolve(p, new Rng(seed), null, 1);
+            if (Completion.Blocks(Completion.Check(p, gone, 1))) refused++; else passed++;
+        }
+        Check("the extraction-and-chance fixture is refused on the rolls that break it, and only on those", refused > 8 && passed > 8, refused + " refused, " + passed + " passed");
+        // What ships in examples/ must read, write back to the same text, and be possible to finish as written.
+        foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json"))
+        {
+            string name = Path.GetFileName(file);
+            try
+            {
+                var p = Plan(File.ReadAllText(file));
+                string first = p.ToJson();
+                Check("example " + name + " writes back to the same text", Plan(first).ToJson() == first);
+                Check("example " + name + " can be finished as written", !Completion.Blocks(Completion.Check(p, null, 0)), Broken(p));
+                var e = new TriggerEngine(); e.Reset(0); e.Sync(p.Triggers);
+                Check("example " + name + " has no triggers in a circle", e.Problems.Count == 0, string.Join(" | ", e.Problems));
+            }
+            catch (Exception ex) { Check("example " + name + " reads", false, ex.Message); }
+        }
+    }
+}
+
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;
 

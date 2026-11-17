@@ -1,0 +1,36 @@
+{
+ "schema": "missionlab-plan/1",
+ "name": "Fixture: every field",
+ "scene": "Fixture",
+ "seed": 7,
+ "gameMaster": true,
+ "power": "off",
+ "skill": "veteran",
+ "nvg": true,
+ "respawn": { "after": 20, "times": 2 },
+ "briefing": ["First line.", "Second line."],
+ "extraction": { "after": 3 },
+ "insertion": "Alpha 2",
+ "triggers": [
+  { "id": 1, "name": "Yard", "when": "zone", "pos": [0, 0, 0], "radius": 6, "everyone": true, "delay": 2, "message": "In the yard.", "red": true },
+  { "id": 2, "name": "Hold", "when": "hold", "pos": [5, 0, 5], "radius": 4, "hold": 15, "rally": 30, "hunt": true },
+  { "id": 3, "name": "Both", "when": "all", "of": [1, 2], "extraction": "open" },
+  { "id": 4, "name": "Either", "when": "any", "of": [1, 5] },
+  { "id": 5, "name": "Alarm", "when": "alert", "delay": 10, "chance": 60, "power": "on", "repeat": 30, "times": 3 },
+  { "id": 6, "name": "Phone", "when": "intel", "item": "Cell Phone", "doors": [ { "name": "Door A", "pos": [1, 0, 1], "locked": true, "open": false } ] },
+  { "id": 7, "name": "Clock", "when": "time", "delay": 120, "warn": true, "end": "failed", "respawn": true },
+  { "id": 8, "name": "Later", "when": "after", "after": 6, "delay": 5 },
+  { "id": 9, "name": "Officer", "when": "down", "tag": "officer", "count": 0, "end": "success" },
+  { "id": 10, "name": "Back door", "when": "door", "pos": [1, 0, 1] },
+  { "id": 11, "name": "By hand", "when": "after", "after": 0 }
+ ],
+ "doors": [ { "name": "Door A", "pos": [1, 0, 1], "locked": false, "enemiesCanOpen": false, "open": true, "chance": 50 } ],
+ "things": [ { "name": "AKM", "pos": [2, 0.5, 2], "yaw": 90, "trigger": 2, "chance": 25 } ],
+ "spawns": [
+  { "pos": [0, 0, 0], "role": "Guard", "tag": "officer", "skill": "recruit", "nvg": true, "team": 4 },
+  { "pos": [1, 0, 0], "role": "Wander", "chance": 60, "lot": 3 },
+  { "pos": [2, 0, 0], "either": 1, "option": 1 },
+  { "pos": [3, 0, 0], "either": 1, "option": 2, "minPlayers": 2 },
+  { "pos": [4, 0, 0], "trigger": 5 }
+ ]
+}

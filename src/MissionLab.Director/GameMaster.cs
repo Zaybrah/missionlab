@@ -87,6 +87,7 @@ namespace MissionLab
         private static string _power = "";
         private static string _skillAll = "";       // the scenario's own difficulty: every enemy without a skill of its own
         private static bool _nvgAll;
+        private static bool _needsGm;               // the scenario says it is meant to be run by a Game Master
         private static readonly WaveRule Wave = new WaveRule();                 // the scenario's respawn rule: a shared reinforcement wave
         private static readonly HashSet<IntPtr> WaveDead = new HashSet<IntPtr>();   // who was dead when the game was last asked
         private static float _vehicleCheckAt = -1f;
@@ -142,7 +143,7 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
             _weather = plan.Weather ?? new WeatherPlan();
-            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; Wave.After = plan.RespawnAfter; Wave.Times = plan.RespawnTimes;
+            _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _needsGm = plan.GameMaster; Wave.After = plan.RespawnAfter; Wave.Times = plan.RespawnTimes;
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
             _title = plan.Title ?? ""; _briefing = new List<string>(plan.Briefing);
             BriefQueue.Clear(); 
@@ -192,7 +193,7 @@ namespace MissionLab
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); _title = ""; _briefing = new List<string>();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -422,6 +423,7 @@ namespace MissionLab
             sb.Append(",\"respawn\":{\"after\":").Append(Wave.After.ToString("0.##", Inv)).Append(",\"times\":").Append(Wave.Times).Append(",\"done\":").Append(Wave.Done)
               .Append(",\"state\":\"").Append(Wave.State).Append("\",\"left\":").Append(Wave.WavesLeft).Append(",\"in\":").Append(Wave.SecondsLeft(Time.unscaledTime).ToString("0", Inv))
               .Append(",\"error\":").Append(Q(Wave.Error)).Append('}');
+            sb.Append(",\"gameMaster\":").Append(_needsGm ? "true" : "false");
             sb.Append(",\"skill\":").Append(Q(_skillAll)).Append(",\"nvg\":").Append(_nvgAll ? "true" : "false");
             sb.Append(",\"power\":").Append(Q(_power)).Append(",\"satOut\":").Append(Director.SatOut.Count + Director.DoorsOut.Count + Director.ThingsOut.Count);
             sb.Append(",\"title\":").Append(Q(_title)).Append(",\"briefing\":[");
@@ -443,7 +445,7 @@ namespace MissionLab
             }
             catch { }
             sb.Append(']');
-            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0').Append(Wave.After.ToString("0.##", Inv)).Append('x').Append(Wave.Times).Append('x').Append(Wave.Done).Append(Wave.State);
+            rev.Append('P').Append(_power).Append(_skillAll).Append(_nvgAll ? '1' : '0').Append(_needsGm ? 'G' : 'g').Append(Wave.After.ToString("0.##", Inv)).Append('x').Append(Wave.Times).Append('x').Append(Wave.Done).Append(Wave.State);
             sb.Append(",\"insertion\":").Append(Q(_insertion)).Append(",\"insertions\":[");
             List<string> names = Insertions();
             for (int i = 0; i < names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(names[i]));
@@ -2048,7 +2050,7 @@ namespace MissionLab
                 if (!string.IsNullOrEmpty(settings.Title)) _title = settings.Title;
                 _briefing = new List<string>(settings.Briefing);
                 Wave.After = settings.RespawnAfter; Wave.Times = settings.RespawnTimes;
-                _skillAll = settings.Skill ?? ""; _nvgAll = settings.Nvg;          // for enemies that appear from now on
+                _skillAll = settings.Skill ?? ""; _nvgAll = settings.Nvg; _needsGm = settings.GameMaster;          // for enemies that appear from now on
                 if ((settings.Power ?? "") != _power)
                 {
                     _power = settings.Power ?? "";
@@ -2127,7 +2129,7 @@ namespace MissionLab
             plan.Doors.AddRange(Director.DoorsOut); plan.Things.AddRange(Director.ThingsOut);            // what lost its roll this time is still part of the scenario
             plan.Title = _title; plan.Briefing = new List<string>(_briefing);
             foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
-            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.RespawnAfter = Wave.After; plan.RespawnTimes = Wave.Times;
+            plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.GameMaster = _needsGm; plan.RespawnAfter = Wave.After; plan.RespawnTimes = Wave.Times;
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))

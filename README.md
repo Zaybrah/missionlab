@@ -246,6 +246,31 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
+### New in 0.24 (not yet run in the game)
+The first part of `docs/backlog.md`; `docs/backlog-status.md` says where each ticket stands.
+- **A scenario that cannot be finished is refused.** After the dice have fallen the plugin checks that the
+  extraction can still open and that the scenario's own target person is still there. If not, nothing of the
+  mission is changed, the game plays its own mission, and the log and the page say why, with the roll and the
+  squad size. The Mission check warns about this while you write the scenario.
+- **Respawn is a shared reinforcement wave.** `"respawn": {"after": 20, "times": 2}`: 20 seconds after the first
+  death everyone who is dead comes back together. A wave counts when someone is seen to be back; a wave nobody saw
+  is not counted and is tried again. The game's own respawn setting is put back afterwards.
+- **Triggers remember.** "after", "all" and "any" ask whether another trigger has ever fired; a repeat no longer takes
+  that back. Triggers that wait for each other in a circle are named. The order of the list does not matter.
+- **Calls and orders use where an enemy is now**, not where it was made, and the log says what was asked, where the
+  walkable ground was and who took the order.
+- **One broken part no longer stops the rest.** Each part of the mod counts its own errors, is paused and tried again;
+  the page shows which part is paused and has a "Try again now" button.
+- **Changes from the page are carried out once.** Each carries a number and the mission it was made for. A change the
+  game did not take in time is struck off; a change for another mission is refused; the page says which it was.
+- **`"gameMaster": true`** says the mission is meant to be run by a Game Master, so triggers fired by hand may be part
+  of its way out.
+
+### Tests
+`./test.sh` runs the tests that need nothing of the game (scenario model, dice, trigger rules, completion check,
+reinforcement waves): .NET 8 SDK only. `./test.sh --map <navmesh.bytes> <recon.json>` adds the checks that read
+one of your own map files.
+
 ### New in 0.23
 - **Messages take turns.** Two messages at the same moment used to push each other off the screen.
   Yellow ones now follow each other 4.5 seconds apart; red ones are shown at once.

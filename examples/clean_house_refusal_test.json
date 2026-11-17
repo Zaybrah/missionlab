@@ -1,0 +1,76 @@
+{
+ "schema": "missionlab-plan/1",
+ "scene": "",
+ "navFile": "suburbv2.bytes",
+ "name": "Clean House: refusal test",
+ "notes": [
+  "Made to show the completion check. The extraction waits for a trigger that has a chance of 50%.",
+  "On a mission where that trigger loses its roll, MissionLab refuses the scenario and the game plays its own mission."
+ ],
+ "briefing": [
+  "Refusal test: the scenario is in use.",
+  "Take the intel, then extract."
+ ],
+ "extraction": {
+  "after": 1
+ },
+ "insertion": "Alpha 2",
+ "triggers": [
+  {
+   "id": 1,
+   "name": "Intel taken",
+   "when": "intel",
+   "chance": 50,
+   "facePlayer": true,
+   "message": "Intel taken. The extraction is open."
+  }
+ ],
+ "spawns": [
+  {
+   "group": 0,
+   "role": "Guard",
+   "pos": [
+    -15.0,
+    0.65,
+    -6.0
+   ],
+   "yaw": 90,
+   "indoor": true,
+   "defensive": true,
+   "detectionRange": 0,
+   "hearingRange": 0,
+   "fov": 0,
+   "wanderDistance": 0,
+   "patrolWaitSeconds": 4,
+   "fixed": false,
+   "prone": false,
+   "type": "",
+   "trigger": 0,
+   "hvt": false,
+   "patrol": []
+  },
+  {
+   "group": 1,
+   "role": "Wander",
+   "pos": [
+    -4.0,
+    0.08,
+    -2.0
+   ],
+   "yaw": 270,
+   "indoor": false,
+   "defensive": false,
+   "detectionRange": 0,
+   "hearingRange": 0,
+   "fov": 0,
+   "wanderDistance": 10,
+   "patrolWaitSeconds": 4,
+   "fixed": false,
+   "prone": false,
+   "type": "",
+   "trigger": 0,
+   "hvt": false,
+   "patrol": []
+  }
+ ]
+}
