@@ -311,8 +311,30 @@ namespace MissionLab
         /// Telling them a sound was heard, by HeardTarget or ShotFired, moved nobody.)
         /// within: only enemies this close to the spot (0: any distance). only: just these enemies (null: all).
         /// </summary>
+        /// <summary>What the last order came to: what was asked, where the ground was, and who took it.</summary>
+        internal struct WalkResult
+        {
+            public Vector3 Asked, Ground;          // the spot asked for, and the nearest spot an enemy can stand on
+            public int Accepted, NoLegs, TooFar, Posted;   // took the order; cannot walk; outside the distance; a fixed sentry or a crew member
+            public string Words()
+            {
+                var inv = CultureInfo.InvariantCulture;
+                return Accepted + " accepted, asked for " + Asked.x.ToString("0.#", inv) + ", " + Asked.z.ToString("0.#", inv) + ", walkable ground at " + Ground.x.ToString("0.#", inv) + ", " + Ground.z.ToString("0.#", inv)
+                     + (TooFar > 0 ? ", " + TooFar + " too far away" : "") + (NoLegs > 0 ? ", " + NoLegs + " that cannot walk" : "") + (Posted > 0 ? ", " + Posted + " at a fixed post" : "");
+            }
+        }
+        internal static WalkResult LastWalk;
+
+        private static Vector3 Ground(Vector3 spot)
+        {
+            // A door's hinge or a spot by a wall is not ground anyone can stand on: take the nearest that is.
+            try { AstarPath paths = AstarPath.active; if (paths != null) { var near = paths.GetNearest(spot); if (near != null && near.node != null) return near.position; } } catch { }
+            return spot;
+        }
+
         internal static int WalkTo(GameManager gm, Vector3 to, float within, HashSet<IntPtr> only, bool hurry = false)
         {
+            LastWalk = new WalkResult { Asked = to, Ground = Ground(to) };
             if (gm == null) return 0;
             int told = 0;
             var ai = gm.allAI;
@@ -323,14 +345,14 @@ namespace MissionLab
                 try
                 {
                     AgentController legs = b.agent;
-                    if (legs == null || !legs.entityExists) continue;                      // a gunner, or someone told to stand still
-                    if (within > 0f && (b.transform.position - to).sqrMagnitude > within * within) continue;
+                    if (legs == null || !legs.entityExists) { LastWalk.NoLegs++; continue; }           // a gunner, or someone whose navigation is off
+                    if (GameMaster.Posted(b)) { LastWalk.Posted++; continue; }                         // a fixed sentry or a vehicle's crew stays where it is
+                    // Where the enemy is now. Its own object stays where it was made; the navigation agent has the truth.
+                    GameMaster.EnemyPose(b, out Vector3 at, out _);
+                    if (within > 0f && (at - to).sqrMagnitude > within * within) { LastWalk.TooFar++; continue; }
                     float turn = told * 2.4f;                                             // spread around the spot, 2 m out
                     var stop = new GameObject("MissionLab order " + Orders.Count);
-                    Vector3 spot = to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f);
-                    // A door's hinge or a spot by a wall is not ground anyone can stand on: take the nearest that is.
-                    try { AstarPath paths = AstarPath.active; if (paths != null) { var near = paths.GetNearest(spot); if (near != null && near.node != null) spot = near.position; } } catch { }
-                    stop.transform.position = spot;
+                    stop.transform.position = Ground(to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f));
                     if (hurry && Hurried.Add(b.Pointer))
                         try
                         {
@@ -350,6 +372,7 @@ namespace MissionLab
                 }
                 catch { }
             }
+            LastWalk.Accepted = told;
             if (Orders.Count > 200) { for (int i = 0; i < 100; i++) try { if (Orders[i] != null) UnityEngine.Object.Destroy(Orders[i]); } catch { } Orders.RemoveRange(0, 100); }
             return told;
         }

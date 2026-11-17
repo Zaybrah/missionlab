@@ -19,6 +19,7 @@ namespace MissionLab.Core
         public sealed class Out
         {
             public readonly List<SpawnPlan> Spawns = new List<SpawnPlan>();
+            public readonly List<int> SpawnIndex = new List<int>();          // where each of those stood in the scenario's own list
             public readonly List<DoorPlan> Doors = new List<DoorPlan>();
             public readonly List<ThingPlan> Things = new List<ThingPlan>();
             public int Count => Spawns.Count + Doors.Count + Things.Count;
@@ -55,8 +56,10 @@ namespace MissionLab.Core
             // Chance: one roll for every lot, one for every enemy that is in no lot. Too few players: not there.
             var lots = new Dictionary<int, bool>();
             int rolled = 0, lost = 0, few = 0;
+            int place = -1;
             foreach (SpawnPlan s in plan.Spawns)
             {
+                place++;
                 bool stays = s.Either <= 0 || chosen[s.Either] == s.Option;
                 if (stays && players > 0 && s.MinPlayers > players) { stays = false; few++; }
                 if (stays && s.Chance < 100)
@@ -68,7 +71,7 @@ namespace MissionLab.Core
                     }
                     else { stays = rng.Range(0, 100) < s.Chance; rolled++; if (!stays) lost++; }
                 }
-                if (!stays) gone.Spawns.Add(s);
+                if (!stays) { gone.Spawns.Add(s); gone.SpawnIndex.Add(place); }
             }
             foreach (DoorPlan d in plan.Doors)
                 if (d.Chance < 100) { rolled++; if (rng.Range(0, 100) >= d.Chance) { lost++; gone.Doors.Add(d); } }

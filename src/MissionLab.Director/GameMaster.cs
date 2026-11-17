@@ -42,7 +42,6 @@ namespace MissionLab
         }
         private sealed class LiveThing { public ThingPlan Plan; public GameObject Go; public bool Placed; }
         private static readonly List<LiveThing> _things = new List<LiveThing>();
-        private static readonly Dictionary<int, float> InsideSince = new Dictionary<int, float>();
         private static readonly HashSet<IntPtr> EverAlive = new HashSet<IntPtr>();
         private sealed class Batch { public readonly List<Marker> Items = new List<Marker>(); public string Type; }
 
@@ -50,7 +49,25 @@ namespace MissionLab
         private static readonly string[] Roles = { "Guard", "Wander", "Patrol" };
         private static int _nextId = 1;
         private static List<TriggerPlan> _zones = new List<TriggerPlan>();
-        private static readonly HashSet<int> Fired = new HashSet<int>();
+        // Which triggers fire, and when, is decided by the engine in the core; this file asks the game and does what a firing does.
+        private static readonly TriggerEngine Engine = new TriggerEngine();
+        private static readonly GameWorld Asks = new GameWorld();
+
+        private sealed class GameWorld : ITriggerWorld
+        {
+            public RaidManager Raid; public GameManager Gm; public float Now;
+            public bool Alerted() => GameMaster.Alerted(Gm, Now);
+            public bool IntelTaken(string item) => GameMaster.IntelTaken(Raid, item);
+            public bool Occupied(TriggerPlan t, out V3 where)
+            {
+                Vector3 who;
+                bool yes = t.Everyone ? GameMaster.EveryoneInside(t, out who) : GameMaster.PlayerInside(t, out who);
+                where = new V3(who.x, who.y, who.z);
+                return yes;
+            }
+            public bool Down(int count, string tag) => string.IsNullOrEmpty(tag) ? GameMaster.EnemiesDown(Gm, count) : GameMaster.TaggedDown(Gm, tag, count);
+            public bool DoorOpen(V3 hinge) { DoorV2 door = GameMaster.DoorAt(hinge); return door != null && (door.isDead || door.IsOpenEnoughForAI); }
+        }
         private static float _zoneCheckAt;
         private static bool _yawLogged, _objectivesPlaced;
         private static List<ObjectivePlan> _wanted = new List<ObjectivePlan>();
@@ -58,8 +75,6 @@ namespace MissionLab
         private static readonly Dictionary<IntPtr, Pose> Homes = new Dictionary<IntPtr, Pose>();   // where the game itself put each item
         private static bool _resendFailed;
         private static List<DoorPlan> _doorPlans = new List<DoorPlan>();    // what the scenario or the Game Master asked of doors
-        private static readonly Dictionary<int, float> MetAt = new Dictionary<int, float>();          // trigger -> when the thing it waits for happened
-        private static readonly Dictionary<int, Vector3> MetWhere = new Dictionary<int, Vector3>();   // zone -> where the player stood
         private static readonly Dictionary<IntPtr, string[]> Items = new Dictionary<IntPtr, string[]>();   // intel seen in play -> what it goes by
         private static readonly HashSet<IntPtr> Taken = new HashSet<IntPtr>();
         private static bool _alerted;
@@ -81,9 +96,6 @@ namespace MissionLab
         private static List<string> _briefing = new List<string>();
         private static readonly Queue<string> BriefQueue = new Queue<string>();
         private static float _briefAt = -1f;
-        private static readonly HashSet<long> Warned = new HashSet<long>();
-        private static readonly Dictionary<int, float> Rearm = new Dictionary<int, float>();      // a repeating trigger may fire again from this time
-        private static readonly Dictionary<int, int> FiredTimes = new Dictionary<int, int>();
         private static List<DoorV2> _doorList;
         private static float _doorScanAt;
         private static string _doorError;
@@ -134,7 +146,7 @@ namespace MissionLab
             _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _respawnAfter = plan.RespawnAfter; _respawnTimes = plan.RespawnTimes;
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
             _title = plan.Title ?? ""; _briefing = new List<string>(plan.Briefing);
-            BriefQueue.Clear(); Warned.Clear();
+            BriefQueue.Clear(); 
             foreach (string line in _briefing) BriefQueue.Enqueue(line);
             _insertion = plan.Insertion ?? "";
             if (_insertion != "")
@@ -177,11 +189,11 @@ namespace MissionLab
             _weOpenedCam = false;
             if (_active) ReleaseInput();
             _aiming = -1; _aimOk = false; FacingChecks.Clear();
-            _zones = new List<TriggerPlan>(); Fired.Clear(); _yawLogged = false;
+            _zones = new List<TriggerPlan>(); Engine.Reset(0f); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
-            MetAt.Clear(); MetWhere.Clear(); Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); InsideSince.Clear(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); Warned.Clear(); Rearm.Clear(); FiredTimes.Clear(); _skillAll = ""; _nvgAll = false; _respawnAfter = 0f; _respawnTimes = 0; _respawnsDone = 0; _deadSince = -1f; _title = ""; _briefing = new List<string>();
+            Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
+            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _respawnAfter = 0f; _respawnTimes = 0; _respawnsDone = 0; _deadSince = -1f; _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
         }
@@ -229,6 +241,8 @@ namespace MissionLab
             foreach (SpawnPlan s in plan.Spawns)
                 _markers.Add(new Marker { Plan = s, Waiting = _later != null && _later.Contains(s) });
             _zones = new List<TriggerPlan>(plan.Triggers);
+            Engine.Reset(Time.unscaledTime); Engine.Sync(_zones);
+            foreach (string problem in Engine.Problems) DirectorPlugin.L.LogWarning("triggers: " + problem);
             _wanted = new List<ObjectivePlan>(plan.Objectives);
         }
 
@@ -601,6 +615,14 @@ namespace MissionLab
             return some;
         }
 
+        /// <summary>A fixed sentry of the scenario, or a vehicle's crew: neither takes a walking order.</summary>
+        internal static bool Posted(BrainAI b)
+        {
+            try { if (IsCrew(b)) return true; } catch { }
+            if (_markers != null) foreach (Marker m in _markers) if (m.Bot == b.Pointer) return m.Plan.Fixed;
+            return false;
+        }
+
         /// <summary>Where an enemy really is. Its own object stays at the spawn spot; the navigation agent has the truth.</summary>
         internal static void EnemyPose(BrainAI b, out Vector3 pos, out float yaw)
         {
@@ -625,75 +647,28 @@ namespace MissionLab
             return best < float.MaxValue;
         }
 
-        /// <summary>Looks at every trigger that has not fired: has its moment come, and has its wait run out?</summary>
+        /// <summary>Asks the engine which triggers fire now and which countdown lines are due, and does what they say.</summary>
         private static void CheckTriggers(RaidManager raid, GameManager gm, float now)
         {
-            for (int pass = 0; pass < 4; pass++)            // a trigger that waits for another may follow in the same look
+            Engine.Start = Director.HandledAt;                 // timers count from the start of the mission
+            Asks.Raid = raid; Asks.Gm = gm; Asks.Now = now;
+            foreach (TriggerEvent ev in Engine.Step(now, Asks))
             {
-                bool any = false;
-                foreach (TriggerPlan t in _zones)
+                TriggerPlan t = _zones.Find(z => z.Id == ev.Id);
+                if (t == null) continue;
+                if (ev.Kind == TriggerEvent.Fire) { Fire(t, now, ev.Again); continue; }
+                try
                 {
-                    if (t.Off) continue;
-                    if (Fired.Contains(t.Id))
+                    switch (ev.Step)
                     {
-                        // Once is enough, unless it repeats: then it is armed again when its pause is over.
-                        if (!Rearm.TryGetValue(t.Id, out float again) || now < again) continue;
-                        Rearm.Remove(t.Id); for (int w = 1; w <= 4; w++) Warned.Remove(t.Id * 10L + w); InsideSince.Remove(t.Id);
-                        if (t.When == TriggerPlan.OnTime) MetAt[t.Id] = now - t.Delay; else MetAt.Remove(t.Id);
-                        Fired.Remove(t.Id);
-                        if (t.When == TriggerPlan.OnTime) { Fire(t, now); any = true; continue; }
+                        case TriggerEvent.Started: WarnLeft(raid, t, TryOuts.Clock(t.Delay) + " from now.", false); break;
+                        case TriggerEvent.FiveMinutes: WarnLeft(raid, t, "five minutes left.", false); break;
+                        case TriggerEvent.OneMinute: WarnLeft(raid, t, "one minute left.", false); break;
+                        case TriggerEvent.TenSeconds: WarnLeft(raid, t, "ten seconds left.", true); break;
                     }
-                    if (!MetAt.TryGetValue(t.Id, out float met))
-                    {
-                        Vector3 who = Vector3.zero;
-                        bool yes;
-                        switch (t.When)
-                        {
-                            case TriggerPlan.OnAlert: yes = Alerted(gm, now); break;
-                            case TriggerPlan.OnIntel: yes = IntelTaken(raid, t.Item); break;
-                            case TriggerPlan.OnTime: yes = true; break;
-                            case TriggerPlan.OnAfter: yes = t.After != 0 && t.After != t.Id && Fired.Contains(t.After); break;
-                            case TriggerPlan.OnHold: yes = Held(t, now, out who); break;
-                            case TriggerPlan.OnDown: yes = string.IsNullOrEmpty(t.Tag) ? EnemiesDown(gm, t.Count) : TaggedDown(gm, t.Tag, t.Count); break;
-                            case TriggerPlan.OnDoor: { DoorV2 door = DoorAt(t.Pos); yes = door != null && (door.isDead || door.IsOpenEnoughForAI); break; }
-                            case TriggerPlan.OnAll: yes = t.Of.Count > 0 && t.Of.TrueForAll(Fired.Contains); break;
-                            case TriggerPlan.OnAny: yes = t.Of.Exists(Fired.Contains); break;
-                            default: yes = t.Everyone ? EveryoneInside(t, out who) : PlayerInside(t, out who); break;
-                        }
-                        if (!yes) continue;
-                        MetAt[t.Id] = met = t.When == TriggerPlan.OnTime ? Director.HandledAt : now;     // a timer counts from the start of the mission
-                        if (TriggerPlan.Placed(t.When)) MetWhere[t.Id] = who;
-                    }
-                    if (now < met + t.Delay)
-                    {
-                        if (t.Warn)
-                        {
-                            float left = met + t.Delay - now;
-                            try
-                            {
-                                // The start is told a few seconds in, so that it does not land on top of the message of whatever started the clock.
-                                if (t.Delay >= 20f && t.When != TriggerPlan.OnTime && now - met >= 4f && left > 15f && Warned.Add(t.Id * 10L + 4)) WarnLeft(raid, t, TryOuts.Clock(t.Delay) + " from now.", false);
-                                if (t.Delay >= 360f && left <= 300f && left > 290f && Warned.Add(t.Id * 10L + 3)) WarnLeft(raid, t, "five minutes left.", false);
-                                if (t.Delay >= 90f && left <= 60f && left > 50f && Warned.Add(t.Id * 10L + 1)) WarnLeft(raid, t, "one minute left.", false);
-                                if (t.Delay >= 20f && left <= 10f && Warned.Add(t.Id * 10L + 2)) WarnLeft(raid, t, "ten seconds left.", true);
-                            }
-                            catch { }
-                        }
-                        continue;
-                    }
-                    Fire(t, now);
-                    any = true;
                 }
-                if (!any) break;
+                catch { }
             }
-        }
-
-        /// <summary>A player has stayed in the zone long enough. Leaving it starts the count again.</summary>
-        private static bool Held(TriggerPlan t, float now, out Vector3 who)
-        {
-            if (!(t.Everyone ? EveryoneInside(t, out who) : PlayerInside(t, out who))) { InsideSince.Remove(t.Id); return false; }
-            if (!InsideSince.TryGetValue(t.Id, out float since)) InsideSince[t.Id] = since = now;
-            return now - since >= t.Hold;
         }
 
         /// <summary>Have that many enemies gone down? 0 asks for every enemy there is, once there has been one.</summary>
@@ -723,7 +698,8 @@ namespace MissionLab
                 {
                     BrainAI b = m.Bot == IntPtr.Zero ? null : Find(gm, m.Bot);
                     if (b == null) continue;
-                    Vector3 from = b.transform.position, to = TryOuts.NearestPlayer(from);
+                    EnemyPose(b, out Vector3 from, out _);          // its own object stays where it was made
+                    Vector3 to = TryOuts.NearestPlayer(from);
                     if (to == Vector3.zero) continue;
                     int sent = TryOuts.WalkTo(gm, to, 0f, new HashSet<IntPtr> { m.Bot }, true);
                     DirectorPlugin.L.LogInfo("hunter: enemy #" + m.Id + (sent == 1 ? " sets off for the nearest player, " + (to - from).magnitude.ToString("0", Inv) + " m away" : " could not be sent"));
@@ -829,7 +805,7 @@ namespace MissionLab
             var have = new HashSet<string>(); foreach (LiveThing t in _things) have.Add(t.Plan.Key);
             foreach (ThingPlan t in want) if (have.Add(t.Key)) _things.Add(new LiveThing { Plan = t });
             PlaceThings(0);
-            foreach (int id in new List<int>(Fired)) PlaceThings(id);
+            foreach (int id in new List<int>(Engine.FiredIds())) PlaceThings(id);
         }
 
         /// <summary>What a marker says about its enemy beyond where it stands: its side, its skill, night vision. Applied once to each live enemy.</summary>
@@ -877,21 +853,18 @@ namespace MissionLab
         }
 
         /// <summary>The trigger's enemies appear and its doors lock or unlock.</summary>
-        private static void Fire(TriggerPlan t, float now)
+        private static void Fire(TriggerPlan t, float now, bool again)
         {
-            Fired.Add(t.Id);
-            int times = FiredTimes.TryGetValue(t.Id, out int before) ? before + 1 : 1;
-            FiredTimes[t.Id] = times;
-            if (t.Repeat > 0f && (t.Times <= 0 || times < t.Times)) Rearm[t.Id] = now + t.Repeat;
-            if (times > 1 && _markers != null)
+            if (again && _markers != null)
             {
                 // Fired again: its enemies that have gone down since come back.
                 GameManager gmNow = GameManager.instance;
                 foreach (Marker m in _markers)
                     if (m.Plan.Trigger == t.Id && !m.Waiting && !m.Queued && !Special(m.Plan) && (m.Bot == IntPtr.Zero || gmNow == null || Find(gmNow, m.Bot) == null)) { m.Waiting = true; m.Bot = IntPtr.Zero; }
             }
-            if (!MetAt.ContainsKey(t.Id)) MetAt[t.Id] = now;
-            bool stood = MetWhere.TryGetValue(t.Id, out Vector3 who);
+            TriggerState memory = Engine.State(t.Id);
+            bool stood = memory != null && memory.HasWhere;
+            Vector3 who = stood ? new Vector3(memory.Where.X, memory.Where.Y, memory.Where.Z) : Vector3.zero;
             var mine = new List<Marker>();
             if (_markers != null)
                 foreach (Marker m in _markers)
@@ -944,10 +917,11 @@ namespace MissionLab
                 try
                 {
                     // The place: where the player stood who set it off, the zone's middle, or else the nearest player to nobody in particular.
-                    Vector3 to = MetWhere.TryGetValue(t.Id, out Vector3 stoodAt) && stoodAt != Vector3.zero ? stoodAt : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : TryOuts.FirstPlayer();
+                    Vector3 to = stood && who != Vector3.zero ? who : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : TryOuts.FirstPlayer();
                     int called = TryOuts.WalkTo(GameManager.instance, to, t.Rally, null);
                     more += ", " + called + (called == 1 ? " enemy is called" : " enemies are called") + " there";
-                    Replay.Event("note", "called: " + called + " to " + to.x.ToString("0.#", Inv) + ", " + to.z.ToString("0.#", Inv));
+                    Replay.Event("note", "called: " + TryOuts.LastWalk.Words());
+                    DirectorPlugin.L.LogInfo("call by " + TriggerName(t) + ": " + TryOuts.LastWalk.Words());
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the enemies could not be called by " + TriggerName(t) + ": " + e.Message); }
             int placedNow = PlaceThings(t.Id);
@@ -965,9 +939,10 @@ namespace MissionLab
         /// <summary>The Game Master sets a trigger off by hand.</summary>
         private static void FireNow(int id)
         {
+            float now = Time.unscaledTime;
             TriggerPlan t = _zones.Find(z => z.Id == id);
-            if (t == null || Fired.Contains(id)) { Say(t == null ? "there is no trigger " + id : TriggerName(t) + " has already fired"); return; }
-            Fire(t, Time.unscaledTime);
+            if (!Engine.FireNow(id, now, out TriggerEvent ev, out string why)) { Say(t == null ? why : TriggerName(t) + ": " + why); return; }
+            Fire(t, now, ev.Again);
         }
 
         // ------------------------------------------------------------------ doors
@@ -1343,7 +1318,7 @@ namespace MissionLab
                     if (!Destroy(b)) continue;
                     // The game will not spawn onto a spot that is still occupied, and the old enemy is only gone a moment later.
                     m.Bot = IntPtr.Zero; m.Waiting = true;
-                    bool held = m.Plan.Trigger != 0 && !Fired.Contains(m.Plan.Trigger);      // now bound to a zone nobody has reached: it waits there
+                    bool held = m.Plan.Trigger != 0 && !Engine.EverFired(m.Plan.Trigger);      // now bound to a zone nobody has reached: it waits there
                     m.RemakeAt = held ? -1f : now + 0.7f;
                 }
                 foreach (Marker m in _markers)
@@ -1729,7 +1704,7 @@ namespace MissionLab
         {
             var list = new List<Marker>();
             for (int i = 0; i < _markers.Count; i++)
-                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && !Special(_markers[i].Plan) && (_markers[i].Plan.Trigger == 0 || Fired.Contains(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
+                if (i != _aiming && _markers[i].Waiting && !_markers[i].Queued && !Special(_markers[i].Plan) && (_markers[i].Plan.Trigger == 0 || Engine.EverFired(_markers[i].Plan.Trigger))) list.Add(_markers[i]);
             if (list.Count == 0) { Say("no waiting enemies"); return; }
             Enqueue(list);
             Say("spawning " + list.Count + " waiting enemies");
@@ -1914,8 +1889,21 @@ namespace MissionLab
             try { sb.Append(SettingsStateJson(raid, rev)); } catch { }
             sb.Append(",\"triggers\":").Append(MissionPlan.TriggersJson(_zones)).Append(",\"fired\":[");
             first = true;
-            foreach (int id in Fired) { sb.Append(first ? "" : ",").Append(id); first = false; }
-            rev.Append(MissionPlan.TriggersJson(_zones)).Append(Fired.Count);
+            foreach (int id in Engine.FiredIds()) { sb.Append(first ? "" : ",").Append(id); first = false; }
+            rev.Append(MissionPlan.TriggersJson(_zones));
+            // Where every trigger stands right now, so the page can say why one waits.
+            sb.Append("],\"triggerState\":[");
+            float stateNow = Time.unscaledTime;
+            Engine.Start = Director.HandledAt;
+            for (int i = 0; i < _zones.Count; i++)
+            {
+                string phase = Engine.Phase(_zones[i], stateNow, out float left);
+                sb.Append(i == 0 ? "" : ",").Append("{\"id\":").Append(_zones[i].Id).Append(",\"phase\":\"").Append(phase).Append("\",\"fires\":").Append(Engine.Fires(_zones[i].Id))
+                  .Append(",\"left\":").Append(left.ToString("0.#", Inv)).Append('}');
+                rev.Append(_zones[i].Id).Append(phase[0]).Append(phase.Length).Append(Engine.Fires(_zones[i].Id));
+            }
+            sb.Append("],\"triggerProblems\":[");
+            for (int i = 0; i < Engine.Problems.Count; i++) sb.Append(i == 0 ? "" : ",").Append(Q(Engine.Problems[i]));
             sb.Append("],\"types\":[");
             var types = Types(gm);
             for (int i = 1; i < types.Count; i++) sb.Append(i > 1 ? "," : "").Append(Q(types[i]));
@@ -1999,13 +1987,10 @@ namespace MissionLab
             }
             _markers = result; _aiming = -1; _current = -1;
             // A timer made during the mission counts from now; one that was taken away forgets what it saw.
-            var had = new HashSet<int>();
-            foreach (TriggerPlan z in _zones) had.Add(z.Id);
-            var have = new HashSet<int>();
-            foreach (TriggerPlan z in sent.Triggers) { have.Add(z.Id); if (!had.Contains(z.Id) && z.When == TriggerPlan.OnTime) MetAt[z.Id] = now; }
-            foreach (int id in had) if (!have.Contains(id)) { MetAt.Remove(id); MetWhere.Remove(id); Fired.Remove(id); }
             foreach (TriggerPlan nt in sent.Triggers) { TriggerPlan was = _zones.Find(z => z.Id == nt.Id); if (was != null) nt.Off = was.Off; }   // a trigger that lost its roll stays out
             _zones = sent.Triggers;
+            Engine.Sync(_zones, now);
+            foreach (string problem in Engine.Problems) Say("triggers: " + problem);
             _wanted = sent.Objectives; PlaceObjectives(raid);
             if (settings != null)
             {
@@ -2027,7 +2012,7 @@ namespace MissionLab
                 if (holdNow != _holdAfter)
                 {
                     _holdAfter = holdNow;
-                    bool hold = holdNow != 0 && !Fired.Contains(holdNow);
+                    bool hold = holdNow != 0 && !Engine.EverFired(holdNow);
                     if (hold) { HoldExtraction = true; DirectorPlugin.PatchExtraction(); }
                     else if (HoldExtraction) { HoldExtraction = false; if (ExtractionAsked) OpenExtraction(raid, "nothing holds it back any more"); }
                 }
@@ -2066,7 +2051,8 @@ namespace MissionLab
                 if (_markers != null) foreach (Marker m in _markers) if (ids.Contains(m.Id) && m.Bot != IntPtr.Zero) who.Add(m.Bot);
                 int sent = who.Count == 0 ? 0 : TryOuts.WalkTo(gm, pos, 0f, who);
                 TryOuts.Did("an order to walk");
-                Replay.Event("note", "order: " + sent + " sent to " + pos.x.ToString("0.#", Inv) + ", " + pos.z.ToString("0.#", Inv));
+                Replay.Event("note", "order: " + TryOuts.LastWalk.Words());
+                DirectorPlugin.L.LogInfo("order: " + TryOuts.LastWalk.Words());
                 Say(sent == 0 ? "no live enemy among those selected could be sent" : sent + (sent == 1 ? " enemy is" : " enemies are") + " on the way to that spot");
             }
             else if (cmd == "fire") FireNow(id);

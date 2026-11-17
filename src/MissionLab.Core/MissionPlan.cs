@@ -180,6 +180,7 @@ namespace MissionLab.Core
         public List<ObjectivePlan> Objectives = new List<ObjectivePlan>();
         public List<DoorPlan> Doors = new List<DoorPlan>();
         public int ExtractionAfter;       // extraction stays shut until this trigger has fired (0: the mission's own rule alone)
+        public bool GameMaster;           // the mission is meant to be run by a Game Master: triggers fired by hand are part of its plan
         public string Insertion = "";     // the insertion every player gets, by name ("": each player's own choice)
         public WeatherPlan Weather = new WeatherPlan();
         public string Power = "";         // "off": the breaker box is off when the mission starts ("": left to the game)
@@ -338,6 +339,7 @@ namespace MissionLab.Core
             var inv = CultureInfo.InvariantCulture;
             if (p.ExtractionAfter != 0) sb.Append(",\"extraction\":{\"after\":").Append(p.ExtractionAfter).Append('}');
             if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(p.Insertion.Replace("\\", "/").Replace("\"", "'")).Append('"');
+            if (p.GameMaster) sb.Append(",\"gameMaster\":true");
             if (TriggerPlan.OnOff(p.Power) != "") sb.Append(",\"power\":\"").Append(p.Power).Append('"');
             if (p.Skill == "recruit" || p.Skill == "veteran") sb.Append(",\"skill\":\"").Append(p.Skill).Append('"');
             if (p.Nvg) sb.Append(",\"nvg\":true");
@@ -401,7 +403,7 @@ namespace MissionLab.Core
                     Seed = root.TryGetProperty("seed", out var seed) && seed.ValueKind == JsonValueKind.Number ? seed.GetInt64() : 0,
                     Scene = Str(root, "scene"),
                     NavFile = Str(root, "navFile"),
-                    Insertion = Str(root, "insertion") ?? "",
+                    Insertion = Str(root, "insertion") ?? "", GameMaster = Bool(root, "gameMaster"),
                     Power = TriggerPlan.OnOff(Str(root, "power")),
                     Skill = Str(root, "skill") == "recruit" || Str(root, "skill") == "veteran" ? Str(root, "skill") : "", Nvg = Bool(root, "nvg"),
                     RespawnAfter = RespawnOf(root, "after", 600f) > 0f ? System.Math.Max(3f, RespawnOf(root, "after", 600f)) : 0f, RespawnTimes = (int)RespawnOf(root, "times", 50f),

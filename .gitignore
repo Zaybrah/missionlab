@@ -1,10 +1,12 @@
-dist/
-bin/
-obj/
-*.user
-.vs/
 # never commit game files or data derived from a game install
 *.bytes
-refs/
+*.user
+.vs/
+bin/
+dist/
+obj/
 recon/
+refs/
+tests/*/bin/
+tests/*/obj/
 tests/CoreTest/NuGet.config
