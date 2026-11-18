@@ -16,6 +16,8 @@ colors:
   ground-lo: "#2e3136"
   ground-hi: "#5d646e"
   wall: "#9aa0a8"
+  model: "#7d838b"
+  edge: "#141518"
   accent: "#2a6fdc"
   accent-ink: "#ffffff"
   accent-text: "#79aefc"
@@ -39,6 +41,8 @@ colors:
   light-ground-lo: "#f4f5f7"
   light-ground-hi: "#9aa5b1"
   light-wall: "#39424c"
+  light-model: "#ffffff"
+  light-edge: "#5b6470"
   light-accent: "#1f6fe5"
   light-accent-text: "#1a5fc7"
   light-accent-soft: "#d8e6fc"
@@ -203,12 +207,14 @@ These are meaning colours, shared by the map and the inspector.
 - **Ink** (`ink`, `ink-2`): primary and secondary text; `ink-2` also strokes the tool icons and chevrons at rest.
 - **Hairline** (`line`, `line-hi`): dividers, and the stronger border for controls.
 - **Map Ground Ramp** (`ground-lo` to `ground-hi`): the canvas interpolates ten shades between these for walkable ground from lowest to highest.
-- **Wall** (`wall`): borders nobody can cross, on the map.
+- **Wall** (`wall`): borders nobody can cross, on the map; in 3D also the dashed outline of invisible walls.
+- **Model** (`model`): the solid map geometry in 3D before light; the studio light turns it lighter on roofs and floors and darker on walls.
+- **Edge** (`edge`): the creases of the solid map in 3D, darker than the model in both schemes.
 
 ### Named Rules
 **The One Blue Rule.** The accent fills only selection, the current view or tool, and the primary action. Nothing decorative is blue.
 
-**The Shared Palette Rule.** The map canvas reads `paper`, `panel`, `ink`, `ink-2`, `line`, `ground-lo`, `ground-hi`, `wall`, `enemy`, `friend`, `warn`, `place` and `accent-text` from CSS (`readTokens` in 24-drawing.js). A new map colour is a new token, never a literal in the drawing code. `ground-lo` and `ground-hi` must stay `#rrggbb`, because the ramp is computed from them.
+**The Shared Palette Rule.** The map canvas reads `paper`, `panel`, `ink`, `ink-2`, `line`, `ground-lo`, `ground-hi`, `wall`, `model`, `edge`, `enemy`, `friend`, `warn`, `place` and `accent-text` from CSS (`readTokens` in 24-drawing.js). A new map colour is a new token, never a literal in the drawing code. `ground-lo` and `ground-hi` must stay `#rrggbb`, because the ramp is computed from them.
 
 **The Words First Rule.** Colour repeats a state; it never carries it alone. Failed, cancelled, unavailable and warning states also say so in words, a dashed border or a badge.
 
@@ -305,6 +311,12 @@ Icons are a 16px sprite drawn with a 1.5px round-capped, round-joined stroke and
 
 ### Floating map controls
 - **Style:** `panel` fill, `line-hi` hairline, 6px corners, 6px padding. The status pill is a 92% `bar` with 4px corners and mono coordinates.
+
+### 3D view (25-view3d.js)
+- **World:** a clay model, as in an engine viewport. The solid map is `model`, flat-shaded under a sky light, a key and a weak fill, with every fold over 30° and every open edge drawn in `edge`. A 10 m grid in `line` lies a metre under the lowest floor, and linear fog fades the world into `paper` with distance. Without the solid map, the walkable ground is the flat map's `ground-lo`→`ground-hi` ramp; with it, the walkable ground becomes a `ground-hi` film at 40% over the floors. Walkable borders are `wall`, as in 2D.
+- **Invisible walls:** a 5% `wall` skin with a dashed `wall` outline. They are not red, because red means enemies.
+- **Markers:** the fog leaves them alone. An enemy is a red capsule with a `panel` visor on the side it faces. Under it lies the 2D role shape (a square guard, a round wanderer, a diamond patrol, a long bar for a truck), and a wedge on the floor points where it looks. Selection is an `accent-text` floor ring, as in 2D. Targets get a `warn` ring and halo, enemies to check a dashed `warn` ring, and squad members a dashed `friend` ring. Routes and roaming or zone circles are dashed, with a 30% copy drawn through walls. The selected door is outlined in `accent-text` over walls.
+- **Labels:** the 2D map's tags and their wording ("3 → zone 5", "7 TRUCK"), in 600 11px mono on a 90% `panel` tag with a `line` hairline and 3px corners. They keep their size on screen and show through walls.
 
 ## Do's and Don'ts
 

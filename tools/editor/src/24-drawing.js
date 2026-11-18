@@ -2,7 +2,7 @@
 const css = {}; let shades = [];
 function readTokens() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'wall', 'enemy', 'friend', 'warn', 'place', 'accent-text']) css[k] = cs.getPropertyValue('--' + k).trim();
+  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'wall', 'model', 'edge', 'enemy', 'friend', 'warn', 'place', 'accent-text']) css[k] = cs.getPropertyValue('--' + k).trim();
   const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const a = rgb(css['ground-lo']), b = rgb(css['ground-hi']);
   shades = Array.from({ length: 10 }, (_, i) => 'rgb(' + a.map((v, k) => Math.round(v + (b[k] - v) * i / 9)).join(',') + ')');

@@ -11,8 +11,8 @@
   /* A dark editor in the tradition of game-engine and code editors. The map takes the screen; an inspector column on the
      left holds the controls. One screen: the page never scrolls, only the inspector does. Dark by default, because the
      page usually sits beside the running game; a matching light version follows the system setting. The canvas reads
-     --paper, --panel, --ink, --ink-2, --line, --ground-lo, --ground-hi (both #rrggbb), --wall, --enemy, --friend, --warn,
-     --place and --accent-text (24-drawing.js, readTokens). */
+     --paper, --panel, --ink, --ink-2, --line, --ground-lo, --ground-hi (both #rrggbb), --wall, --model, --edge, --enemy,
+     --friend, --warn, --place and --accent-text (24-drawing.js, readTokens). */
   color-scheme: dark;
   --paper: #1e1f22;      /* the map's ground, around the walkable surface */
   --well: #1e1f22;       /* inputs and sunken fields */
@@ -28,6 +28,8 @@
   --ground-lo: #2e3136;  /* lowest walkable ground */
   --ground-hi: #5d646e;  /* highest walkable ground */
   --wall: #9aa0a8;       /* borders nobody can cross, on the map */
+  --model: #7d838b;      /* the solid map in 3D, before it is lit */
+  --edge: #141518;       /* the creases of the solid map in 3D */
   --accent: #2a6fdc;     /* fills for selection, the current view and tool, the primary action: nothing else. White on it is 4.8:1 */
   --accent-ink: #ffffff;
   --accent-text: #79aefc;   /* the accent as text, lines and rings on the dark ground */
@@ -45,7 +47,7 @@
     color-scheme: light;
     --paper: #e4e7eb; --well: #ffffff; --panel: #f6f7f9; --bar: #eceef1; --head: #e7e9ed; --raise: #ffffff; --raise-hi: #eef0f3;
     --ink: #1c1f24; --ink-2: #565d68; --line: #d6dae0; --line-hi: #b7bdc6;
-    --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c;
+    --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c; --model: #ffffff; --edge: #5b6470;
     --accent: #1f6fe5; --accent-ink: #ffffff; --accent-text: #1a5fc7; --accent-soft: #d8e6fc;
     --enemy: #bb3825; --friend: #1c6dcc; --warn: #96600a; --place: #7a4bb0; --ok: #2c8a52;
   }
@@ -54,7 +56,7 @@
   color-scheme: light;
   --paper: #e4e7eb; --well: #ffffff; --panel: #f6f7f9; --bar: #eceef1; --head: #e7e9ed; --raise: #ffffff; --raise-hi: #eef0f3;
   --ink: #1c1f24; --ink-2: #565d68; --line: #d6dae0; --line-hi: #b7bdc6;
-  --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c;
+  --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c; --model: #ffffff; --edge: #5b6470;
   --accent: #1f6fe5; --accent-ink: #ffffff; --accent-text: #1a5fc7; --accent-soft: #d8e6fc;
   --enemy: #bb3825; --friend: #1c6dcc; --warn: #96600a; --place: #7a4bb0; --ok: #2c8a52;
 }
