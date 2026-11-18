@@ -38,6 +38,12 @@ function setTool(t) {
   state.tool = t;
   if (t === 'add' || t === 'route') showTab('enemies'); else if (t === 'zone') showTab('triggers');
   document.querySelectorAll('#tools .tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+  toolHint();
+}
+// The line at the foot of the map: what a click does with the tool in hand. In Play the map only shows.
+function toolHint() {
+  const t = state.tool;
+  if (viewIs('play')) { $('hintLine').textContent = 'The map shows the scenario. To change it, switch to Create.'; return; }
   if (state.mode === '3d') { $('hintLine').textContent = 'Drag to look, W A S D to fly, Q and E for down and up, Shift is faster, scroll moves forward. ' + { select: 'Click an enemy to select it, drag it to move it. Right click: the selected enemy looks there. ', add: 'Click to place an enemy. ', route: 'Click to add route stops. ', zone: 'Click to place a zone. ' }[t]; return; }
   $('hintLine').textContent = { select: 'Click an enemy to select it, drag to move it. Drag empty ground to pan, scroll to zoom. ',
     add: 'Click walkable ground to place an enemy. ', route: 'Click to add stops to the selected enemy\'s patrol route. ', zone: 'Click to place a zone that brings enemies in when players reach it. ' }[t];

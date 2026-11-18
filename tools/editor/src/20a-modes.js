@@ -32,7 +32,7 @@ function setView(v, byHand) {
   if (view !== 'create') { state.placing = null; if (PLACING_TOOLS.includes(state.tool)) setTool('select'); }
   if (byHand) { try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* storage unavailable */ } }
   if (view === 'play' && live.on) refreshCatalogue();
-  syncPlay(); syncStrip(); invalidate();
+  toolHint(); syncPlay(); syncStrip(); invalidate();
 }
 const viewIs = v => state.pane === v;
 document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.viewTo, true)));
@@ -94,12 +94,39 @@ function runWords() {
   const what = e ? e.title || e.value : s.rejected ? 'the game\'s own mission (the scenario was refused)' : 'a mission';
   return what + (s.scene ? ' on ' + s.scene : '');
 }
+function draftTone() {
+  if (live.on && live.mission && !catalogue.lobbyFile) return Array.isArray(live.staged) && live.staged.length ? 'warn' : 'live';
+  if (state.example || (!state.enemies.length && !state.zones.length && !state.things.length)) return '';
+  return catalogue.savedText !== null && catalogue.savedText === scenarioText() ? 'ok' : 'warn';
+}
 function syncStrip() {
   const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; };
-  put('stView', VIEW_NAMES[state.pane] || 'Create'); put('stDraft', draftWords()); put('stNext', nextWords()); put('stRun', runWords());
+  put('stDraft', draftWords()); put('stNext', nextWords()); put('stRun', runWords());
+  // Offline, the game's two lines would both say "not connected": one line says it once.
+  $('stGameRow').hidden = live.on; $('stNextRow').hidden = $('stRunRow').hidden = !live.on;
+  $('stDraftRow').dataset.tone = draftTone(); $('stRunRow').dataset.tone = catalogue.s && catalogue.s.mission ? 'live' : '';
   // Between missions the game has no mission to save from, so the page saves the file itself; during one, the game saves it.
   if (live.on) { $('saveCat').hidden = !!(live.mission && !catalogue.lobbyFile); $('save').hidden = !$('saveCat').hidden; }
+  syncNext();
 }
+// One plain sentence under the view switch: what someone new to the page can do next, here. It only points at controls
+// that are on screen in this view and never repeats the map's own hint line for the tool in hand.
+function nextStepWords() {
+  if (viewIs('play')) {
+    if (!live.on) return 'choose Open files below to see what a scenario file holds.';
+    return pickedEntry() ? 'choose Play this next, then host the mission in the game.' : 'pick a mission in the list below.';
+  }
+  if (viewIs('direct')) {
+    if (!live.on) return 'switch to Create to work on a scenario. Directing a mission needs the game, as said below.';
+    return catalogue.s && catalogue.s.mission ? 'follow the mission on the map; the controls below change it.' : 'host a mission in the game. It shows up here when it starts.';
+  }
+  if (sealedHides()) return 'reveal the mission to see its enemies, or switch to Play.';
+  if (!state.map && !state.enemies.length) return live.on ? 'choose Add enemy and click the map, or pick a mission to change in Play.' : 'open a map file from OPERATOR/OPERATOR_Data/NavMeshData with Open files on the Map tab.';
+  if (!state.enemies.length) return 'choose Add enemy above the map, then click walkable ground.';
+  if (state.selected < 0) return state.example ? 'click an enemy on the map to change it, or open a real map file to make your own.' : 'click an enemy on the map to change it, then save the file.';
+  return state.example ? 'change enemy ' + (state.selected + 1) + ' on the Enemies tab, or drag it on the map.' : 'change enemy ' + (state.selected + 1) + ' on the Enemies tab, then save the file.';
+}
+function syncNext() { const el = $('nextText'), text = nextStepWords(); if (el.textContent !== text) el.textContent = text; }
 // After every edit (changed() calls this).
 function viewsChanged() { syncStrip(); syncSeal(); if (viewIs('play')) syncPlay(); }
 // The page's scenario now equals a file: one just opened or saved.

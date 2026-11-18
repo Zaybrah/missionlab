@@ -19,10 +19,13 @@ function syncSide() {
     const w = warningFor(e); if (w) warn++;
     const li = document.createElement('li'), b = document.createElement('button');
     const op = liveOp(e);       // the last change to this marker failed or is still on its way: it is not shown as live
-    b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
+    b.type = 'button'; b.setAttribute('aria-current', String(i === state.selected)); b.dataset.squad = String(state.squad.includes(i)); b.dataset.role = e.vehicle ? 'Truck' : e.role; if (w) b.title = 'Enemy ' + (i + 1) + ' is ' + w + '.';
     if (op) b.title = (b.title ? b.title + ' ' : '') + 'The last change to enemy ' + (i + 1) + (op.status === 'failed' ? ' failed: ' : ' is still on its way into the game: ') + (op.said || 'no reason given') + '.';
     const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
-    cell('n', '#' + (i + 1)); cell('', e.vehicle ? 'TRUCK' : e.hvt ? 'TARGET' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ' ↓' : '')); cell('xy', 'group ' + (e.group + 1) + ' · ' + e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0) + (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : '')); cell('flag', op ? op.status : w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
+    cell('n', '#' + (i + 1)); cell('role', e.vehicle ? 'Truck' : e.hvt ? 'Target' : (e.fixed ? 'Sentry' : e.role) + (e.prone ? ', prone' : ''));
+    cell('xy', 'group ' + (e.group + 1) + ' · '); const at = document.createElement('span'); at.className = 'c'; at.textContent = e.pos[0].toFixed(0) + ', ' + e.pos[2].toFixed(0);     // the coordinates in the number face
+    b.lastChild.append(at, (e.either ? ' · ' + e.either + optionLetter(e.option) : '') + (e.chance < 100 ? ' · ' + e.chance + '%' : '') + (e.team === 4 ? ' · side 2' : e.team === 1 ? ' · ally' : '') + (e.minPlayers > 1 ? ' · ' + e.minPlayers + '+ players' : '') + (e.skill ? ' · ' + e.skill : '') + (e.nvg ? ' · night vision' : ''));
+    cell('flag', op ? op.status : w ? 'check' : e.trigger && !(live.on && e.live) ? trigTag(e.trigger) : live.on && e.waiting ? 'waiting' : live.on && !e.live ? 'gone' : '');
     b.addEventListener('click', () => { select(i); const [x, y] = toScreen(e.pos[0], e.pos[2]), s = size(); if (x < 20 || y < 70 || x > s.w - 20 || y > s.h - 50) { state.view.cx = e.pos[0]; state.view.cz = e.pos[2]; invalidate(); } });
     li.appendChild(b); list.appendChild(li);
   });
@@ -57,7 +60,7 @@ function syncSide() {
     sq.forEach((q, n) => { const o = document.createElement('option'); o.value = n; o.textContent = q.name + ' (' + q.data.length + ')'; pick.appendChild(o); });
     if (was && +was < sq.length) pick.value = was;
   }
-  $('sqForget').hidden = !(sq[+pick.value] && !sq[+pick.value].fixed);
+  $('sqForget').hidden = !(sq[+pick.value] && !sq[+pick.value].fixed); $('squadCount').textContent = sq.length ? String(sq.length) : '';
   syncCardsAuthor();     // the Game Master budget in the Mission tab (ML-025, 29h-cards.js)
   syncOptionsAuthor(); syncQuick();     // host options in the Mission tab, the quick mission in the Map tab (ML-022, 29f-options.js)
 
@@ -79,7 +82,7 @@ function syncSide() {
     syncPos();
   }
 
-  $('tabEnemies').textContent = state.enemies.length || ''; $('tabTriggers').textContent = state.zones.length || '';
+  $('tabEnemies').textContent = state.enemies.length || ''; $('tabTriggers').textContent = state.zones.length || ''; $('trigCount').textContent = state.zones.length ? String(state.zones.length) : ''; syncNext();
   syncCheck();
   $('tabDoors').textContent = (state.doors.filter(doorSet).length + state.things.length) || ''; $('noDoors').hidden = state.doors.length > 0;
   syncThings();

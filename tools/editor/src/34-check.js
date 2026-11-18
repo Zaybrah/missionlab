@@ -147,7 +147,7 @@ function missionCheck() {
 function syncCheck() {
   const list = $('checkList'); if (!list) return;
   const found = missionCheck(), hard = found.filter(f => f.level !== 'note').length;
-  $('tabMission').textContent = hard || '';
+  $('tabMission').textContent = hard || ''; $('checkCount').textContent = hard ? String(hard) : '';
   const empty = !state.enemies.length && !state.zones.length;
   $('checkSum').textContent = empty ? 'Nothing to check yet. Place an enemy or open a scenario.'
     : !found.length ? 'Nothing found. The check looks at triggers, the extraction, the insertion, enemies and doors.'

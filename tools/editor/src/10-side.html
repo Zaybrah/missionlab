@@ -1,19 +1,20 @@
 <body>
 <aside id="side" data-show="map" data-pane="create">
   <header>
-    <h1>MissionLab Scenario Editor</h1>
-    <p>Place enemies on a map and save the layout as a scenario file. Unofficial tool for the game OPERATOR.</p>
+    <h1>MissionLab</h1>
+    <p>Scenario editor · unofficial, for OPERATOR</p>
   </header>
   <nav id="views" role="tablist" aria-label="What you are doing">
     <button type="button" role="tab" data-view-to="play" aria-selected="false" title="Choose a mission and start it. Nothing here changes a scenario.">Play</button>
     <button type="button" role="tab" data-view-to="create" aria-selected="true" title="Make or change a scenario: enemies, triggers, world, mission check and saving">Create</button>
     <button type="button" role="tab" data-view-to="direct" aria-selected="false" title="The running mission: what is happening now, and deliberate changes to it">Direct</button>
   </nav>
+  <p id="nextStep"><b>Next:</b> <span id="nextText"></span></p>
   <dl id="strip" aria-label="Where things stand">
-    <div><dt>View</dt><dd id="stView">Create</dd></div>
-    <div><dt>Draft</dt><dd id="stDraft">-</dd></div>
-    <div><dt>Next mission</dt><dd id="stNext">-</dd></div>
-    <div><dt>Running</dt><dd id="stRun">-</dd></div>
+    <div id="stDraftRow"><dt>Draft</dt><dd id="stDraft">-</dd></div>
+    <div id="stGameRow"><dt>Game</dt><dd>not connected</dd></div>
+    <div id="stNextRow"><dt>Next mission</dt><dd id="stNext">-</dd></div>
+    <div id="stRunRow"><dt>Running</dt><dd id="stRun">-</dd></div>
   </dl>
   <nav id="tabs" role="tablist" aria-label="Parts of the editor">
     <button type="button" role="tab" data-tab="map" aria-selected="true">Map</button>
@@ -150,7 +151,7 @@
       <span class="chip info" id="exampleChip">Example map</span>
     </div>
     <div id="mapInfo"></div>
-    <p class="hint offline">Dark lines are borders nobody can cross: walls, fences, furniture. For real walls and furniture in the 3D view, also open the <code>.mlgeo</code> file that Game Master mode exports into <code>BepInEx/MissionLab/maps</code> (press M there). Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
+    <p class="hint offline">The lines around the walkable ground are borders nobody can cross: walls, fences, furniture. For real walls and furniture in the 3D view, also open the <code>.mlgeo</code> file that Game Master mode exports into <code>BepInEx/MissionLab/maps</code> (press M there). Open a map file from <code>OPERATOR/OPERATOR_Data/NavMeshData</code>. You can also open a scenario, a mission record from <code>BepInEx/MissionLab/missions</code>, or a recon file to see insertion points. Files stay on your computer.</p>
     <details class="offline">
       <summary>Which map file belongs to which mission?</summary>
       <ul>
@@ -245,38 +246,9 @@
     <ul id="list"></ul>
     <p id="empty" hidden>No enemies yet. Choose <b>Add enemy</b> above the map and click on walkable ground.</p>
     <div id="warnings" class="row"></div>
-    <div id="squadBox">
-      <h2>Squads</h2>
-      <p class="hint" id="squadInfo"></p>
-      <div class="row" id="sqActs" hidden>
-        <button class="btn" id="sqCopy" type="button">Copy</button>
-        <button class="btn" id="sqTurnL" type="button" aria-label="Turn the squad to the left">↺</button>
-        <button class="btn" id="sqTurnR" type="button" aria-label="Turn the squad to the right">↻</button>
-        <button class="btn" id="sqGroup" type="button">One group</button>
-        <button class="btn danger" id="sqDel" type="button">Delete</button>
-      </div>
-      <div class="field" id="sqTrigRow" hidden><label for="sqTrig">All appear</label><select id="sqTrig"></select></div>
-      <div class="row" id="sqSaveRow" hidden>
-        <input id="sqName" type="text" placeholder="Name for this squad" maxlength="30" aria-label="Name for this squad">
-        <button class="btn" id="sqSave" type="button">Save as squad</button>
-      </div>
-      <div class="row">
-        <select id="sqPick" aria-label="Saved squads"></select>
-        <button class="btn" id="sqPlace" type="button">Place</button>
-        <button class="btn danger" id="sqForget" type="button" hidden>Forget</button>
-      </div>
-      <div class="row"><button class="btn" id="sqPaste" type="button" hidden>Paste the copied enemies</button></div>
-    </div>
   </section>
-  <section data-tab="mission" aria-label="Intel items" id="intelSection" hidden>
-    <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
-    <div id="intelBox" hidden>
-      <h2>Intel items</h2>
-      <ul id="intelList"></ul>
-    </div>
-  </section>
-  <section data-tab="doors" aria-label="Things">
-    <h2>Things <span id="thingCount"></span></h2>
+  <section data-tab="doors" aria-labelledby="h-things">
+    <h2 id="h-things">Things <span id="thingCount"></span></h2>
     <p class="hint">Weapons and other things the game can lay on the ground for every player. Pick one, choose Add thing and click the map. Seen to work in the game: rifles, which can be picked up and used.</p>
     <div class="field"><label for="thingName">Thing</label><select id="thingName"></select></div>
     <ul id="thingList"></ul>
@@ -288,17 +260,17 @@
     </div>
   </section>
 
-  <section data-tab="doors" aria-label="Doors">
+  <section data-tab="doors" aria-labelledby="h-doors">
+    <h2 id="h-doors">Doors <span id="doorCount"></span></h2>
     <p class="hint" id="noDoors">Doors show up here once the editor knows where they are: connect to the game during a mission, or open a recon file written after one mission on the map.</p>
     <div id="doorsBox" hidden>
-      <h2>Doors <span id="doorCount"></span></h2>
       <p class="hint">Thick lines on the map are doors. Choose Select and click one to lock or unlock it. The game locks some doors by chance, different ones each mission; a door you set is always as you set it.</p>
       <ul id="doorList"></ul>
     </div>
   </section>
-  <section data-tab="triggers" aria-label="Triggers">
+  <section data-tab="triggers" aria-labelledby="h-trig">
+    <h2 id="h-trig">Triggers <span id="trigCount"></span></h2>
     <div id="zoneBox">
-      <h2>Triggers</h2>
       <ul id="zoneList"></ul>
       <!-- Painting tools (27a-paint.js): moved into the row of whatever is being painted, and kept here otherwise. -->
       <div id="paintHome" hidden>
@@ -359,8 +331,10 @@
       </div>
       <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
     </div>
+  </section>
+  <section data-tab="triggers" aria-labelledby="h-waves" id="waveSection">
+    <h2 id="h-waves">Waves</h2>
     <div id="waveBox">
-      <h2>Waves</h2>
       <p class="hint">Enemies that walk in on one spot, wave after wave, for holding a building. The spot is the selected enemy, or else the middle of the map view.</p>
       <div class="field"><label for="wvCount">Waves</label><input id="wvCount" type="number" min="1" max="10" value="3"></div>
       <div class="field"><label for="wvSize">Enemies in each</label><input id="wvSize" type="number" min="1" max="12" value="4"></div>
@@ -401,9 +375,9 @@
     <ul id="mdlBindings"></ul>
     <ul id="mdlReport"></ul>
   </section>
-  <section data-tab="mission" aria-label="Mission check">
+  <section data-tab="mission" aria-labelledby="h-check">
+    <h2 id="h-check">Mission check <span id="checkCount"></span></h2>
     <div id="checkBox">
-      <h2>Mission check</h2>
       <p class="hint" id="checkSum"></p>
       <div id="repairBox" role="region" aria-labelledby="repairTitle" aria-live="polite" hidden>
         <p id="repairTitle"></p>
@@ -414,9 +388,43 @@
       <ul id="checkList"></ul>
     </div>
   </section>
+  <section data-tab="mission" aria-labelledby="h-mission">
+    <h2 id="h-mission">Mission</h2>
+    <div id="missionBox">
+      <div class="field"><label for="extractAfter">Extraction</label><select id="extractAfter"></select></div>
+      <div class="field"><label for="insertion">Insertion</label><select id="insertion"></select></div>
+      <div class="field"><label for="power">Lights</label><select id="power"><option value="">Leave to the game</option><option value="off">Off when the mission starts</option><option value="on">On when the mission starts</option></select></div>
+      <div class="field"><label for="allSkill">Enemies</label><select id="allSkill"><option value="">Skill as the game makes it</option><option value="recruit">All recruits: slower, wilder</option><option value="veteran">All veterans: quicker, surer</option></select></div>
+      <label class="check"><input id="allNvg" type="checkbox"><span>All enemies see in the dark</span></label>
+      <label class="check"><input id="needsGm" type="checkbox"><span>This mission needs a Game Master (triggers fired by hand are part of its plan)</span></label>
+      <div class="field"><label for="respawnAfter">Wave after (s)</label><input id="respawnAfter" type="number" min="0" max="600" step="5" title="Seconds a player stays dead before the scenario brings them back. 0 leaves it to the game."></div>
+      <div class="field"><label for="respawnTimes">Waves</label><input id="respawnTimes" type="number" min="0" max="50" step="1" title="How many times in one mission. 0 is no limit."></div>
+      <p class="hint" id="respawnHint"></p>
+      <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
+      <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
+      <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
+      <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
+      <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
+      <h2>About this mission</h2>
+      <div class="field"><label for="squadMin">Squad from</label><input id="squadMin" type="number" min="0" max="16" step="1" placeholder="Not given" title="The fewest players you recommend. Leave empty to say nothing."></div>
+      <div class="field"><label for="squadMax">Squad up to</label><input id="squadMax" type="number" min="0" max="16" step="1" placeholder="Not given" title="The most players you recommend."></div>
+      <div class="field"><label for="minutes">Your estimate (min)</label><input id="minutes" type="number" min="0" max="600" step="5" placeholder="Not given" title="Your own estimate of how long the mission takes. Measured times come from run records, not from here."></div>
+      <div class="field"><label for="scenarioId">Scenario id</label><input id="scenarioId" type="text" readonly title="Stays the same when the scenario is renamed. Made on the first save."></div>
+      <div class="field"><label for="revision">Revision</label><input id="revision" type="text" readonly title="Counts your saves of this scenario."></div>
+      <p class="hint" id="mapPrintNote" hidden>This scenario was made on another version of this map: check positions and places</p>
+    </div>
+  </section>
+
+  <section data-tab="mission" aria-labelledby="h-intel" id="intelSection" hidden>
+    <h2 id="h-intel">Intel items</h2>
+    <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
+    <div id="intelBox" hidden>
+      <ul id="intelList"></ul>
+    </div>
+  </section>
   <section aria-labelledby="h-rehearse" id="rhSection" data-tab="mission" data-view="create">
+    <h2 id="h-rehearse">Rehearse</h2>
     <div id="rhBox">
-      <h2 id="h-rehearse">Rehearse</h2>
       <p class="hint" id="rhAbout">Plays this scenario's triggers on a simulated clock through events you write here, with the same trigger rules the game uses, and checks what should follow. Every event is an assumption you inject: a rehearsal does not predict spotting, pathfinding, physics, networking or combat.</p>
       <div class="field"><label for="rhName">Test name</label><input id="rhName" type="text" maxlength="80" placeholder="phone starts the countdown"></div>
       <div class="field"><label for="rhPlayers">Players</label><input id="rhPlayers" type="number" min="1" max="16" step="1" value="2" title="How many players the mission is rolled for: it decides which players-needed enemies take part."></div>
@@ -460,33 +468,6 @@
     </div>
   </section>
 
-  <section data-tab="mission" aria-label="Mission settings">
-    <div id="missionBox">
-      <h2>Mission</h2>
-      <div class="field"><label for="extractAfter">Extraction</label><select id="extractAfter"></select></div>
-      <div class="field"><label for="insertion">Insertion</label><select id="insertion"></select></div>
-      <div class="field"><label for="power">Lights</label><select id="power"><option value="">Leave to the game</option><option value="off">Off when the mission starts</option><option value="on">On when the mission starts</option></select></div>
-      <div class="field"><label for="allSkill">Enemies</label><select id="allSkill"><option value="">Skill as the game makes it</option><option value="recruit">All recruits: slower, wilder</option><option value="veteran">All veterans: quicker, surer</option></select></div>
-      <label class="check"><input id="allNvg" type="checkbox"><span>All enemies see in the dark</span></label>
-      <label class="check"><input id="needsGm" type="checkbox"><span>This mission needs a Game Master (triggers fired by hand are part of its plan)</span></label>
-      <div class="field"><label for="respawnAfter">Wave after (s)</label><input id="respawnAfter" type="number" min="0" max="600" step="5" title="Seconds a player stays dead before the scenario brings them back. 0 leaves it to the game."></div>
-      <div class="field"><label for="respawnTimes">Waves</label><input id="respawnTimes" type="number" min="0" max="50" step="1" title="How many times in one mission. 0 is no limit."></div>
-      <p class="hint" id="respawnHint"></p>
-      <div class="field"><label for="wxRain">Rain</label><select id="wxRain"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
-      <div class="field"><label for="wxStorm">Sandstorm</label><select id="wxStorm"><option value="">Leave to the game</option><option value="1">On</option><option value="0">Off</option></select></div>
-      <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
-      <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
-      <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
-      <h2>About this mission</h2>
-      <div class="field"><label for="squadMin">Squad from</label><input id="squadMin" type="number" min="0" max="16" step="1" placeholder="Not given" title="The fewest players you recommend. Leave empty to say nothing."></div>
-      <div class="field"><label for="squadMax">Squad up to</label><input id="squadMax" type="number" min="0" max="16" step="1" placeholder="Not given" title="The most players you recommend."></div>
-      <div class="field"><label for="minutes">Your estimate (min)</label><input id="minutes" type="number" min="0" max="600" step="5" placeholder="Not given" title="Your own estimate of how long the mission takes. Measured times come from run records, not from here."></div>
-      <div class="field"><label for="scenarioId">Scenario id</label><input id="scenarioId" type="text" readonly title="Stays the same when the scenario is renamed. Made on the first save."></div>
-      <div class="field"><label for="revision">Revision</label><input id="revision" type="text" readonly title="Counts your saves of this scenario."></div>
-      <p class="hint" id="mapPrintNote" hidden>This scenario was made on another version of this map: check positions and places</p>
-    </div>
-
-  </section>
 
   <section aria-labelledby="h-seal" id="sealSection" data-tab="mission" data-view="create">
     <h2 id="h-seal">Sealed</h2>
@@ -568,6 +549,31 @@
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
       <button class="btn danger" id="del" type="button">Delete enemy</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-squads" id="squadSection" data-tab="enemies">
+    <h2 id="h-squads">Squads <span id="squadCount"></span></h2>
+    <div id="squadBox">
+      <p class="hint" id="squadInfo"></p>
+      <div class="row" id="sqActs" hidden>
+        <button class="btn" id="sqCopy" type="button">Copy</button>
+        <button class="btn" id="sqTurnL" type="button" aria-label="Turn the squad to the left">↺</button>
+        <button class="btn" id="sqTurnR" type="button" aria-label="Turn the squad to the right">↻</button>
+        <button class="btn" id="sqGroup" type="button">One group</button>
+        <button class="btn danger" id="sqDel" type="button">Delete</button>
+      </div>
+      <div class="field" id="sqTrigRow" hidden><label for="sqTrig">All appear</label><select id="sqTrig"></select></div>
+      <div class="row" id="sqSaveRow" hidden>
+        <input id="sqName" type="text" placeholder="Name for this squad" maxlength="30" aria-label="Name for this squad">
+        <button class="btn" id="sqSave" type="button">Save as squad</button>
+      </div>
+      <div class="row">
+        <select id="sqPick" aria-label="Saved squads"></select>
+        <button class="btn" id="sqPlace" type="button">Place</button>
+        <button class="btn danger" id="sqForget" type="button" hidden>Forget</button>
+      </div>
+      <div class="row"><button class="btn" id="sqPaste" type="button" hidden>Paste the copied enemies</button></div>
     </div>
   </section>
 
@@ -677,7 +683,7 @@
   </section>
 
   <section aria-labelledby="h-save" id="saveBox">
-    <h2 id="h-save">Save</h2>
+    <h2 id="h-save" class="vh">Save</h2>
     <div class="field"><label for="title">File name</label><input id="title" type="text" maxlength="60" spellcheck="false"></div>
     <div class="row">
       <button class="btn primary" id="save" type="button" hidden>Save file</button>

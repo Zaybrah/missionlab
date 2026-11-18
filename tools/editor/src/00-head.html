@@ -4,122 +4,143 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MissionLab Scenario Editor</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="three.min.js"></script>
 <script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"><\/script>')</script>
 <style>
 :root {
-  /* Layout: one column of controls on the left, the map takes everything else.
-     One screen; the page itself never scrolls, only the control column does. */
-  --paper: #e8ecef;      /* page and empty map */
-  --panel: #f8fafb;      /* control column, floating map controls */
-  --ink: #17222c;        /* text, selection */
-  --ink-2: #566370;      /* secondary text */
-  --line: #c9d1d8;       /* borders */
-  --ground-lo: #c7d0d7;  /* lowest walkable ground */
-  --ground-hi: #7d8f9d;  /* highest walkable ground */
-  --enemy: #c5402a;      /* enemies and their routes */
-  --friend: #1c6dcc;     /* insertion points, primary action */
-  --warn: #a4660f;       /* something to check */
-  --place: #7a4bb0;      /* named places */
-  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
-  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* A dark editor in the tradition of game-engine and code editors. The map takes the screen; an inspector column on the
+     left holds the controls. One screen: the page never scrolls, only the inspector does. Dark by default, because the
+     page usually sits beside the running game; a matching light version follows the system setting. The canvas reads
+     --paper, --panel, --ink, --ink-2, --line, --ground-lo, --ground-hi (both #rrggbb), --wall, --enemy, --friend, --warn,
+     --place and --accent-text (24-drawing.js, readTokens). */
+  color-scheme: dark;
+  --paper: #1e1f22;      /* the map's ground, around the walkable surface */
+  --well: #1e1f22;       /* inputs and sunken fields */
+  --panel: #2b2d31;      /* the inspector, floating map controls */
+  --bar: #232428;        /* the tool header and the tab strip */
+  --head: #303237;       /* section headers in the inspector */
+  --raise: #35373c;      /* buttons */
+  --raise-hi: #3f4147;   /* buttons, hovered */
+  --ink: #e6e6e6;        /* text */
+  --ink-2: #a3a6ab;      /* secondary text */
+  --line: #3a3c41;       /* hairlines */
+  --line-hi: #4d5056;    /* control borders */
+  --ground-lo: #2e3136;  /* lowest walkable ground */
+  --ground-hi: #5d646e;  /* highest walkable ground */
+  --wall: #9aa0a8;       /* borders nobody can cross, on the map */
+  --accent: #2a6fdc;     /* fills for selection, the current view and tool, the primary action: nothing else. White on it is 4.8:1 */
+  --accent-ink: #ffffff;
+  --accent-text: #79aefc;   /* the accent as text, lines and rings on the dark ground */
+  --accent-soft: #2f4a73;   /* a selected row */
+  --enemy: #f06a5a;      /* enemies and their routes */
+  --friend: #5ea6ee;     /* players, insertion points, zones */
+  --warn: #e0a84a;       /* something to check */
+  --place: #b892e8;      /* named places */
+  --ok: #4fb37a;         /* saved, passed */
+  --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
-    --ground-lo: #27323c; --ground-hi: #64747f;
-    --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b; --place: #b892e8;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --paper: #e4e7eb; --well: #ffffff; --panel: #f6f7f9; --bar: #eceef1; --head: #e7e9ed; --raise: #ffffff; --raise-hi: #eef0f3;
+    --ink: #1c1f24; --ink-2: #565d68; --line: #d6dae0; --line-hi: #b7bdc6;
+    --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c;
+    --accent: #1f6fe5; --accent-ink: #ffffff; --accent-text: #1a5fc7; --accent-soft: #d8e6fc;
+    --enemy: #bb3825; --friend: #1c6dcc; --warn: #96600a; --place: #7a4bb0; --ok: #2c8a52;
   }
 }
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
-  --ground-lo: #27323c; --ground-hi: #64747f;
-  --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b; --place: #b892e8;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --paper: #e4e7eb; --well: #ffffff; --panel: #f6f7f9; --bar: #eceef1; --head: #e7e9ed; --raise: #ffffff; --raise-hi: #eef0f3;
+  --ink: #1c1f24; --ink-2: #565d68; --line: #d6dae0; --line-hi: #b7bdc6;
+  --ground-lo: #f4f5f7; --ground-hi: #9aa5b1; --wall: #39424c;
+  --accent: #1f6fe5; --accent-ink: #ffffff; --accent-text: #1a5fc7; --accent-soft: #d8e6fc;
+  --enemy: #bb3825; --friend: #1c6dcc; --warn: #96600a; --place: #7a4bb0; --ok: #2c8a52;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line-hi) transparent; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
-body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--body); display: grid; grid-template-columns: 340px minmax(0, 1fr); overflow: hidden; }
+body { background: var(--paper); color: var(--ink); font: 13px/1.45 var(--ui); display: grid; grid-template-columns: 372px minmax(0, 1fr); overflow: hidden; -webkit-font-smoothing: antialiased; caret-color: var(--accent); }
+::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 button, input, select, textarea { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--friend); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 1px; }
+code, .path { font: 12px var(--mono); overflow-wrap: anywhere; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* ---------- control column ---------- */
-#side { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
-#side header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
-h1 { font: 600 26px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; margin: 0; text-wrap: balance; }
-#side header p { margin: 6px 0 0; color: var(--ink-2); font-size: 12.5px; }
-section { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
-h2 { font: 600 15px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--ink-2); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-h2 span { font: 500 12px var(--mono); letter-spacing: 0; text-transform: none; }
-.hint { color: var(--ink-2); font-size: 12.5px; margin: 0; }
-.hint code, .path { font: 12px var(--mono); overflow-wrap: anywhere; }
-.btn { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-weight: 500; }
-.btn:hover:not(:disabled) { border-color: var(--ink-2); }
+/* ---------- controls */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 4px 12px; border: 1px solid var(--line-hi); background: var(--raise); border-radius: 4px; cursor: pointer; font-weight: 500; line-height: 18px; text-align: center; }
+.btn:hover:not(:disabled) { background: var(--raise-hi); }
+.btn:active:not(:disabled) { background: var(--line); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn.primary { background: var(--friend); border-color: var(--friend); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, #000000); }
 .btn.danger { color: var(--enemy); }
+.btn.danger:hover:not(:disabled) { background: var(--raise-hi); border-color: color-mix(in srgb, var(--enemy) 60%, var(--line-hi)); }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.field { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; align-items: center; }
-.field > label { color: var(--ink-2); font-size: 12.5px; }
-input[type="text"], input[type="number"], textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; }
-input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-input[type="range"] { width: 100%; accent-color: var(--friend); }
-.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
-.check input { margin-top: 3px; accent-color: var(--friend); }
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.seg button { border: 0; background: transparent; padding: 6px 4px; cursor: pointer; border-left: 1px solid var(--line); font-weight: 500; }
-.seg button:first-child { border-left: 0; }
-.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
-.chip.warn { border-color: var(--warn); color: var(--warn); }
-#warnings { flex-wrap: wrap; }
-#sightNote { flex-basis: 100%; margin: 0; }
-#squadBox { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
-#squadBox .row { flex-wrap: wrap; }
-#squadBox .row select, #squadBox .row input { width: auto; flex: 1; min-width: 0; }
-#list li button[data-squad="true"] { box-shadow: inset 3px 0 0 var(--friend); }
-.chip.info { border-color: var(--friend); color: var(--friend); }
-#mapInfo { font: 12px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
-details summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
+.field { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 8px; align-items: center; }
+.field > label { color: var(--ink-2); }
+input[type="text"], input[type="number"], textarea, select { width: 100%; min-height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--well); padding: 4px 8px; }
+input[type="text"]:hover, input[type="number"]:hover, textarea:hover, select:hover { border-color: var(--line-hi); }
+input[type="text"]:focus-visible, input[type="number"]:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -1px; border-color: var(--accent-text); }
+input[readonly] { color: var(--ink-2); background: transparent; }
+input::placeholder, textarea::placeholder { color: var(--ink-2); }
+input[type="number"] { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.check { display: flex; gap: 8px; align-items: flex-start; }
+.check input { margin-top: 2px; flex: none; }
+.seg, .pair, .shape { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line-hi); border-radius: 5px; overflow: hidden; background: var(--bar); }
+.seg button, .pair button, .shape button { border: 0; border-left: 1px solid var(--line-hi); background: transparent; color: var(--ink-2); padding: 5px 8px; cursor: pointer; font-weight: 500; }
+.seg button:first-child, .pair button:first-child, .shape button:first-child { border-left: 0; }
+.seg button:hover, .pair button:hover:not(:disabled), .shape button:hover { color: var(--ink); background: var(--raise); }
+.seg button[aria-pressed="true"], .pair button[aria-pressed="true"], .shape button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.pair button:disabled { opacity: .45; cursor: not-allowed; }
+.shape { display: inline-grid; }
+.shape button { padding: 4px 8px; }
+.shape.tools { display: grid; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-hi); border-radius: 999px; padding: 0 8px; font-size: 11.5px; line-height: 18px; color: var(--ink-2); white-space: nowrap; }
+.chip.warn { border-color: color-mix(in srgb, var(--warn) 60%, transparent); color: var(--warn); }
+.chip.info { border-color: color-mix(in srgb, var(--friend) 60%, transparent); color: var(--friend); }
+.hint { color: var(--ink-2); font-size: 12.5px; margin: 0; }
+.hint b { color: var(--ink); font-weight: 600; }
+/* A long explanation shows its first sentence; More shows the rest (32b-panel.js). */
+.more { all: unset; cursor: pointer; color: var(--ink); font-weight: 500; margin-left: 4px; white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 3px; }
+.more:hover { text-decoration: underline; text-underline-offset: 2px; }
+.more:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 1px; border-radius: 2px; }
+details > summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; list-style: none; display: flex; align-items: center; gap: 4px; }
+details > summary::-webkit-details-marker { display: none; }
+details summary:hover { color: var(--ink); }
 details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; }
-#saveBox details > * + * { margin-top: 8px; }
 
-#zoneBox, #intelBox { display: flex; flex-direction: column; gap: 8px; }
-#intelList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#intelList li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
-#intelList b { color: var(--warn); }
-#doorsBox { display: flex; flex-direction: column; gap: 8px; }
-#doorList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#doorList li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
-#layerBox { top: 64px; right: 12px; flex-direction: column; align-items: stretch; gap: 4px; max-height: 60%; overflow-y: auto; font-size: 12.5px; padding: 10px 12px; }
-#layerBox label { display: flex; gap: 8px; align-items: center; }
-#layerBox .n { margin-left: auto; font: 11px var(--mono); color: var(--ink-2); padding-left: 12px; }
-#zoneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#zoneList li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 5px 6px; align-items: center; font-size: 12.5px; padding: 8px 0; border-top: 1px solid var(--line); }
-#zoneList li > b { color: var(--friend); white-space: nowrap; }
-#zoneList li label, #zoneList li .what, #zoneList li .sum { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
-#zoneList input, #zoneList select { padding: 3px 6px; }
-#zoneList .what input[type="number"] { width: 64px; }
-#zoneList .what select { width: auto; max-width: 160px; }
-#zoneList input[type="checkbox"] { width: auto; flex: none; margin-top: 2px; }
-#zoneList li label { flex-wrap: nowrap; align-items: flex-start; }
-#zoneList .grp { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-#trigAdd select { width: auto; flex: 1; }
-#doorTrigs { display: flex; flex-direction: column; gap: 6px; }
-#missionBox, #waveBox { display: flex; flex-direction: column; gap: 8px; }
-#waveBox { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+/* ---------- the inspector column */
+#side { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+#side > * { flex-shrink: 0; }    /* a full column must scroll, never squeeze the tab strip or a section */
+#side > header { padding: 14px 16px 12px; }
+h1 { font-size: 16px; font-weight: 600; line-height: 1.2; margin: 0; letter-spacing: .005em; }
+#side > header p { margin: 2px 0 0; color: var(--ink-2); font-size: 12px; }
+#views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 0 16px; padding: 2px; background: var(--well); border: 1px solid var(--line); border-radius: 6px; }
+#views button { border: 0; background: transparent; color: var(--ink-2); border-radius: 4px; padding: 5px 4px; font-weight: 500; cursor: pointer; }
+#views button:hover { color: var(--ink); background: var(--raise); }
+#views button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+/* What to do next, in one sentence, and where things stand (20a-modes.js). */
+#nextStep { margin: 12px 16px 0; padding: 8px 10px; background: var(--bar); border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; line-height: 1.4; }
+#nextStep b { color: var(--ink); font-weight: 600; margin-right: 2px; }
+#strip { display: flex; flex-wrap: wrap; gap: 3px 14px; margin: 0; padding: 8px 16px 12px; font-size: 12px; color: var(--ink-2); }
+#strip > div { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+#strip dt::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--line-hi); vertical-align: 1px; }
+#strip div[data-tone="ok"] dt::before { background: var(--ok); }
+#strip div[data-tone="warn"] dt::before { background: var(--warn); }
+#strip div[data-tone="live"] dt::before { background: var(--friend); }
+#strip dt::after { content: ":"; }
+#strip dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 /* The panel shows one part at a time, so it never grows into one long column. */
-#tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 10px 18px; position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
-#tabs button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 5px 4px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
-#tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
-#tabs button .n { opacity: .7; font-variant-numeric: tabular-nums; margin-left: 3px; }
+#tabs { display: flex; gap: 2px; padding: 0 8px; position: sticky; top: 0; z-index: 3; background: var(--bar); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+#tabs button { flex: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-2); padding: 9px 8px 7px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+#tabs button:hover { color: var(--ink); }
+#tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent-text); }
+#tabs button .n:not(:empty) { display: inline-block; min-width: 18px; margin-left: 5px; padding: 0 5px; border-radius: 8px; background: var(--line); color: var(--ink); font: 11px/16px var(--mono); text-align: center; font-variant-numeric: tabular-nums; }
 #side[data-pane="create"]:not([data-show="map"]):not([data-show="all"]) section[data-tab="map"] { display: none !important; }
 #side[data-pane="create"]:not([data-show="enemies"]):not([data-show="all"]) section[data-tab="enemies"] { display: none !important; }
 #side[data-pane="create"]:not([data-show="triggers"]):not([data-show="all"]) section[data-tab="triggers"] { display: none !important; }
@@ -130,25 +151,42 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #side[data-pane="play"] > section:not([data-view~="play"]),
 #side[data-pane="direct"] > section:not([data-view~="direct"]),
 #side[data-pane="create"] > section[data-view]:not([data-view~="create"]) { display: none !important; }
-#views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 10px 18px 0; }
-#views button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 6px 4px; font: 600 15px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-#views button:hover { border-color: var(--ink-2); }
-#views button[aria-selected="true"] { background: var(--friend); border-color: var(--friend); color: #fff; }
-#strip { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 0; padding: 8px 18px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
-#strip div { min-width: 0; }
-#strip dt { color: var(--ink-2); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
-#strip dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+#views + #nextStep { margin-top: 12px; }
+#tabs { margin-top: 0; }
+#side[data-pane="play"] > #strip, #side[data-pane="direct"] > #strip { border-bottom: 1px solid var(--line); }
 body[data-pane="play"] #map, body[data-pane="play"] #view3d { pointer-events: none; cursor: default; }
-#catList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
-#catList button { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 1px solid transparent; background: transparent; color: inherit; border-radius: 5px; padding: 6px 8px; cursor: pointer; font-size: 13px; font-weight: 500; }
-#catList button:hover { border-color: var(--line); }
-#catList button[aria-current="true"] { background: var(--ink); color: var(--panel); }
+body[data-pane="play"] #tools .tool, body[data-pane="play"] #tools .modes + .sep { display: none; }   /* the map only shows in Play: no tool claims a click */
+
+/* Sections: one header band each, which folds the section away (32b-panel.js). Hierarchy by weight and space, not boxes. */
+#side > section { padding: 0 16px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+#side > section > h2:first-child:not(.vh) { margin: 0 -16px 2px; padding: 0 12px 0 8px; min-height: 32px; background: var(--head); border-bottom: 1px solid var(--line); font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+#side > section > h2:first-child:not(:has(> .fold)) { padding-left: 16px; }
+#side > section.shut { padding-bottom: 0; }
+#side > section.shut > h2:first-child { margin-bottom: 0; border-bottom: 0; }
+#side > section.shut > :not(h2:first-child) { display: none !important; }
+.fold { all: unset; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 32px; cursor: pointer; }
+/* One disclosure mark for folding sections and details: a 1.5 px chevron from the tool header's stroke set. */
+.fold::before, details > summary::before { content: ""; flex: none; width: 12px; height: 12px; margin: 0 2px 0 1px; background: var(--ink-2); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat; transition: transform .15s ease-out; }
+details:not([open]) > summary::before { transform: rotate(-90deg); }
+details > summary:hover::before { background: var(--ink); }
+.fold[aria-expanded="false"]::before { transform: rotate(-90deg); }
+.fold:hover::before { background: var(--ink); }
+.fold:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; border-radius: 3px; }
+h2 { font-size: 12.5px; font-weight: 600; margin: 0; color: var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fold > span:not(.chip), h2 > span:not(.chip):not(.fold) { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#side section h2:not(:first-child), #side section div > h2, h3 { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 6px 0 0; line-height: 1.3; }
+#side section div > h2:first-child { margin-top: 2px; }
+
+/* ---------- Play */
+#catList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; max-height: 280px; overflow-y: auto; }
+#catList button { width: 100%; display: flex; flex-direction: column; gap: 1px; text-align: left; border: 0; background: transparent; color: inherit; border-radius: 4px; padding: 6px 8px; cursor: pointer; font-weight: 500; }
+#catList button:hover { background: var(--raise); }
+#catList button[aria-current="true"] { background: var(--accent-soft); }
 #catList .meta { color: var(--ink-2); font-size: 11.5px; font-weight: 400; }
-#catList button[aria-current="true"] .meta { color: inherit; opacity: .8; }
 #catList .meta.refused { color: var(--enemy); }
 #playLive, #catDetails { display: flex; flex-direction: column; gap: 8px; }
 #catDetails { padding-top: 12px; border-top: 1px solid var(--line); }
-#cdTitle { color: var(--ink); font-size: 18px; letter-spacing: .04em; }
+#side #cdTitle { color: var(--ink); font-size: 15px; margin: 0; }
 #cdFile { font: 11.5px var(--mono); overflow-wrap: anywhere; }
 #cdBriefing p { margin: 0; font-size: 12.5px; font-style: italic; }
 #cdFacts { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 12.5px; }
@@ -159,209 +197,159 @@ body[data-pane="play"] #map, body[data-pane="play"] #view3d { pointer-events: no
 #cdFindings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
 #cdFindings .error { color: var(--enemy); }
 #cdFindings .note { color: var(--ink-2); }
-#replayBox input[type="range"] { width: 100%; padding: 0; }
-#replayBox select, #replayPick select { width: auto; flex: 1; min-width: 0; }
-#rpStats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
-#rpStats li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; }
-#rpStats li span { color: var(--ink-2); }
-#rpStats li b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
-#rpStats li button { all: unset; cursor: pointer; text-decoration: underline; font-weight: 600; font-variant-numeric: tabular-nums; }
-#rpEvents { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
-#rpEvents button { all: unset; cursor: pointer; display: block; width: 100%; box-sizing: border-box; padding: 3px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
-#rpEvents button:hover, #rpEvents button:focus-visible { background: var(--line); }
-#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 176px; overflow-y: auto; }
-#list li button { width: 100%; display: grid; grid-template-columns: 30px 62px 1fr auto; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 6px; cursor: pointer; font-size: 12.5px; }
-#list li button:hover { border-color: var(--line); }
-#list li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
-#list .n, #list .xy { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-#list .xy { color: var(--ink-2); }
-#list li button[aria-current="true"] .xy { color: inherit; opacity: .75; }
-#list .flag { color: var(--warn); font-weight: 600; }
-#checkSum { margin: 6px 0 8px; }
-#briefing { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: inherit; resize: vertical; }
-#zoneList .of { display: flex; flex-wrap: wrap; gap: 4px 10px; grid-column: 1 / -1; font-size: 12px; }
-#zoneList .of label { display: inline-flex; gap: 4px; align-items: center; }
-#thingList { list-style: none; margin: 8px 0 0; padding: 0; }
-#thingList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
-#thingList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
-#thingList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
-#placeList { list-style: none; margin: 8px 0 0; padding: 0; }
-#placeList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
-#placeList li button span:first-child { color: var(--place); font-weight: 600; }
-#placeList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
-#placeList li button[aria-current="true"] span:first-child { color: inherit; }
-#placeList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
-#placeReviewList { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-#placeReviewList li { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center; font-size: 12.5px; }
-#placeReviewList b { color: var(--place); overflow-wrap: anywhere; }
-#placeReviewBox { border-left: 3px solid var(--warn); padding-left: 10px; }
-#checkList { list-style: none; margin: 0; padding: 0; }
-#checkList li { border-top: 1px solid var(--line); }
-#checkList li button { width: 100%; display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: start; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 7px 0; cursor: pointer; }
-#checkList li button:disabled { cursor: default; }
-#checkList li button:not(:disabled):hover span:last-child { text-decoration: underline; }
-#checkList .lv { font-weight: 600; }
-#checkList .lv.problem { color: var(--enemy); }
-#checkList .lv.warning { color: var(--warn); }
-#checkList .lv.note { color: var(--ink-2); }
-#checkList li button.fix { width: auto; display: inline-block; margin: 0 0 8px 70px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
-#checkList li button.fix:hover { border-color: var(--ink-2); }
-/* Trigger inspector (29c-inspect.js): the state word is a badge; a failed or unconfirmed action has its own line and colour,
-   so "its actions failed" never reads like "its condition is not met". Colour is never the only sign: the words say it too. */
-#inspectList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-#inspectList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; padding: 7px 0 7px 8px; border-top: 1px solid var(--line); box-shadow: inset 3px 0 0 transparent; }
-#inspectList li.sel { box-shadow: inset 3px 0 0 var(--ink); background: color-mix(in srgb, var(--line) 35%, transparent); }
-#inspectList li.pre { box-shadow: inset 3px 0 0 var(--friend); }
-#inspectList .pick { all: unset; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 12.5px; min-width: 0; }
-#inspectList .pick:focus-visible { outline: 2px solid var(--friend); outline-offset: 2px; }
-#inspectList .title { font-weight: 600; overflow-wrap: anywhere; }
-#inspectList .word { justify-self: end; font: 500 11.5px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
-#inspectList .num { grid-column: 1 / -1; font: 11.5px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
-#inspectList .num:empty { display: none; }
-#inspectList .text { grid-column: 1 / -1; color: var(--ink-2); }
-#inspectList .outcome { grid-column: 1 / -1; font-weight: 600; }
-#inspectList .fire { padding: 3px 8px; font-size: 12px; }
-#inspectList .links { grid-column: 1 / -1; margin: 2px 0 0; }
-#inspectList li.k-counting .word, #inspectList li.k-holding .word, #inspectList li.k-cooling .word { border-color: var(--friend); color: var(--friend); }
-#inspectList li.k-fired .word, #inspectList li.k-exhausted .word { background: var(--ink); border-color: var(--ink); color: var(--panel); }
-#inspectList li.k-off .word, #inspectList li.k-chance .word, #inspectList li.k-depends .word, #inspectList li.blocked .word { border-style: dashed; border-color: var(--warn); color: var(--warn); }
-#inspectList li.k-circle .word, #inspectList li.k-never .word { border-color: var(--enemy); color: var(--enemy); }
-#inspectList li.o-failed { box-shadow: inset 3px 0 0 var(--enemy); }
-#inspectList li.o-failed .outcome { color: var(--enemy); }
-#inspectList li.o-unconfirmed .outcome { color: var(--warn); font-weight: 500; }
-#repairBox { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
-#repairTitle { margin: 0 0 4px; font-weight: 600; font-size: 13px; }
-#repairText { margin: 0 0 6px; }
-#repairEdits { margin: 0 0 8px; padding-left: 18px; font: 11.5px var(--mono); }
-#zoneList li input.msg { grid-column: 1 / -1; }
-/* Painting areas (27a-paint.js): the shape choice of a zone and the painting tools, shown in the row being painted. */
-.shape { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.shape button { border: 0; border-left: 1px solid var(--line); background: transparent; color: inherit; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 500; }
-.shape button:first-child { border-left: 0; }
-.shape button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-.shape.tools { display: grid; grid-auto-columns: 1fr; }
-#paintBox { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--friend); border-radius: 6px; background: var(--paper); font-size: 12.5px; }
-#paintBox .row { gap: 6px; flex-wrap: wrap; }
-#paintBox input[type="number"] { width: 70px; padding: 3px 6px; }
-#paintBox select { width: auto; padding: 3px 6px; }
-#paintBox .btn { padding: 3px 8px; }
-#paintTitle { color: var(--friend); }
-#paintBox #paintParts, #paintBox #paintFindings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
-#paintBox #paintParts li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; padding: 0; border-top: 0; }
-#paintBox #paintFindings li { display: block; padding: 0; border-top: 0; color: var(--enemy); }
-#empty { color: var(--ink-2); font-size: 12.5px; margin: 0; }
-#panel[hidden] { display: none; }
-#pos { font: 12px var(--mono); color: var(--ink-2); }
-#fileText { height: 130px; font: 11.5px/1.4 var(--mono); resize: vertical; }
-#saveMsg:empty { display: none; }
-#saveBox { margin-top: auto; border-bottom: 0; border-top: 1px solid var(--line); background: var(--panel); }
-@media (min-height: 680px) { #saveBox { position: sticky; bottom: 0; box-shadow: 0 -6px 12px -10px rgb(0 0 0 / .35); } }
-/* staged live changes and saved revisions (ML-014) */
-body:not(.live) #stageBox { display: none; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.pair button { border: 0; background: transparent; color: inherit; padding: 6px 4px; cursor: pointer; font-weight: 500; }
-.pair button + button { border-left: 1px solid var(--line); }
-.pair button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-.pair button:disabled { opacity: .45; cursor: not-allowed; }
-#stageList, #stageCheck ul, #stageReceipt ul, #revList, #revList .runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
-#stageList li, #stageCheck li, #stageReceipt li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
-.kind { font: 11px/1.6 var(--mono); color: var(--ink-2); text-transform: uppercase; }
-.kind.block, .kind.failed { color: var(--enemy); font-weight: 600; }
-.kind.pending, .kind.unconfirmed, .kind.warn { color: var(--warn); }
-.kind.applied { color: var(--friend); }
-#stageCheck:empty, #stageReceipt:empty, #stageList:empty { display: none; }
-#stageCheck p, #stageReceipt p { margin: 4px 0; font-size: 12.5px; }
-#revList > li { border-top: 1px solid var(--line); padding: 6px 0; display: flex; flex-direction: column; gap: 4px; }
-#revList .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
-#revList .runs { padding-left: 12px; gap: 2px; }
-#revList .row .btn { padding: 3px 8px; }
-#revOpen { border: 1px solid var(--friend); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
-#revOpen[hidden] { display: none; }
-/* rehearsal (ML-016) */
-#rhBox { display: flex; flex-direction: column; gap: 8px; }
-#rhRows, #rhSteps, #rhSaved { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
-#rhRows li { display: grid; grid-template-columns: 22px 72px minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; border-top: 1px solid var(--line); padding: 5px 0 5px 4px; }
-#rhRows li > b { color: var(--ink-2); font: 11.5px var(--mono); }
-#rhRows li .what { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
-#rhRows li.check .kind { color: var(--friend); }
-#rhRows li.event .kind { color: var(--warn); }
-#rhRows li.failed { box-shadow: inset 3px 0 0 var(--enemy); }
-#rhRows input, #rhRows select { padding: 3px 6px; width: auto; max-width: 100%; }
-#rhRows input[type="number"] { width: 68px; }
-#rhRows .btn { padding: 3px 8px; }
-#rhSteps li, #rhSaved li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
-#rhSteps .got, #rhSaved .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
-#rhSteps .mark.ok, #rhSaved .mark.ok { color: var(--friend); }
-#rhSteps .mark.bad, #rhSaved .mark.bad, #rhResult .bad { color: var(--enemy); font-weight: 600; }
-#rhResult p { margin: 4px 0; font-size: 12.5px; }
-#rhResult .ok { color: var(--friend); font-weight: 600; }
-#rhResult .assume, #rhPin.changed { border-left: 3px solid var(--warn); padding-left: 8px; }
-#rhSaved .row .btn { padding: 3px 8px; }
-#rhResult:empty, #rhSaved:empty, #rhPin:empty, #rhProblems:empty, #rhStatus:empty { display: none; }
-
-/* ---------- map ---------- */
-#stage { position: relative; min-width: 0; min-height: 0; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
-#view3d { cursor: grab; }
-#liveBox { display: none; flex-direction: column; gap: 8px; }
-body.live #liveBox { display: flex; }
-body.live .offline { display: none !important; }
-/* ---------- debrief and unused content (ML-024): plain text, as it is copied */
-body:not(.live) #unusedRuns { display: none; }
-pre.debrief { margin: 6px 0; padding: 8px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 var(--mono); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
-#liveStatus { font-weight: 500; }
-#tools .mode[aria-pressed="true"] { background: var(--friend); color: #fff; border-color: var(--friend); }
-.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
-#tools { top: 12px; left: 12px; max-width: calc(100% - 24px); }
-#tools .tool[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-#tools .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
-#floor { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 12.5px; color: var(--ink-2); }
-#floor input { width: 120px; }
-#floor output { font: 12px var(--mono); min-width: 74px; }
-#status { left: 12px; bottom: 12px; max-width: calc(100% - 24px); font-size: 12.5px; padding: 6px 10px; }
-#coords { font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
-#banner { top: 64px; left: 12px; max-width: min(520px, calc(100% - 24px)); font-size: 13px; padding: 8px 12px; }
-#banner[hidden] { display: none; }
-#liveAlert { margin: 8px 12px 0; padding: 8px 10px; border: 1px solid currentColor; border-radius: 6px; font-size: 13px; line-height: 1.4; }
-#liveAlert .btn { margin-top: 6px; }
-#readyBox { margin: 8px 0; font-size: 12.5px; }
-#readyBox summary { cursor: pointer; }
+#readyBox { font-size: 12.5px; }
 #readyList { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 #readyList li.no { font-weight: 600; }
-#drop { position: absolute; inset: 12px; border: 2px dashed var(--friend); border-radius: 12px; display: none; align-items: center; justify-content: center; font: 600 22px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--friend); background: color-mix(in srgb, var(--panel) 80%, transparent); pointer-events: none; }
-body.dragging #drop { display: flex; }
+#optPlayList { display: flex; flex-direction: column; gap: 6px; }
+#optPlayList select { min-width: 0; }
+
+/* ---------- Enemies */
+#list { list-style: none; margin: 0 -8px; padding: 0; display: flex; flex-direction: column; gap: 1px; max-height: 196px; overflow-y: auto; }
+#list li button { width: 100%; display: grid; grid-template-columns: 28px 84px minmax(0, 1fr) auto; gap: 6px; align-items: center; text-align: left; border: 0; background: transparent; border-radius: 4px; padding: 4px 8px; cursor: pointer; min-height: 28px; }
+#list li button:hover { background: var(--raise); }
+#list li button[aria-current="true"] { background: var(--accent-soft); }
+#list li button[data-squad="true"] { outline: 1px dashed var(--friend); outline-offset: -1px; }
+#list .n { font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+#list .xy { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+#list .xy .c { font: 11.5px var(--mono); }
+#list .xy { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#list li button[aria-current="true"] .n, #list li button[aria-current="true"] .xy { color: var(--ink); }
+/* The role's shape, as the map draws it: square guard, round wanderer, diamond patrol (29-controls.js sets data-role). */
+#list .role { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#list .role::before { content: ""; flex: none; width: 9px; height: 9px; background: var(--enemy); }
+#list button[data-role="Wander"] .role::before { border-radius: 50%; }
+#list button[data-role="Patrol"] .role::before { transform: rotate(45deg) scale(.86); }
+#list button[data-role="Truck"] .role::before { width: 12px; height: 6px; border-radius: 1px; }
+#list .flag { color: var(--warn); font-weight: 600; font-size: 12px; }
+#empty { color: var(--ink-2); font-size: 12.5px; margin: 0; }
+#warnings { flex-wrap: wrap; }
+#sightNote { flex-basis: 100%; margin: 0; }
+#squadBox { display: flex; flex-direction: column; gap: 8px; }
+#squadBox .row select, #squadBox .row input { width: auto; flex: 1; min-width: 0; }
+#pos { font: 12px var(--mono); color: var(--ink-2); }
+#scRemoved, #scCounter { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+#scCounter li { margin: 3px 0; overflow-wrap: anywhere; }
+#scCounter li .btn { margin-left: 6px; }
+#scEnemy { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+#scEnemy .row input[type="number"] { width: 64px; }
+#plList, #thingList, #placeList { list-style: none; margin: 0 -8px; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+#plList li button, #thingList li button, #placeList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-radius: 4px; background: transparent; color: inherit; padding: 5px 8px; cursor: pointer; min-height: 28px; align-items: center; }
+#plList li button:hover, #thingList li button:hover, #placeList li button:hover { background: var(--raise); }
+#plList li button[aria-current="true"], #thingList li button[aria-current="true"], #placeList li button[aria-current="true"] { background: var(--accent-soft); }
+#plList li button span:last-child, #thingList li button span:last-child, #placeList li button span:last-child { font: 11.5px var(--mono); color: var(--ink-2); }
+#plList li button span:first-child { color: var(--warn); font-weight: 600; overflow-wrap: anywhere; }
+#placeList li button span:first-child { color: var(--place); font-weight: 600; }
+#plUses { color: var(--enemy); }
+
+/* ---------- Map tab */
+#mapInfo { font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+#placeReviewBox { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--warn) 7%, transparent); }
+#placeReviewList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#placeReviewList li { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center; font-size: 12.5px; }
+#placeReviewList b { color: var(--place); overflow-wrap: anywhere; }
+.optWarn, #qmLeft { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn); }
+
+/* ---------- World */
+#intelBox, #doorsBox, #zoneBox, #waveBox, #missionBox, #checkBox { display: flex; flex-direction: column; gap: 8px; }
+#intelList, #doorList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#intelList li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
+#intelList b { color: var(--warn); }
+#doorList li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; }
+#doorTrigs { display: flex; flex-direction: column; gap: 6px; }
+#layerBox { top: 56px; right: 12px; flex-direction: column; align-items: stretch; gap: 4px; max-height: 60%; overflow-y: auto; font-size: 12.5px; padding: 10px 12px; }
+#layerBox label { display: flex; gap: 8px; align-items: center; }
+#layerBox .n { margin-left: auto; font: 11px var(--mono); color: var(--ink-2); padding-left: 12px; }
+
+/* ---------- Triggers: one block per trigger */
+#zoneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+#zoneList li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 6px; align-items: center; font-size: 12.5px; padding: 10px; background: var(--well); border: 1px solid var(--line); border-radius: 6px; }
+#zoneList li > b { color: var(--friend); white-space: nowrap; }
+#zoneList li label, #zoneList li .what, #zoneList li .sum { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
+#zoneList input:not([type="checkbox"]), #zoneList select { min-height: 26px; padding: 2px 6px; }
+#zoneList .what input[type="number"] { width: 64px; }
+#zoneList .what select { width: auto; max-width: 170px; }
+#zoneList input[type="checkbox"] { width: 15px; flex: none; margin-top: 1px; }
+#zoneList li label { flex-wrap: nowrap; align-items: flex-start; }
+#zoneList .grp { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+#zoneList .of { display: flex; flex-wrap: wrap; gap: 4px 10px; grid-column: 1 / -1; font-size: 12px; }
+#zoneList .of label { display: inline-flex; gap: 4px; align-items: center; }
+#zoneList li input.msg { grid-column: 1 / -1; }
+#trigAdd select, #recipeRow select { width: auto; flex: 1; min-width: 0; }
+#paintBox { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--accent-text); border-radius: 6px; background: var(--panel); font-size: 12.5px; }
+#paintBox .row { gap: 6px; flex-wrap: wrap; }
+#paintBox input[type="number"] { width: 70px; padding: 2px 6px; }
+#paintBox select { width: auto; padding: 2px 6px; }
+#paintBox .btn { padding: 3px 8px; }
+#paintTitle { color: var(--accent-text); }
+#paintBox #paintParts, #paintBox #paintFindings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+#paintBox #paintParts li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; padding: 0; border: 0; background: none; }
+#paintBox #paintFindings li { display: block; padding: 0; border: 0; background: none; color: var(--enemy); }
 /* Modules (ML-019): save a selection, insert a copy, bind what it needs from outside */
-#moduleBox { display: flex; flex-direction: column; gap: 8px; }
-#moduleBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
 #moduleBox .row select, #moduleBox .row input { width: auto; flex: 1; min-width: 0; }
 #mdlBindings, #mdlReport { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
 #mdlBindings li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
 #mdlBindings li > span:first-child { flex-basis: 100%; }
-#mdlBindings select { flex: 1; min-width: 0; width: auto; padding: 3px 6px; }
+#mdlBindings select { flex: 1; min-width: 0; width: auto; padding: 2px 6px; }
 #mdlReport li { color: var(--warn); }
 #mdlReport li.sum { color: var(--ink-2); }
-/* Packs (ML-026): export, and the import preview. Problems and map lines say so in words; the colour only repeats it. */
-#packBox { display: flex; flex-direction: column; gap: 8px; }
-#packBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
-#packModules, #packPreview ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
-#packPreview { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
-#packPreview p { margin: 0; }
-#packPreview li { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
-#packPreview select { width: auto; padding: 3px 6px; }
-#packPreview .packBad { color: var(--enemy); }
-#packPreview .packWarn { color: var(--warn); }
+
+/* ---------- Mission */
+#checkSum { margin: 0; }
+#checkList { list-style: none; margin: 0; padding: 0; }
+#checkList li { border-top: 1px solid var(--line); }
+#checkList li button { width: 100%; display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: start; text-align: left; border: 0; background: transparent; color: inherit; font-size: 12.5px; padding: 7px 0; cursor: pointer; }
+#checkList li button:disabled { cursor: default; }
+#checkList li button:not(:disabled):hover span:last-child { text-decoration: underline; text-underline-offset: 2px; }
+#checkList .lv { font-weight: 600; }
+#checkList .lv.problem { color: var(--enemy); }
+#checkList .lv.warning { color: var(--warn); }
+#checkList .lv.note { color: var(--ink-2); }
+#checkList li button.fix { width: auto; display: inline-flex; margin: 0 0 8px 70px; padding: 3px 10px; border: 1px solid var(--line-hi); border-radius: 4px; background: var(--raise); font-size: 12px; }
+#checkList li button.fix:hover { background: var(--raise-hi); }
+#repairBox { display: flex; flex-direction: column; gap: 6px; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 7%, transparent); border-radius: 6px; padding: 10px; }
+#repairTitle { margin: 0; font-weight: 600; }
+#repairText { margin: 0; }
+#repairEdits { margin: 0; padding-left: 18px; font: 11.5px var(--mono); }
+#briefing { font-size: 12.5px; resize: vertical; }
+#rhBox { display: flex; flex-direction: column; gap: 8px; }
+#rhRows, #rhSteps, #rhSaved { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+#rhRows li { display: grid; grid-template-columns: 22px 72px minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; border-top: 1px solid var(--line); padding: 5px 4px; }
+#rhRows li > b { color: var(--ink-2); font: 11.5px var(--mono); }
+#rhRows li .what { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
+#rhRows li.check .kind { color: var(--friend); }
+#rhRows li.event .kind { color: var(--warn); }
+#rhRows li.failed { background: color-mix(in srgb, var(--enemy) 10%, transparent); }
+#rhRows input, #rhRows select { padding: 2px 6px; width: auto; max-width: 100%; }
+#rhRows input[type="number"] { width: 68px; }
+#rhRows .btn, #rhSaved .row .btn, #revList .row .btn { padding: 3px 8px; }
+#rhSteps li, #rhSaved li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
+#rhSteps .got, #rhSaved .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+#rhSteps .mark.ok, #rhSaved .mark.ok, #rhResult .ok { color: var(--ok); font-weight: 600; }
+#rhSteps .mark.bad, #rhSaved .mark.bad, #rhResult .bad { color: var(--enemy); font-weight: 600; }
+#rhResult p { margin: 4px 0; font-size: 12.5px; }
+#rhResult .assume, #rhPin.changed { padding: 6px 8px; border-radius: 4px; background: color-mix(in srgb, var(--warn) 9%, transparent); }
+#rhResult:empty, #rhSaved:empty, #rhPin:empty, #rhProblems:empty, #rhStatus:empty { display: none; }
+#optList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+#optList > li { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+#optList .row input[type="text"] { flex: 1; min-width: 0; width: auto; }
+#optList .row input[type="number"] { width: 96px; }
+#optList .optChoice { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 1px solid var(--line-hi); }
+#optList .optDrops { gap: 4px 10px; font-size: 12.5px; }
+#optCheckList { list-style: none; margin: 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+#optCheckList li.error { color: var(--enemy); font-weight: 600; }
+#optCheckList li.warning { color: var(--warn); }
+#optCheckList li.note, #optCheckList li.ok { color: var(--ink-2); }
 /* Game Master budget and action cards (ML-025, 29h-cards.js). An unavailable card and a cancelled or failed press say so in
    words; the colour only repeats it. */
 #cardsBox, #cardsAuthor, #gbBody { display: flex; flex-direction: column; gap: 8px; }
 #cardsBox[hidden], #cardsAuthor[hidden], #gbBody[hidden] { display: none; }
-#cardsBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
 #cardsMeter { flex: 1; min-width: 0; height: 12px; }
 #cardsPoints { font: 12px var(--mono); font-variant-numeric: tabular-nums; }
 #cardsList, #gbActions, #gbProblems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
-#cardsList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; box-shadow: inset 3px 0 0 var(--friend); }
-#cardsList li.cannot { box-shadow: inset 3px 0 0 var(--line); }
+#cardsList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line-hi); border-radius: 6px; background: var(--well); }
+#cardsList li.cannot { border-style: dashed; border-color: var(--line); }
 #cardsList .name { font-weight: 600; overflow-wrap: anywhere; }
-#cardsList .cost { justify-self: end; font: 500 11.5px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+#cardsList .cost { justify-self: end; font: 500 11.5px var(--mono); border: 1px solid var(--line-hi); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
 #cardsList .effect, #cardsList .rest, #cardsList .rule, #cardsList .why, #cardsList .op { grid-column: 1 / -1; }
 #cardsList .rest { font: 11.5px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 #cardsList .why { color: var(--warn); }
@@ -376,38 +364,136 @@ body.dragging #drop { display: flex; }
 #gbActions .title { font-weight: 600; overflow-wrap: anywhere; }
 #gbProblems li.error { color: var(--enemy); }
 #gbProblems li.note { color: var(--warn); }
-/* constrained scatter and placement areas (ML-023, 29g-scatter.js) */
-#plList { list-style: none; margin: 8px 0 0; padding: 0; }
-#plList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
-#plList li button span:first-child { color: var(--warn); font-weight: 600; overflow-wrap: anywhere; }
-#plList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
-#plList li button[aria-current="true"] span:first-child { color: inherit; }
-#plList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
-#plUses { color: var(--enemy); }
-#scRemoved, #scCounter { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
-#scCounter li { margin: 3px 0; overflow-wrap: anywhere; }
-#scCounter li .btn { margin-left: 6px; }
-#scEnemy .row input[type="number"] { width: 64px; }
-/* Host options and the quick mission (ML-022) */
-#optList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-#optList > li { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
-#optList .row input[type="text"] { flex: 1; min-width: 0; width: auto; }
-#optList .row input[type="number"] { width: 96px; }
-#optList .optChoice { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 2px solid var(--line); }
-#optList .optDrops { gap: 4px 10px; font-size: 12.5px; }
-.optWarn, #qmLeft { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn); }
-#optCheckList { list-style: none; margin: 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
-#optCheckList li.error { color: var(--enemy); font-weight: 600; }
-#optCheckList li.warning { color: var(--warn); }
-#optCheckList li.note, #optCheckList li.ok { color: var(--ink-2); }
-#optPlayList { display: flex; flex-direction: column; gap: 6px; }
-#optPlayList select { min-width: 0; }
+/* Packs (ML-026): export, and the import preview. Problems and map lines say so in words; the colour only repeats it. */
+#packModules, #packPreview ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+#packPreview { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+#packPreview p { margin: 0; }
+#packPreview li { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+#packPreview select { width: auto; padding: 2px 6px; }
+#packPreview .packBad { color: var(--enemy); }
+#packPreview .packWarn { color: var(--warn); }
+/* staged live changes and saved revisions (ML-014) */
+body:not(.live) #stageBox { display: none; }
+#stageList, #stageCheck ul, #stageReceipt ul, #revList, #revList .runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+#stageList li, #stageCheck li, #stageReceipt li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
+.kind { font-size: 11.5px; line-height: 1.6; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.kind.block, .kind.failed { color: var(--enemy); font-weight: 600; }
+.kind.pending, .kind.unconfirmed, .kind.warn { color: var(--warn); }
+.kind.applied { color: var(--friend); }
+#stageCheck:empty, #stageReceipt:empty, #stageList:empty { display: none; }
+#stageCheck p, #stageReceipt p { margin: 4px 0; font-size: 12.5px; }
+#revList > li { border-top: 1px solid var(--line); padding: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+#revList .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+#revList .runs { padding-left: 12px; gap: 2px; }
+#revOpen { border: 1px solid var(--accent-text); border-radius: 6px; padding: 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+#revOpen[hidden] { display: none; }
+/* debrief and unused content (ML-024): plain text, as it is copied */
+body:not(.live) #unusedRuns { display: none; }
+pre.debrief { margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); background: var(--well); border: 1px solid var(--line); border-radius: 6px; }
+
+/* ---------- Direct */
+#liveBox { display: none; flex-direction: column; gap: 8px; }
+body.live #liveBox { display: flex; }
+body.live .offline { display: none !important; }
+#liveStatus { font-weight: 500; }
+#gmBox, #tryBox { display: flex; flex-direction: column; gap: 8px; }
+#tryBox { padding-top: 10px; border-top: 1px solid var(--line); }
+#liveAlert { margin: 10px 16px 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent); border-radius: 6px; font-size: 12.5px; line-height: 1.4; }
+#liveAlert .btn { margin-top: 6px; }
+/* Trigger inspector (29c-inspect.js): the state word is a badge; a failed or unconfirmed action has its own line and colour,
+   so "its actions failed" never reads like "its condition is not met". Colour is never the only sign: the words say it too. */
+#inspectList { list-style: none; margin: 0 -8px; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+#inspectList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; padding: 7px 8px; border-radius: 4px; }
+#inspectList li + li { box-shadow: 0 -1px 0 var(--line); }
+#inspectList li.sel { background: var(--accent-soft); box-shadow: none; }
+#inspectList li.o-failed { background: color-mix(in srgb, var(--enemy) 10%, transparent); }
+#inspectList .pick { all: unset; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 12.5px; min-width: 0; }
+#inspectList .pick:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+#inspectList .title { font-weight: 600; overflow-wrap: anywhere; }
+#inspectList .word { justify-self: end; font-size: 11.5px; font-weight: 500; border: 1px solid var(--line-hi); border-radius: 999px; padding: 0 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#inspectList .num { grid-column: 1 / -1; font: 11.5px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#inspectList .num:empty { display: none; }
+#inspectList .text { grid-column: 1 / -1; color: var(--ink-2); }
+#inspectList .outcome { grid-column: 1 / -1; font-weight: 600; }
+#inspectList .fire { padding: 3px 8px; font-size: 12px; }
+#inspectList .links { grid-column: 1 / -1; margin: 2px 0 0; }
+#inspectList li.pre .title::after { content: " · next"; color: var(--friend); font-weight: 500; }
+#inspectList li.k-counting .word, #inspectList li.k-holding .word, #inspectList li.k-cooling .word { border-color: var(--friend); color: var(--friend); }
+#inspectList li.k-fired .word, #inspectList li.k-exhausted .word { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+#inspectList li.k-off .word, #inspectList li.k-chance .word, #inspectList li.k-depends .word, #inspectList li.blocked .word { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+#inspectList li.k-circle .word, #inspectList li.k-never .word { border-color: var(--enemy); color: var(--enemy); }
+#inspectList li.o-failed .outcome { color: var(--enemy); }
+#inspectList li.o-unconfirmed .outcome { color: var(--warn); font-weight: 500; }
+#replayBox input[type="range"] { width: 100%; padding: 0; }
+#replayBox select, #replayPick select { width: auto; flex: 1; min-width: 0; }
+#rpStats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+#rpStats li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; }
+#rpStats li span { color: var(--ink-2); }
+#rpStats li b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+#rpStats li button { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#rpEvents { list-style: none; margin: 0 -6px; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
+#rpEvents button { all: unset; cursor: pointer; display: block; width: 100%; box-sizing: border-box; padding: 3px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+#rpEvents button:hover, #rpEvents button:focus-visible { background: var(--raise); }
+
+/* ---------- Save: always at the foot of Create */
+#saveBox { margin-top: auto; padding-top: 12px !important; padding-bottom: 12px !important; border-bottom: 0 !important; border-top: 1px solid var(--line); background: var(--panel); gap: 8px !important; }
+#saveBox .row .btn.primary { flex: 1; }
+#saveBox details > * + * { margin-top: 8px; }
+#saveMsg:empty { display: none; }
+#fileText { height: 130px; font: 11.5px/1.4 var(--mono); resize: vertical; }
+@media (min-height: 680px) { #saveBox { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 16px -12px rgb(0 0 0 / .5); } }
+
+/* ---------- map */
+#stage { position: relative; min-width: 0; min-height: 0; container: stage / inline-size; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+#view3d { cursor: grab; }
+/* Floating map controls: one depth signal, the hairline. */
+.float { position: absolute; background: var(--panel); border: 1px solid var(--line-hi); border-radius: 6px; padding: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* The tool header: one row, grouped, each tool an icon and its name. Narrow maps drop the names of the minor tools first. */
+#tools { top: 12px; left: 12px; max-width: calc(100% - 24px); flex-wrap: nowrap; gap: 2px; padding: 3px; background: var(--bar); overflow-x: auto; scrollbar-width: none; }
+#tools .btn { flex: none; min-height: 28px; padding: 0 7px; gap: 5px; border: 0; background: transparent; font-size: 12.5px; white-space: nowrap; }
+#tools .btn:hover:not(:disabled) { background: var(--raise); }
+#tools .btn.icon { padding: 0 6px; min-width: 28px; }
+#tools .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--ink-2); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#tools .btn:hover:not(:disabled) .ic { stroke: var(--ink); }
+#tools .tool[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 0 0 0 1px var(--accent-text); }
+#tools .tool[aria-pressed="true"] .ic { stroke: var(--accent-text); }
+#tools .modes { display: flex; flex: none; padding: 2px; gap: 2px; background: var(--well); border-radius: 4px; }
+#tools .modes .btn { min-height: 24px; padding: 0 9px; color: var(--ink-2); font-weight: 600; }
+#tools .modes .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+#tools .sep { flex: none; width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
+#tools .group { display: flex; align-items: center; gap: 2px; flex: none; }
+#floor { display: flex; flex: none; align-items: center; gap: 8px; padding: 0 4px 0 6px; font-size: 12.5px; color: var(--ink-2); }
+#floor input { width: 72px; }
+#floor output { font-size: 12px; min-width: 56px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.floorName { font-size: 12.5px; color: var(--ink-2); padding: 0 2px 0 4px; }
+/* Measured: the whole header is about 1000 px; without the minor names 940; without the floor words 840. */
+@container stage (max-width: 1030px) { #tools .opt { display: none; } }
+@container stage (max-width: 970px) { #floor output, .floorName { display: none; } }
+@container stage (max-width: 870px) { #tools .tool span { display: none; } #tools .tool { padding: 0 6px; } }
+#status { left: 12px; bottom: 12px; max-width: calc(100% - 140px); font-size: 12px; padding: 5px 10px; gap: 10px; background: color-mix(in srgb, var(--bar) 92%, transparent); color: var(--ink); border-radius: 4px; }
+#hintLine:empty { display: none; }
+#coords { font: 11.5px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+#coords:empty { display: none; }
+#banner { top: 56px; left: 12px; max-width: min(520px, calc(100% - 24px)); font-size: 13px; padding: 8px 12px; line-height: 1.45; }
+#banner[hidden] { display: none; }
+#drop { position: absolute; inset: 12px; border: 2px dashed var(--accent-text); border-radius: 10px; display: none; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; color: var(--accent-text); background: color-mix(in srgb, var(--panel) 82%, transparent); pointer-events: none; }
+body.dragging #drop { display: flex; }
 
 @media (max-width: 760px) {
-  body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 44%) minmax(0, 56%); }
-  #side { border-right: 0; border-bottom: 1px solid var(--line); }
-  #stage { grid-row: 2; }
+  body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 46%) minmax(0, 54%); }
+  #stage { grid-row: 1; }
+  #side { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
+  #saveBox { position: static !important; box-shadow: none !important; }
+  #tools { top: 8px; left: 8px; max-width: calc(100% - 16px); flex-wrap: wrap; }
+  #tools .sep { display: none; }                 /* a wrapped header separates by rows, not by rules */
+  #tools .floorName { display: inline; }
+  #status { left: 8px; bottom: 8px; max-width: calc(100% - 190px); font-size: 11.5px; }
+  #banner { top: 50px; left: 8px; max-width: calc(100% - 16px); }
 }
-@media (prefers-reduced-motion: no-preference) { .btn, .seg button { transition: border-color .12s, background-color .12s; } }
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .seg button, .pair button, .shape button, #views button, #tabs button, #list li button { transition: background-color .12s ease-out, border-color .12s ease-out, color .12s ease-out; }
+}
+@media (prefers-reduced-motion: reduce) { .fold::before { transition: none; } }
 </style>
 </head>

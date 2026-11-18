@@ -2,29 +2,50 @@
 <main id="stage">
   <canvas id="map" aria-label="Map. Click to place or select enemies."></canvas>
   <canvas id="view3d" aria-label="3D view of the map. Drag to look around, W A S D to fly." hidden></canvas>
+  <!-- One stroke set for the tool header: 16 px, 1.5 px lines, round ends. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-select" viewBox="0 0 16 16"><path d="M4 2.5l8.5 6.2-3.9.7 2.2 3.9-1.6.9-2.2-3.9L4 12.8z"/></symbol>
+    <symbol id="i-add" viewBox="0 0 16 16"><rect x="2.5" y="5.5" width="8" height="8" rx="1"/><path d="M12.5 1.5v5M10 4h5"/></symbol>
+    <symbol id="i-route" viewBox="0 0 16 16"><path d="M3 13l3.5-6 3.5 3.5L13 3" stroke-dasharray="2.2 2"/><circle cx="3" cy="13" r="1.3"/><circle cx="13" cy="3" r="1.3"/></symbol>
+    <symbol id="i-zone" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2.4 2"/><path d="M8 6.5v3M6.5 8h3"/></symbol>
+    <symbol id="i-thing" viewBox="0 0 16 16"><path d="M2.5 5L8 2.5 13.5 5v6L8 13.5 2.5 11z"/><path d="M2.5 5L8 7.5 13.5 5M8 7.5v6"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16"><path d="M5.5 3L2.5 6l3 3"/><path d="M2.5 6h7a3.5 3.5 0 010 7H7"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3.5 8h9"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 16 16"><path d="M8 2.5l5.5 3L8 8.5 2.5 5.5z"/><path d="M2.5 8.5L8 11.5l5.5-3M2.5 11L8 14l5.5-3"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M2.5 3h11"/><path d="M8 6v7M5 10l3 3 3-3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 16 16"><path d="M2.5 13h11"/><path d="M8 10V3M5 6l3-3 3 3"/></symbol>
+  </svg>
   <div class="float" id="tools" role="toolbar" aria-label="Map tools">
-    <button class="btn mode" type="button" id="mode2d" aria-pressed="true" title="Top-down map">2D</button>
-    <button class="btn mode" type="button" id="mode3d" aria-pressed="false" title="Fly through the map in 3D">3D</button>
+    <span class="modes" role="group" aria-label="2D or 3D">
+      <button class="btn mode" type="button" id="mode2d" aria-pressed="true" title="Top-down map">2D</button>
+      <button class="btn mode" type="button" id="mode3d" aria-pressed="false" title="Fly through the map in 3D">3D</button>
+    </span>
     <span class="sep"></span>
-    <button class="btn tool" type="button" data-tool="select" title="Select and move (V). Drag empty ground to pan.">Select</button>
-    <button class="btn tool" type="button" data-tool="add" title="Click walkable ground to place an enemy (A)">Add enemy</button>
-    <button class="btn tool" type="button" data-tool="route" title="Click to add stops to the selected enemy's patrol route (R)">Draw route</button>
-    <button class="btn tool" type="button" data-tool="zone" title="Click to place a zone. Enemies bound to it appear when a player walks in (Z)">Add zone</button>
-    <button class="btn tool" type="button" data-tool="thing" title="Click to place the thing chosen on the World tab: a weapon, an intel item ...">Add thing</button>
+    <button class="btn tool" type="button" data-tool="select" aria-label="Select" title="Select and move (V). Drag empty ground to pan."><svg class="ic"><use href="#i-select"/></svg><span>Select</span></button>
+    <button class="btn tool" type="button" data-tool="add" aria-label="Add enemy" title="Click walkable ground to place an enemy (A)"><svg class="ic"><use href="#i-add"/></svg><span>Add enemy</span></button>
+    <button class="btn tool" type="button" data-tool="route" aria-label="Draw route" title="Click to add stops to the selected enemy's patrol route (R)"><svg class="ic"><use href="#i-route"/></svg><span>Draw route</span></button>
+    <button class="btn tool" type="button" data-tool="zone" aria-label="Add zone" title="Click to place a zone. Enemies bound to it appear when a player walks in (Z)"><svg class="ic"><use href="#i-zone"/></svg><span>Add zone</span></button>
+    <button class="btn tool" type="button" data-tool="thing" aria-label="Add thing" title="Click to place the thing chosen on the World tab: a weapon, an intel item ..."><svg class="ic"><use href="#i-thing"/></svg><span>Add thing</span></button>
     <span class="sep"></span>
-    <button class="btn" type="button" id="undo" title="Undo (Ctrl+Z)">Undo</button>
-    <button class="btn" type="button" id="zoomOut" aria-label="Zoom out">−</button>
-    <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
-    <button class="btn" type="button" id="fit">Fit</button>
+    <span class="group">
+      <button class="btn" type="button" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg class="ic"><use href="#i-undo"/></svg><span class="opt">Undo</span></button>
+      <button class="btn icon" type="button" id="zoomOut" aria-label="Zoom out" title="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+      <button class="btn icon" type="button" id="zoomIn" aria-label="Zoom in" title="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button class="btn" type="button" id="fit" aria-label="Fit" title="Show the whole map"><svg class="ic"><use href="#i-fit"/></svg><span class="opt">Fit</span></button>
+    </span>
     <span class="sep"></span>
-    <button class="btn" type="button" id="layersBtn" hidden title="Switch parts of the 3D map on and off, for example invisible walls">Layers</button>
-    <button class="btn" type="button" id="floorDown" title="Hide the top floor to see the one below (PageDown)">Floor ▼</button>
-    <button class="btn" type="button" id="floorUp" title="Show the next floor up (PageUp)">Floor ▲</button>
-    <label id="floor" title="Hide everything above this height"><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10" aria-label="Show up to height"><output id="ceilingOut" for="ceiling">all floors</output></label>
+    <button class="btn" type="button" id="layersBtn" hidden aria-label="Layers" title="Switch parts of the 3D map on and off, for example invisible walls"><svg class="ic"><use href="#i-layers"/></svg><span class="opt">Layers</span></button>
+    <span class="group" role="group" aria-label="Floors">
+      <span class="floorName" aria-hidden="true">Floor</span>
+      <button class="btn icon" type="button" id="floorDown" aria-label="Floor down" title="Hide the top floor to see the one below (PageDown)"><svg class="ic"><use href="#i-down"/></svg></button>
+      <button class="btn icon" type="button" id="floorUp" aria-label="Floor up" title="Show the next floor up (PageUp)"><svg class="ic"><use href="#i-up"/></svg></button>
+      <label id="floor" title="Hide everything above this height"><input id="ceiling" type="range" min="0" max="10" step="0.5" value="10" aria-label="Show up to height"><output id="ceilingOut" for="ceiling">all floors</output></label>
+    </span>
   </div>
   <div class="float" id="layerBox" hidden></div>
   <div class="float" id="banner" hidden></div>
   <div class="float" id="status"><span id="hintLine"></span><span id="coords"></span></div>
   <div id="drop">Drop map, scenario or recon files</div>
 </main>
-

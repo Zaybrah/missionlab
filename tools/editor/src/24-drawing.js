@@ -2,7 +2,7 @@
 const css = {}; let shades = [];
 function readTokens() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'enemy', 'friend', 'warn', 'place']) css[k] = cs.getPropertyValue('--' + k).trim();
+  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'wall', 'enemy', 'friend', 'warn', 'place', 'accent-text']) css[k] = cs.getPropertyValue('--' + k).trim();
   const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const a = rgb(css['ground-lo']), b = rgb(css['ground-hi']);
   shades = Array.from({ length: 10 }, (_, i) => 'rgb(' + a.map((v, k) => Math.round(v + (b[k] - v) * i / 9)).join(',') + ')');
@@ -46,7 +46,7 @@ function draw() {
     ctx.setTransform(k * v.scale, 0, 0, k * v.scale, k * ox, k * oz);
     ctx.lineJoin = 'round';
     paths.forEach((p, i) => { ctx.fillStyle = ctx.strokeStyle = shades[i]; ctx.lineWidth = 0.8 / v.scale; ctx.fill(p); ctx.stroke(p); });
-    ctx.strokeStyle = css.ink; ctx.globalAlpha = 0.8; ctx.lineWidth = Math.min(1.5, Math.max(0.6, v.scale * 0.22)) / v.scale; ctx.stroke(m.borderPath); ctx.globalAlpha = 1;
+    ctx.strokeStyle = css.wall; ctx.globalAlpha = 0.9; ctx.lineWidth = Math.min(1.5, Math.max(0.6, v.scale * 0.22)) / v.scale; ctx.stroke(m.borderPath); ctx.globalAlpha = 1;
     ctx.restore();
   }
 
@@ -91,7 +91,7 @@ function draw() {
     const [x, y] = toScreen(t.pos[0], t.pos[2]), on = n === state.thing;
     ctx.fillStyle = css.ink; ctx.strokeStyle = css.panel; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
-    if (on) { ctx.strokeStyle = css.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke(); }
+    if (on) { ctx.strokeStyle = css['accent-text']; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke(); }
     const text = t.name.trim().slice(0, 14) + (t.trigger ? ' \u2192 ' + trigTag(t.trigger) : '');
     ctx.font = '600 11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(text, x + 10, y + 1); ctx.fillStyle = css.ink; ctx.fillText(text, x + 10, y + 1);
@@ -122,7 +122,7 @@ function draw() {
     const g = doorLine(d), set = doorSet(d), lockedNow = d.locked === true || (d.locked === null && d.isLocked === true);
     const stroke = (w, c) => { ctx.beginPath(); ctx.moveTo(g[0], g[1]); ctx.lineTo(g[2], g[3]); ctx.lineWidth = w; ctx.strokeStyle = c; ctx.stroke(); };
     ctx.lineCap = 'round'; ctx.globalAlpha = d.broken ? 0.3 : 1;
-    stroke(n === state.door ? 13 : set ? 9 : 7, n === state.door ? css.ink : css.panel);          // a casing, so the door stands out from the ground
+    stroke(n === state.door ? 13 : set ? 9 : 7, n === state.door ? css['accent-text'] : css.panel);          // a casing, so the door stands out from the ground
     if (n === state.door) stroke(9, css.panel);
     stroke(set ? 6 : 3, d.locked === true ? css.enemy : d.locked === false ? css.friend : css.ink);
     if (!set && lockedNow) { ctx.setLineDash([3, 4]); stroke(2, css.enemy); ctx.setLineDash([]); }      // the game locked this one itself
@@ -182,7 +182,7 @@ function draw() {
     if (live.on && !e.live) { ctx.lineWidth = 2; ctx.strokeStyle = css.enemy; ctx.stroke(); }
     ctx.lineWidth = 1.5; ctx.strokeStyle = bad ? css.warn : css.panel; if (bad) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
     if (e.fixed) { ctx.fillStyle = css.panel; ctx.fillRect(x - 2, y - 2, 4, 4); }
-    if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css.ink; ctx.stroke(); }
+    if (sel) { ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.lineWidth = 2.2; ctx.strokeStyle = css['accent-text']; ctx.stroke(); }
     ctx.font = '500 11px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     if (e.hvt) { ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = css.warn; ctx.stroke(); }
     const tag = String(i + 1) + (e.vehicle ? ' TRUCK' : e.hvt ? ' TARGET' : e.trigger ? ' → ' + trigTag(e.trigger) : '');
