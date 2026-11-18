@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const ROLES = ['Guard', 'Wander', 'Patrol'];
 const DRAFT_KEY = 'missionlab-editor-draft-1';
-const EDITOR_VERSION = '0.24.3';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
+const EDITOR_VERSION = '0.25.0';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
 
 const state = {
   map: null,            // walkable surface, see makeMap()
@@ -48,6 +48,12 @@ const state = {
   night: false,              // a night mission: enemies see 25 m, not 50
   insertionSpots: [],        // the map's insertions by name: {name, pos}
   weatherNow: null,     // live: what the map has and shows
+  places: [],                // named places for the HUD and logs: {id, name, pos, floor: [bottom, top] or null, area or null}
+  scenarioId: '',            // the scenario's stable identity across renames; made on the first save when missing
+  revision: 0,               // the author's save counter
+  squadRange: null,          // the author's recommended squad [min, max], or null ("squad" already names the selected enemies)
+  minutes: 0,                // the author's estimate of the mission's length (0: none given)
+  mapPrint: '',              // fingerprint of the map file the scenario's positions were made on
   mode: '2d',
 };
 const undoStack = [];

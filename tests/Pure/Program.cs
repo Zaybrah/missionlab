@@ -393,7 +393,7 @@ Console.WriteLine("files");
             Check("invalid/" + name + " is refused with the listed places", got == want && notRead == null, "got  " + got + "\n        want " + want);
             Check("invalid/" + name + " is left as it was", File.ReadAllText(file) == before);
         }
-        foreach (string good in new[] { "all_fields.json", "extraction_chance_defect.json" })
+        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "extraction_chance_defect.json" })
             Check(good + " passes the strict reader", !ScenarioFile.Blocks(ScenarioFile.Read(Fixture(good), out MissionPlan ok)) && ok != null, string.Join(" | ", ScenarioFile.Read(Fixture(good), out _).Select(f => f.ToString())));
         var legacy = ScenarioFile.Read(Fixture("legacy_minimal.json"), out MissionPlan oldPlan);
         Check("a file without a format line is read, with a note", oldPlan != null && legacy.Count == 1 && legacy[0].Level == Finding.Note && legacy[0].Code == "no-version");
@@ -407,6 +407,12 @@ Console.WriteLine("files");
         var schema = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "docs", "scenario.schema.json"))).RootElement;
         var missing = new SortedSet<string>();
         void Keys(System.Text.Json.JsonElement obj, System.Text.Json.JsonElement props, string where) { foreach (var p in obj.EnumerateObject()) if (!props.TryGetProperty(p.Name, out _)) missing.Add(where + "." + p.Name); }
+        void Area(System.Text.Json.JsonElement holder)
+        {
+            if (!holder.TryGetProperty("area", out var area)) return;
+            Keys(area, schema.GetProperty("$defs").GetProperty("area").GetProperty("properties"), "area");
+            foreach (var part in area.GetProperty("parts").EnumerateArray()) Keys(part, schema.GetProperty("$defs").GetProperty("part").GetProperty("properties"), "part");
+        }
         void Listed(System.Text.Json.JsonElement rootObj, string list, string def)
         {
             if (!rootObj.TryGetProperty(list, out var arr)) return;
@@ -414,15 +420,18 @@ Console.WriteLine("files");
             {
                 Keys(one, schema.GetProperty("$defs").GetProperty(def).GetProperty("properties"), def);
                 if (def == "trigger" && one.TryGetProperty("doors", out var td)) foreach (var door in td.EnumerateArray()) Keys(door, schema.GetProperty("$defs").GetProperty("door").GetProperty("properties"), "door");
+                if (def == "trigger" || def == "place") Area(one);
             }
         }
-        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson() };
+        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson() };
         foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json")) written.Add(Plan(File.ReadAllText(file)).ToJson());
         foreach (string text in written)
         {
             var w = System.Text.Json.JsonDocument.Parse(text).RootElement;
             Keys(w, schema.GetProperty("properties"), "scenario");
-            Listed(w, "triggers", "trigger"); Listed(w, "spawns", "spawn"); Listed(w, "doors", "door"); Listed(w, "things", "thing");
+            // missionlab-plan/2: the body under "mission" has the same keys as a plan/1 file.
+            if (w.TryGetProperty("mission", out var body)) { w = body; Keys(w, schema.GetProperty("properties"), "mission"); }
+            Listed(w, "triggers", "trigger"); Listed(w, "spawns", "spawn"); Listed(w, "doors", "door"); Listed(w, "things", "thing"); Listed(w, "places", "place");
         }
         Check("the schema names every key the plugin writes", missing.Count == 0, string.Join(", ", missing));
 
@@ -456,6 +465,42 @@ SyntheticMaps.Run(Check);
 Console.WriteLine("message queue");
 Messages.Run(Check);
 
+// ---------------------------------------------------------------- trigger explanation, outcomes, moved places (ML-015)
+Console.WriteLine("trigger explanation");
+EngineTests.Run(Check);
+
+// ---------------------------------------------------------------- rehearsal: scripted events against a scenario (ML-016)
+Console.WriteLine("rehearsal");
+RehearsalTests.Run(Check);
+
+// ---------------------------------------------------------------- format v2: envelope, areas in files, places, metadata (ML-027, ML-018, ML-013)
+Console.WriteLine("format v2");
+FormatV2Tests.Run(Check);
+
+// ---------------------------------------------------------------- painted areas: the shared point fixture, refusals, canonical text, the old circle (ML-027)
+Console.WriteLine("painted areas");
+AreaTests.Run(Check);
+
+// ---------------------------------------------------------------- painted areas live: refused shapes, kept history, seams, gaps, everyone (ML-027 D)
+Console.WriteLine("painted areas live");
+AreaRuntimeTests.Run(Check);
+
+// ---------------------------------------------------------------- saved revisions: identity, file, run links (ML-014)
+Console.WriteLine("saved revisions");
+RevisionsTests.Run(Check);
+
+// ---------------------------------------------------------------- mission catalogue: author's words apart from measurements, run links, safe names (ML-013)
+Console.WriteLine("mission catalogue");
+CatalogueTests.Run(Check);
+
+// ---------------------------------------------------------------- rehearsal through the browser link: the answer, kept tests, the editor's trace (ML-016)
+Console.WriteLine("rehearsal endpoint");
+RehearsalsTests.Run(Check);
+
+// ---------------------------------------------------------------- the trigger diagnostic example: every inspector state, with its sentences (ML-015)
+Console.WriteLine("trigger diagnostic example");
+DiagnosticTests.Run(Check);
+
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;
 
@@ -471,4 +516,6 @@ sealed class World : ITriggerWorld
     public bool Occupied(TriggerPlan t, out V3 where) { where = new V3(1, 2, 3); return Inside.Contains(t.Id); }
     public bool Down(int count, string tag) => count <= 0 ? AllDown : DownCount >= count;
     public bool DoorOpen(V3 hinge) => Door;
+    // The set above says who is inside: one living player, inside or not. EngineTests has a world that counts more players.
+    int ITriggerWorld.Inside(TriggerPlan t, out int alive) { alive = 1; return Inside.Contains(t.Id) ? 1 : 0; }
 }

@@ -1,1 +1,1 @@
-{ "schema": "missionlab-plan/2", "areas": [ { "id": 1, "cells": "…" } ], "spawns": [ { "pos": [0, 0, 0] } ] }
+{ "schema": "missionlab-plan/3", "areas": [ { "id": 1, "cells": "…" } ], "mission": { "spawns": [ { "pos": [0, 0, 0] } ] } }

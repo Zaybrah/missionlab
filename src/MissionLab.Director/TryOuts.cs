@@ -609,6 +609,7 @@ namespace MissionLab
         {
             GameManagerNetwork g = GameManagerNetwork.instance;
             if (g == null) return "end: the game's mission keeper was not found";
+            try { RunRecord.Ending(success ? "success" : "failed"); } catch { }      // the run record names how this mission ended once the end is seen
             if (!success)
             {
                 // The game's failed screen closes again at once while a player is alive (seen in a run), so the players are told in words too.

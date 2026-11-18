@@ -64,6 +64,15 @@ build your own, or one scenario file. The browser page has the same list ("Next 
 uses"). The choice is the `Scenario` setting. `examples/` holds a hand-made scenario for
 Clean House that uses zones, a patrol, a prone guard, a fixed sentry and moved intel.
 
+### Missions to play
+Three finished missions for Clean House ship in `examples/`, each with a short briefing and clear endings:
+`clean_house_quiet_raid.json` (stealth: take the phone and leave; a four-minute countdown only after an alarm),
+`clean_house_escalation.json` (hold a room upstairs against timed waves) and `clean_house_game_master.json` (the
+host fires events by hand; taking the phone or 20 minutes opens the way out without them). Squad size and minutes
+in each file are the author's estimates: none has been playtested yet, so no measured duration exists. Each stays
+finishable when its chance enemies are absent. `docs/first-edit.md` walks a first-time host through playing one,
+changing an encounter, fixing a Mission check warning and saving it.
+
 ### Zones
 A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
 `"trigger": <id>` is not on the map at the start; it appears when the first player walks
@@ -249,6 +258,39 @@ in the enemy panel, for everything selected.
 - **Ready-made sets** on the Triggers tab: a countdown after the intel, an alarm that calls help,
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
+
+### New in 0.25.0 (not run in the game yet)
+The authoring milestone of `docs/backlog.md` (ML-027, ML-013 to ML-020). Everything here is covered by `./test.sh`;
+what it does for players in a running mission still has to be seen in the game (`docs/backlog-status.md`).
+- **Painted trigger areas** (ML-027). A zone or hold trigger can cover a painted shape instead of a circle: brush,
+  eraser, rectangle and polygon, with corner handles, holes (a courtyard) and separate pieces, each on its own floor
+  band, so a house can be its ground floor, its upstairs and its stairs and nothing else. Entering, holding and
+  "everyone" use the shape; moving between touching pieces is not leaving. The circle stays for every existing file.
+  A file with a painted area is written as `missionlab-plan/2` with the scenario under `"mission"`, so 0.23 and 0.24
+  refuse it rather than reading a circle. A shape changed during a mission restarts a hold in progress and keeps what
+  has fired. Checking a player against four complex areas costs about 33 µs a frame (`CoreTest --bench-areas`).
+- **Play, Create and Direct** (ML-013). Play lists the scenarios in the game's folder with their briefing, the author's
+  squad size and estimate, the measured duration of earlier runs (or "not measured yet") and the last run's result,
+  and picks the next mission without any placement controls. Create is the editor; Direct is the running mission.
+- **Draft changes** (ML-014). In Draft, changes to a running mission are collected, shown as a short list of what
+  they do, and sent together with Apply; each part reports back. Revisions can be saved with a note and opened as a
+  separate draft; runs played with a revision are listed with it.
+- **Why a trigger waits** (ML-015). The Direct pane says for every trigger what it waits for, with the real values
+  ("1 of 2 living players inside", "12 s left", "trigger 4 sat this mission out"), whether its actions were carried
+  out, failed or only asked for, and highlights what it depends on and what it brings.
+- **Rehearsal** (ML-016). Write down events (the phone is taken at 0:30, an alarm at 1:00) and what should follow,
+  run them through the plugin's own trigger rules, and keep them as tests beside the scenario. It checks the rules
+  only: spotting, paths, physics, the network and fights are not predicted.
+- **Repairs** (ML-017) for a few Mission check findings: put a thing back on walkable ground, move enemies standing
+  on one spot apart, renumber a trigger number used twice. Each is shown before it is applied and is one Undo step.
+- **Named places** (ML-018) such as "Rear stairs", a point or a painted area with its floor; their names appear in
+  the trigger panel, Mission check and replays. A scenario remembers which map file it was made on
+  (`"mapPrint"`), and asks you to check its places when that file changed.
+- **Encounter modules** (ML-019): save enemies with their triggers as a module and insert copies elsewhere, turned
+  and moved, with fresh numbers; doors and other outside links must be bound first. Two examples in `examples/modules/`.
+- **Three missions** (ML-020) for Clean House and a first-edit walkthrough (`docs/first-edit.md`), not playtested yet.
+- **About this mission:** a stable `"id"`, a `"revision"` counted on every save, the author's `"squad"` range and
+  `"minutes"` estimate.
 
 ### New in 0.24.3 (not run in the game yet)
 The rest of v0.24 in `docs/backlog.md` that can be done without the game (ML-006, ML-009, ML-010, ML-011 preparation, ML-012).

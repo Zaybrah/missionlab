@@ -2,7 +2,7 @@
 const css = {}; let shades = [];
 function readTokens() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'enemy', 'friend', 'warn']) css[k] = cs.getPropertyValue('--' + k).trim();
+  for (const k of ['paper', 'panel', 'ink', 'ink-2', 'line', 'ground-lo', 'ground-hi', 'enemy', 'friend', 'warn', 'place']) css[k] = cs.getPropertyValue('--' + k).trim();
   const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const a = rgb(css['ground-lo']), b = rgb(css['ground-hi']);
   shades = Array.from({ length: 10 }, (_, i) => 'rgb(' + a.map((v, k) => Math.round(v + (b[k] - v) * i / 9)).join(',') + ')');
@@ -55,16 +55,30 @@ function draw() {
   for (const p of state.authored) { const [x, y] = toScreen(p[0], p[2]); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 1;
 
-  // Zones: walk in here and the enemies bound to it appear.
-  for (const z of state.zones) {
-    if (z.when !== 'zone') continue;
-    const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id);
-    ctx.beginPath(); ctx.arc(x, y, z.radius * v.scale, 0, Math.PI * 2);
-    ctx.globalAlpha = done ? 0.04 : 0.1; ctx.fillStyle = css.friend; ctx.fill();
-    ctx.globalAlpha = done ? 0.4 : 0.9; ctx.setLineDash([8, 5]); ctx.lineWidth = 1.6; ctx.strokeStyle = css.friend; ctx.stroke(); ctx.setLineDash([]);
-    ctx.font = '600 12px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = css.friend; ctx.fillText('Zone ' + z.id, x, y - z.radius * v.scale - 3);
+  // Zones: walk in here and the enemies bound to it appear. A painted area (27a-paint.js) replaces the circle; the anchor
+  // keeps a small cross, since labels and rally points still use it.
+  const shownFloor = paintShownFloor();
+  state.zones.forEach((z, zi) => {
+    if (z.when !== 'zone' || !isVec(z.pos)) return;
+    const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id), painted = !!(z.area && z.area.parts && z.area.parts.length), editing = paintIs('trigger', zi);
+    let top = y - z.radius * v.scale - 3;
+    if (painted || editing) {
+      drawArea(ctx, z.area, { colour: css.friend, fill: done ? 0.05 : editing ? 0.2 : 0.12, line: done ? 0.4 : 0.95, width: editing ? 2.2 : 1.6, floor: shownFloor });
+      ctx.globalAlpha = done ? 0.4 : 0.9; ctx.strokeStyle = css.friend; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5); ctx.stroke();
+      top = y - 7;
+    } else {
+      ctx.beginPath(); ctx.arc(x, y, z.radius * v.scale, 0, Math.PI * 2);
+      ctx.globalAlpha = done ? 0.04 : 0.1; ctx.fillStyle = css.friend; ctx.fill();
+      ctx.globalAlpha = done ? 0.4 : 0.9; ctx.setLineDash([8, 5]); ctx.lineWidth = 1.6; ctx.strokeStyle = css.friend; ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.globalAlpha = done ? 0.4 : 0.9;
+    ctx.font = '600 12px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = css.friend; ctx.fillText('Zone ' + z.id, x, top);
     ctx.globalAlpha = 1;
-  }
+  });
+
+  // Named places (29b-places.js): a pin or a painted outline, with the name.
+  drawPlaces();
 
   // The mission's intel items.
   state.things.forEach((t, n) => {
@@ -223,10 +237,15 @@ function draw() {
     }
   }
 
+  if (state.repair) drawRepair();          // a previewed repair: the searched area, before and after (34a-repairs.js)
+  if (state.inspectSel) drawInspect();     // the inspected trigger: what it needs and what it brings (29c-inspect.js)
+  if (state.rehearse && (state.rehearse.picking || state.rehearse.focus)) drawRehearsal();   // the players of the rehearsal row being edited (29d-rehearse.js)
+
   if (drag && drag.box && drag.moved) {
     ctx.fillStyle = css.friend; ctx.globalAlpha = 0.1; ctx.fillRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy);
     ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeStyle = css.friend; ctx.setLineDash([5, 4]); ctx.strokeRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy); ctx.setLineDash([]);
   }
+  drawPaint(ctx);            // the painting tool under way: brush tip, rectangle, polygon, corner handles (27a-paint.js)
 
   // Scale bar: this is a map, so say what a length on it means.
   const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500]; let len = steps[steps.length - 1];

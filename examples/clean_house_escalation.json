@@ -1,0 +1,103 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: Escalation",
+  "id": "sc-cleanhouse-escalation",
+  "briefing": [
+    "Clean House, escalation. Clear the house and hold the upper floor, north end.",
+    "Stay there for three minutes in one go. Waves come from the north, each a little later.",
+    "You have fifteen minutes from the start. Dead players come back twice."
+  ],
+  "squad": [2, 4],
+  "minutes": 15,
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "Pacing: rising pressure. Few enemies at the start, then a wave of two patrols at 90 s and every 75 s after it, four waves in all, and one last push at 7 minutes.",
+    "Completion: a player stays inside the upper floor's north room for 180 s without leaving (trigger 3 'Hold the floor'); trigger 4 'Held' then ends the mission as a success. Failure: trigger 6 'Overrun' at 15 minutes ends it as failed (with a warning at one minute and at ten seconds); everyone dead also ends it, as in the game.",
+    "Rally: reaching the north room (trigger 1 'Upstairs') calls every enemy within 25 m to it, so the hold starts with a fight.",
+    "Optional content: the third patrol of each wave comes one mission in two (chance 50). The hold and both endings do not depend on it.",
+    "Minutes and squad are the author's estimate; no playtest has measured them yet."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "Upstairs",
+      "when": "zone",
+      "pos": [-20.0, 3.68, 4.0],
+      "radius": 4.5,
+      "rally": 25,
+      "facePlayer": true,
+      "message": "This is the room. Hold it for three minutes: they are coming to you."
+    },
+    {
+      "id": 2,
+      "name": "Waves",
+      "when": "time",
+      "delay": 90,
+      "repeat": 75,
+      "times": 4,
+      "hunt": true,
+      "facePlayer": true,
+      "message": "{time} in: another wave from the north. {enemies} left."
+    },
+    {
+      "id": 3,
+      "name": "Hold the floor",
+      "when": "hold",
+      "pos": [-20.0, 3.68, 4.0],
+      "radius": 4.5,
+      "hold": 180,
+      "facePlayer": true,
+      "message": "Three minutes held."
+    },
+    {
+      "id": 4,
+      "name": "Held",
+      "when": "after",
+      "after": 3,
+      "delay": 5,
+      "facePlayer": true,
+      "message": "The floor is yours: mission accomplished.",
+      "end": "success"
+    },
+    {
+      "id": 5,
+      "name": "Last push",
+      "when": "time",
+      "delay": 420,
+      "hunt": true,
+      "red": true,
+      "facePlayer": true,
+      "message": "Everything they have left is coming now."
+    },
+    {
+      "id": 6,
+      "name": "Overrun",
+      "when": "time",
+      "delay": 900,
+      "warn": true,
+      "red": true,
+      "facePlayer": true,
+      "message": "Too late: the house is lost.",
+      "end": "failed"
+    }
+  ],
+  "objectives": [],
+  "respawn": {
+    "after": 30,
+    "times": 2
+  },
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Wander", "pos": [-20.5, 0.68, -4.0], "yaw": 200, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 5, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-21.0, -2.32, 6.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [0.0, 0.0, 70.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "chance": 50, "patrol": [[0.0, 0.08, 34.0], [-9.0, 0.36, 8.0], [-3.0, 0.0, -12.0]]},
+    {"group": 3, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []},
+    {"group": 3, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []},
+    {"group": 3, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []}
+  ]
+}

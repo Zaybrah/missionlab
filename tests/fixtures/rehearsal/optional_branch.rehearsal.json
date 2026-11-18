@@ -1,0 +1,5 @@
+{"schema":"missionlab-rehearsal/1","name":"the ambush opens the way out","players":1,"steps":[
+{"at":0,"players":[[0,0,0]]},
+{"at":5,"event":"intel","item":"cell phone"},
+{"at":6,"expect":{"fired":[1,2,3],"extraction":"open","enemies":2}}
+]}

@@ -38,6 +38,9 @@ Untested, never Pass.
 | Invalid completion path refused | Pending | Pending | Pending (refusal test: log reason, game's own mission played) |
 | Non-host and unsupported-mode behaviour | Pending | Pending | Pending (the mod sets nothing up) |
 | Rejoin or late join if the base game supports it | Pending | Pending | Pending (Unavailable if the game does not allow it) |
+| Mission to play (ML-020): Quiet Raid, `examples/clean_house_quiet_raid.json` | Pending | Pending | Pending (finished or failed and why; start and end time for the measured duration; save, reload and a second run) |
+| Mission to play (ML-020): Escalation, `examples/clean_house_escalation.json` | Pending | Pending | Pending (waves at 90, 165, 240 and 315 s; the hold; ending; duration; save, reload and a second run) |
+| Mission to play (ML-020): Game Master, `examples/clean_house_game_master.json` | Pending | Pending | Pending (which triggers the host fired and when; how the way out opened; duration; save, reload and a second run) |
 
 ## Before the session
 

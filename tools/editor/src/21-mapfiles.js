@@ -56,6 +56,20 @@ function parseTiles(bytes) {
   for (const t of parts) { tris.set(t, at); at += t.length; }
   return tris;
 }
+// The map file's fingerprint, as ScenarioFile.MapPrint has it: FNV-1a 64 over the raw bytes. The 64-bit sum is carried in
+// four 16-bit pieces because BigInt per byte is too slow for a map file of many megabytes; the result is the same.
+function mapPrintOf(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let h0 = 0x2325, h1 = 0x8422, h2 = 0x9ce4, h3 = 0xcbf2;
+  for (let i = 0; i < bytes.length; i++) {
+    h0 ^= bytes[i];
+    // times 0x100000001b3: each piece by 0x1b3, plus the pieces two lower shifted by 8 bits
+    const a0 = h0 * 0x1b3, a1 = h1 * 0x1b3 + (a0 >>> 16), a2 = h2 * 0x1b3 + h0 * 0x100 + (a1 >>> 16), a3 = h3 * 0x1b3 + h1 * 0x100 + (a2 >>> 16);
+    h0 = a0 & 0xffff; h1 = a1 & 0xffff; h2 = a2 & 0xffff; h3 = a3 & 0xffff;
+  }
+  const hex = v => v.toString(16).padStart(4, '0');
+  return 'fnv1a64:' + hex(h3) + hex(h2) + hex(h1) + hex(h0);
+}
 async function readMapFile(buffer) {
   const files = await unzip(buffer);
   const extra = files.get('graph0_extra.binary');

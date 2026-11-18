@@ -1,14 +1,16 @@
 // ------------------------------------------------------------------ live link to the running game
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
-// players and enemies where they are right now. Every change you make here is carried out in the game.
+// players and enemies where they are right now. In Live mode every change you make here is carried out in the game at once;
+// in Draft mode changes are staged and go to the game together with Apply changes (31a-stage.js).
 const PAGE_STAMP = '__ML_PAGE_STAMP__';        // filled in by the game when it serves this page
-const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, status: null, statusAt: 0, runsFor: null, session: null, trig: new Map(), wave: null, ops: new Map(), opsSession: null, following: new Set() };
+const live = { vehicleTypes: [], on: false, rev: null, nav: '', hasGeo: false, sending: false, pending: false, applying: false, players: [], enemies: [], types: [], pushTimer: 0, status: null, statusAt: 0, runsFor: null, session: null, trig: new Map(), wave: null, ops: new Map(), opsSession: null, following: new Set(), staged: [] };
 // Reading the game's state is a plain request. A change carries a number of its own and the mission it was made for:
 // the game carries a number out once, and refuses a change that was meant for another mission.
 const newCommand = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-const api = async (path, body) => {
-  if (body === undefined) return (await fetch(path, { cache: 'no-store' })).json();
-  const command = newCommand(), headers = { 'Content-Type': 'application/json', 'X-MissionLab': '1', 'X-MissionLab-Command': command };
+// A retry passes the number of the first try, so the game answers it from what it already did and never does it twice.
+const api = async (path, body, again) => {
+  if (body === undefined) { const s = await (await fetch(path, { cache: 'no-store' })).json(); if (path === '/api/state') stageSeen(s); return s; }
+  const command = again || newCommand(), headers = { 'Content-Type': 'application/json', 'X-MissionLab': '1', 'X-MissionLab-Command': command };
   if (typeof live.session === 'string') headers['X-MissionLab-Session'] = live.session;
   const r = await fetch(path, { method: 'POST', cache: 'no-store', headers, body: JSON.stringify(body) });
   let s = null; try { s = await r.json(); } catch (e) { /* no body */ }
@@ -82,7 +84,7 @@ async function followCommand(command) {
       try { k = await (await fetch('/api/command/' + encodeURIComponent(command), { cache: 'no-store' })).json(); } catch (e) { continue; }
       if (!k || !Array.isArray(k.ops)) return;           // the game no longer knows it: nothing more to learn
       const now = k.ops.map(o => o.status).join();
-      if (now !== seen) { seen = now; noteOps(k.ops); live.rev = null; syncSide(); invalidate(); }   // something settled: take the game's state over again
+      if (now !== seen) { seen = now; noteOps(k.ops); stageReceipt(command, k); live.rev = null; syncSide(); invalidate(); }   // something settled: take the game's state over again
       if (!k.ops.some(o => o.status === 'pending')) {
         if (k.ops.some(o => o.status === 'failed')) say(opsSummary(k) + '.');
         return;

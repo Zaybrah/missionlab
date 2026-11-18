@@ -1,21 +1,109 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/Zaybrah/missionlab/blob/main/docs/scenario.schema.json",
- "title": "MissionLab scenario, missionlab-plan/1",
- "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger numbers are unique, and every link points at a trigger that exists. Keys that are not listed are ignored.",
+ "title": "MissionLab scenario, missionlab-plan/1 and missionlab-plan/2",
+ "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1 holds the scenario at the root. missionlab-plan/2 holds the same body under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger and place numbers are unique, every link points at a trigger that exists, and every area is a sound shape. Keys that are not listed are ignored.",
  "type": "object",
- "required": [
-  "spawns"
+ "if": {
+  "required": [
+   "schema"
+  ],
+  "properties": {
+   "schema": {
+    "const": "missionlab-plan/2"
+   }
+  }
+ },
+ "then": {
+  "required": [
+   "mission"
+  ]
+ },
+ "else": {
+  "required": [
+   "spawns"
+  ]
+ },
+ "allOf": [
+  {
+   "if": {
+    "required": [
+     "schema"
+    ],
+    "properties": {
+     "schema": {
+      "const": "missionlab-plan/1"
+     }
+    }
+   },
+   "then": {
+    "properties": {
+     "triggers": {
+      "items": {
+       "not": {
+        "required": [
+         "area"
+        ]
+       }
+      },
+      "description": "A shaped area needs missionlab-plan/2"
+     }
+    }
+   }
+  }
  ],
  "properties": {
   "schema": {
    "type": "string",
    "description": "The format. A file with a higher number is refused by this version",
-   "pattern": "^missionlab-plan/1$"
+   "pattern": "^missionlab-plan/[12]$"
+  },
+  "mission": {
+   "$ref": "#",
+   "description": "missionlab-plan/2 only: the scenario itself, the same keys as a missionlab-plan/1 file without its schema key"
   },
   "name": {
    "type": "string",
    "description": "The mission's name"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^[A-Za-z0-9_-]{1,64}$",
+   "description": "A stable identity that survives renames; the editor makes one (sc- and 10 characters) when a file has none"
+  },
+  "revision": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "The author's save counter"
+  },
+  "squad": {
+   "type": "array",
+   "minItems": 2,
+   "maxItems": 2,
+   "items": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 16
+   },
+   "description": "The author's recommended number of players, [fewest, most]"
+  },
+  "minutes": {
+   "type": "number",
+   "exclusiveMinimum": 0,
+   "maximum": 600,
+   "description": "The author's estimate of how long the mission takes; measured times come from run records"
+  },
+  "mapPrint": {
+   "type": "string",
+   "pattern": "^fnv1a64:[0-9a-f]{16}$",
+   "description": "FNV-1a 64 of the raw bytes of the navmesh file the coordinates were made on, to tell a changed map"
+  },
+  "places": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/place"
+   },
+   "description": "Named places, so that logs and explanations can say where in words; labels only"
   },
   "scene": {
    "type": "string",
@@ -151,6 +239,104 @@
    },
    "description": "[x, y, z] in the game's metres"
   },
+  "point": {
+   "type": "array",
+   "minItems": 2,
+   "maxItems": 2,
+   "items": {
+    "type": "number"
+   },
+   "description": "[x, z] in the game's metres"
+  },
+  "ring": {
+   "type": "array",
+   "minItems": 3,
+   "maxItems": 256,
+   "items": {
+    "$ref": "#/$defs/point"
+   },
+   "description": "A closed outline, either winding, without repeating its first point; it must not cross itself"
+  },
+  "part": {
+   "type": "object",
+   "required": [
+    "floor",
+    "outline"
+   ],
+   "properties": {
+    "floor": {
+     "type": "array",
+     "minItems": 2,
+     "maxItems": 2,
+     "items": {
+      "type": "number"
+     },
+     "description": "[bottom, top] world height in metres, top above bottom, at most 60 apart"
+    },
+    "outline": {
+     "$ref": "#/$defs/ring"
+    },
+    "holes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ring"
+     },
+     "description": "Rings inside the outline that are not part of the area; their edges are"
+    }
+   }
+  },
+  "area": {
+   "type": "object",
+   "required": [
+    "parts"
+   ],
+   "properties": {
+    "parts": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 32,
+     "items": {
+      "$ref": "#/$defs/part"
+     },
+     "description": "The area is the union of its parts; at most 2048 points in all"
+    }
+   }
+  },
+  "place": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "pos"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "A whole number from 1, unique among the places"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "pos": {
+     "$ref": "#/$defs/vec3",
+     "description": "Where it is; with an area, only its label"
+    },
+    "floor": {
+     "type": "array",
+     "minItems": 2,
+     "maxItems": 2,
+     "items": {
+      "type": "number"
+     },
+     "description": "[bottom, top] world height in metres for a place given as a point (3 m around pos)"
+    },
+    "area": {
+     "$ref": "#/$defs/area"
+    }
+   }
+  },
   "trigger": {
    "type": "object",
    "required": [
@@ -189,6 +375,10 @@
     "radius": {
      "type": "number",
      "description": "zone and hold: metres"
+    },
+    "area": {
+     "$ref": "#/$defs/area",
+     "description": "zone and hold, missionlab-plan/2 only: a shaped place that replaces the circle for who is inside; pos stays the anchor"
     },
     "facePlayer": {
      "type": "boolean",

@@ -1,0 +1,106 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: Game Master",
+  "id": "sc-cleanhouse-gm",
+  "briefing": [
+    "Clean House with a Game Master. Find the phone; the host may open the way out sooner.",
+    "Host: open the page's Direct view and press Fire now on triggers 1 to 5 when the moment fits.",
+    "Host: if you do nothing, taking the phone or 20 minutes opens the extraction by itself."
+  ],
+  "squad": [2, 6],
+  "minutes": 25,
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "Pacing: set by the host. Triggers 1 to 5 never fire by themselves; the host fires them by hand with Fire now while the mission runs.",
+    "1 'GM: patrol from the north' brings two patrols. 2 'GM: lights out' cuts the power, 3 'GM: lights on' brings it back. 4 'GM: hunters' brings two enemies that walk to the nearest player. 5 'GM: open the way out' opens the extraction at once.",
+    "Completion: extract once the extraction is open. It opens by itself when the phone is taken (trigger 6) or 20 minutes in (trigger 7, which the extraction waits for), so the mission can be finished with no host action at all. Failure: everyone dead, as in the game.",
+    "Optional content: one wanderer in the yard at (-4, -2) is there one mission in two (chance 50).",
+    "Minutes and squad are the author's estimate; no playtest has measured them yet."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "GM: patrol from the north",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "message": "Movement to the north."
+    },
+    {
+      "id": 2,
+      "name": "GM: lights out",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "power": "off",
+      "message": "The power is cut."
+    },
+    {
+      "id": 3,
+      "name": "GM: lights on",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "power": "on",
+      "message": "The power is back."
+    },
+    {
+      "id": 4,
+      "name": "GM: hunters",
+      "when": "after",
+      "after": 0,
+      "hunt": true,
+      "red": true,
+      "facePlayer": true,
+      "message": "Someone is hunting you."
+    },
+    {
+      "id": 5,
+      "name": "GM: open the way out",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "extraction": "open",
+      "message": "The way out is open."
+    },
+    {
+      "id": 6,
+      "name": "Phone taken",
+      "when": "intel",
+      "item": "Cell Phone",
+      "facePlayer": true,
+      "extraction": "open",
+      "message": "Phone secured. The way out is open."
+    },
+    {
+      "id": 7,
+      "name": "Way out by itself",
+      "when": "time",
+      "delay": 1200,
+      "facePlayer": true,
+      "message": "Twenty minutes: the way out is open."
+    }
+  ],
+  "objectives": [],
+  "extraction": {
+    "after": 7
+  },
+  "gameMaster": true,
+  "respawn": {
+    "after": 20
+  },
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Wander", "pos": [-20.5, 0.68, -4.0], "yaw": 200, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 5, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-22.0, 3.68, -17.0], "yaw": 0, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": true, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Patrol", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},
+    {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "chance": 50, "patrol": []},
+    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [0.0, 0.0, 70.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[0.0, 0.08, 34.0], [-9.0, 0.36, 8.0], [-3.0, 0.0, -12.0]]},
+    {"group": 3, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": []},
+    {"group": 3, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": []}
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "about": "Painted trigger areas (ML-027): made-up coordinates, not from any map. Both the plugin (tests/Pure/AreaTests.cs) and the editor (tests/editor/run.mjs) check every point and every refusal here. Areas are written canonically, so writing one out gives the same text. Refusals are checked at \"t\", so paths read t.area...",
+  "areas": [
+    {
+      "name": "L-shaped house",
+      "area": {"parts":[{"floor":[0,2.5],"outline":[[0,0],[20,0],[20,10],[10,10],[10,20],[0,20]]}]},
+      "points": [
+        {"p":[15,1,5],"in":true,"why":"east wing"},
+        {"p":[5,1,15],"in":true,"why":"north wing"},
+        {"p":[5,1,5],"in":true,"why":"where the wings meet"},
+        {"p":[15,1,15],"in":false,"why":"the outdoor corner the L leaves out"},
+        {"p":[10,1,15],"in":true,"why":"on the wall at the inner corner"},
+        {"p":[-5,1,5],"in":false,"why":"outside to the west"},
+        {"p":[5,3,5],"in":false,"why":"3 m up: the ground-floor part ends at 2.5 m"}
+      ]
+    },
+    {
+      "name": "courtyard house",
+      "area": {"parts":[{"floor":[0,3],"outline":[[0,0],[30,0],[30,30],[0,30]],"holes":[[[10,10],[10,20],[20,20],[20,10]]]}]},
+      "points": [
+        {"p":[5,1,5],"in":true,"why":"the building round the courtyard"},
+        {"p":[15,1,15],"in":false,"why":"the middle of the courtyard"},
+        {"p":[10,1,15],"in":true,"why":"on the courtyard's edge: a hole's edge belongs to the area"},
+        {"p":[10.005,1,15],"in":true,"why":"0.005 m into the courtyard: still on its edge"},
+        {"p":[10.02,1,15],"in":false,"why":"0.02 m into the courtyard"},
+        {"p":[30,1,15],"in":true,"why":"on the outer wall"},
+        {"p":[0,1,0],"in":true,"why":"on an outer corner"},
+        {"p":[30.005,1,15],"in":true,"why":"0.005 m outside the outer wall: within the edge tolerance"},
+        {"p":[30.02,1,15],"in":false,"why":"0.02 m outside the outer wall"}
+      ]
+    },
+    {
+      "name": "two-floor house round a courtyard, with stairs",
+      "area": {"parts":[
+        {"floor":[0,2.8],"outline":[[0,0],[20,0],[20,20],[0,20]],"holes":[[[8,8],[12,8],[12,12],[8,12]]]},
+        {"floor":[3,5.8],"outline":[[0,0],[20,0],[20,20],[0,20]],"holes":[[[8,8],[12,8],[12,12],[8,12]]]},
+        {"floor":[0,5.8],"outline":[[16,2],[19,2],[19,8],[16,8]]}
+      ]},
+      "points": [
+        {"p":[4,1,4],"in":true,"why":"ground floor"},
+        {"p":[4,4,4],"in":true,"why":"upper floor"},
+        {"p":[4,2.9,4],"in":false,"why":"between the two floor bands, away from the stairs"},
+        {"p":[17,2.9,5],"in":true,"why":"halfway up the stairs"},
+        {"p":[17,5,5],"in":true,"why":"the top of the stairs"},
+        {"p":[10,4,10],"in":false,"why":"the open air above the courtyard"},
+        {"p":[10,1,10],"in":false,"why":"the courtyard itself"},
+        {"p":[4,6,4],"in":false,"why":"on the roof, above the top floor"}
+      ]
+    },
+    {
+      "name": "two rooms that touch",
+      "area": {"parts":[
+        {"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]]},
+        {"floor":[0,3],"outline":[[10,0],[20,0],[20,10],[10,10]]}
+      ]},
+      "points": [
+        {"p":[10,1,5],"in":true,"why":"exactly on the shared seam"},
+        {"p":[9.9,1,5],"in":true,"why":"just west of the seam"},
+        {"p":[10.1,1,5],"in":true,"why":"just east of the seam"},
+        {"p":[20.5,1,5],"in":false,"why":"outside the east room"}
+      ]
+    },
+    {
+      "name": "a band of heights",
+      "area": {"parts":[{"floor":[1,4],"outline":[[0,0],[0,10],[10,10],[10,0]]}]},
+      "points": [
+        {"p":[5,1,5],"in":true,"why":"exactly at the bottom"},
+        {"p":[5,4,5],"in":true,"why":"exactly at the top"},
+        {"p":[5,4.001,5],"in":false,"why":"1 mm above the top"},
+        {"p":[5,0.999,5],"in":false,"why":"1 mm below the bottom"}
+      ]
+    },
+    {
+      "name": "two huts apart",
+      "area": {"parts":[
+        {"floor":[0,3],"outline":[[0,0],[5,0],[5,5],[0,5]]},
+        {"floor":[0,3],"outline":[[50,0],[55,0],[55,5],[50,5]]}
+      ]},
+      "points": [
+        {"p":[2,1,2],"in":true,"why":"the first hut"},
+        {"p":[52,1,2],"in":true,"why":"the second hut"},
+        {"p":[25,1,2],"in":false,"why":"the open ground between them"}
+      ]
+    }
+  ],
+  "invalid": [
+    {"name":"an upside-down floor","area":{"parts":[{"floor":[3,0],"outline":[[0,0],[10,0],[10,10],[0,10]]}]},"expect":["bad-area t.area.parts[0].floor"]},
+    {"name":"a part taller than 60 m","area":{"parts":[{"floor":[0,61],"outline":[[0,0],[10,0],[10,10],[0,10]]}]},"expect":["bad-area t.area.parts[0].floor"]},
+    {"name":"a ring of two points","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"a bow-tie","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,10],[10,0],[0,10]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"a corner touching another edge","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[5,0],[0,10]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"the first point repeated at the end","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10],[0,0]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"a tiny area","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[0.4,0],[0.4,0.4],[0,0.4]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"a point far off the map","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[200000,0],[0,10]]}]},"expect":["bad-area t.area.parts[0].outline"]},
+    {"name":"a hole outside its outline","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]],"holes":[[[20,20],[22,20],[22,22],[20,22]]]}]},"expect":["bad-area t.area.parts[0].holes[0]"]},
+    {"name":"a hole sticking out of its outline","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]],"holes":[[[5,5],[15,5],[15,8],[5,8]]]}]},"expect":["bad-area t.area.parts[0].holes[0]"]},
+    {"name":"a tiny hole","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]],"holes":[[[5,5],[5.2,5],[5.2,5.2],[5,5.2]]]}]},"expect":["bad-area t.area.parts[0].holes[0]"]},
+    {"name":"overlapping holes","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[30,0],[30,30],[0,30]],"holes":[[[5,5],[15,5],[15,15],[5,15]],[[10,10],[20,10],[20,20],[10,20]]]}]},"expect":["bad-area t.area.parts[0].holes[1]"]},
+    {"name":"no parts","area":{"parts":[]},"expect":["bad-area t.area.parts"]},
+    {"name":"too many parts","area":{"parts":[
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},
+      {"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]},{"floor":[0,3],"outline":[[0,0],[1,0],[1,1],[0,1]]}
+    ]},"expect":["bad-area t.area.parts"]},
+    {"name":"a point with three numbers","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0,5],[10,10],[0,10]]}]},"expect":["wrong-type t.area.parts[0].outline[1]"]},
+    {"name":"a hole point that is not a pair","area":{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]],"holes":[[[1,1],[2,1],"x"],"y"]}]},"expect":["wrong-type t.area.parts[0].holes[0][2]","wrong-type t.area.parts[0].holes[1]"]},
+    {"name":"an area that is text","area":"the whole house","expect":["wrong-type t.area"]},
+    {"name":"parts that are not a list","area":{"parts":{"floor":[0,3]}},"expect":["wrong-type t.area.parts"]},
+    {"name":"parts of the wrong types","area":{"parts":[5,{"floor":"low","outline":"square","holes":3},{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]]}]},"expect":["wrong-type t.area.parts[0]","wrong-type t.area.parts[1].floor","wrong-type t.area.parts[1].outline","wrong-type t.area.parts[1].holes"]}
+  ]
+}

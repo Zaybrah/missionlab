@@ -20,5 +20,20 @@
  ],
  "unknown_values.json": ["unknown-kind triggers[0].when", "unknown-value triggers[1].power", "unknown-value triggers[1].end", "unknown-value triggers[1].extraction", "unknown-value spawns[0].skill", "unknown-value power"],
  "not_json.json": ["not-json "],
- "no_spawns.json": ["unknown-format schema"]
+ "no_spawns.json": ["unknown-format schema"],
+ "envelope_without_mission.json": ["wrong-type mission"],
+ "area_in_plan1.json": ["bad-area triggers[0].area"],
+ "area_on_alert.json": ["bad-area triggers[0].area"],
+ "bad_area.json": [
+  "bad-area triggers[0].area.parts[0].floor", "bad-area triggers[0].area.parts[1].outline", "bad-area triggers[0].area.parts[2].outline",
+  "bad-area triggers[0].area.parts[3].outline", "bad-area triggers[0].area.parts[4].outline", "bad-area triggers[0].area.parts[5].holes[0]",
+  "bad-area triggers[1].area.parts",
+  "bad-area triggers[2].area"
+ ],
+ "bad_places.json": [
+  "bad-id places[0].id", "duplicate-id places[2].id", "missing-field places[3].name", "missing-field places[4].pos",
+  "bad-area places[5].floor", "wrong-type places[6].floor"
+ ],
+ "bad_metadata.json": ["bad-id id", "out-of-range revision", "out-of-range squad", "out-of-range minutes", "unknown-value mapPrint"],
+ "bad_metadata_types.json": ["wrong-type id", "wrong-type revision", "wrong-type minutes", "wrong-type squad"]
 }

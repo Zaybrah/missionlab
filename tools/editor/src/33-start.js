@@ -8,4 +8,5 @@ const served = /^https?:$/.test(location.protocol) && /^(localhost|127\.0\.0\.1)
 if (served) startLive(); else if (!restoreDraft()) loadExample();
 setTool('select'); syncSide();
 { let tab = 'map'; try { tab = localStorage.getItem('missionlab-tab') || (served ? 'enemies' : 'map'); } catch (e) { /* storage unavailable */ } showTab(window.__mlAllTabs ? 'all' : ['map', 'enemies', 'triggers', 'doors', 'mission'].includes(tab) ? tab : 'map'); }
+startViews();
 requestAnimationFrame(fit);

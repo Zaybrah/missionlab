@@ -135,7 +135,8 @@ namespace MissionLab
             // Recordings, run records and map files by name, so a mission can be played back or reported after it has ended. Names only: no folders.
             if (r.Path == "/api/replays") return HttpResponse.Json(Replay.ListJson());
             foreach (var kind in new[] { ("/api/replay/", Replay.Dir, ".json", "application/json"), ("/api/runfile/", RunRecord.Dir, ".run.json", "application/json"),
-                                         ("/api/mapfile/", _navDir, ".bytes", "application/octet-stream"), ("/api/geofile/", _mapsDir, ".mlgeo", "application/octet-stream") })
+                                         ("/api/mapfile/", _navDir, ".bytes", "application/octet-stream"), ("/api/geofile/", _mapsDir, ".mlgeo", "application/octet-stream"),
+                                         ("/api/scenariofile/", Catalogue.Dir, ".json", "application/json") })
             {
                 if (!r.Path.StartsWith(kind.Item1, StringComparison.Ordinal)) continue;
                 string name = Uri.UnescapeDataString(r.Path.Substring(kind.Item1.Length));
@@ -149,6 +150,10 @@ namespace MissionLab
 
             // Answered here, without the game's thread: it works when the game is busy, in the lobby and between missions.
             if (r.Path == "/api/status") return HttpResponse.Json(_status);
+            { HttpResponse saved = Revisions.Handle(r); if (saved != null) return saved; }     // revisions: files only (ML-014)
+            { HttpResponse listed = Catalogue.Handle(r); if (listed != null) return listed; }  // mission catalogue and saving a scenario: files only (ML-013)
+            { HttpResponse rehearsed = Rehearsals.Handle(r); if (rehearsed != null) return rehearsed; }   // rehearsal and kept tests: Core only, no game objects (ML-016)
+            { HttpResponse kept = Modules.Handle(r); if (kept != null) return kept; }         // encounter modules: files only (ML-019)
             if (r.Path.StartsWith("/api/command/", StringComparison.Ordinal) && !change)
             {
                 string asked = CommandLedger.Clean(Uri.UnescapeDataString(r.Path.Substring("/api/command/".Length)));

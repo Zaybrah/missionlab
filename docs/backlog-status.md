@@ -24,11 +24,25 @@ In the game so far (17 November, 0.24.0, one player): the trigger engine, a shar
 | ML-011 co-op proof | Prepared | `examples/clean_house_acceptance.json`, `docs/coop-record.md`, the README Status table | Needs you and a friend without the mod |
 | ML-012 packaging | Built | ZIP built and its contents checked, refused when the page is stale or its version differs; build on Windows and Linux with the references checked first; readiness rows incl. version mismatch with the repair step, mode, map data, compatibility; report with an optional scenario and run, listing its contents, without names or folders | The ZIP on a clean game install |
 
-## v0.25 and v0.26
+## v0.25
 
-Not started. ML-027 (painted trigger areas) comes first in v0.25; its area model is to be agreed with ML-007.
-One piece of ML-015 is already there: the page shows where each trigger stands in the running mission
-(waiting, being held, counting down, fired, armed again later, done repeating, sat out, in a circle).
+Built in 0.25.0; nothing of it has run in the game yet.
+
+| Ticket | State | Tested | Still open |
+|---|---|---|---|
+| ML-027 painted trigger areas | Built | Area model and containment in C# and the editor from one fixture (`tests/fixtures/area_points.json`: L-shape, courtyard hole and its edge, floors, stairs, seams, vertical bounds, tolerance); geometry refusals; plan/2 envelope refused by a verbatim copy of the 0.23 reader; brush, eraser, rectangle and polygon give the same shape; undo; live shape edit is one checked change that restarts a hold and keeps history; hold across touching parts vs a real gap; everyone in the union; circles unchanged; 33 µs a frame for four complex areas (`CoreTest --bench-areas`) | In the game and co-op: the L-shaped house, courtyard, floors, stairs, beside an outside wall, everyone/hold; whether the player's position is at the feet on stairs and crouching |
+| ML-013 Play / Create / Direct | Built | Catalogue entries (author's squad and estimate apart from measured duration; unknown stays unknown); panes hide placement controls in Play | In the game: choosing and starting the supplied mission from Play |
+| ML-014 draft changes | Built | Semantic diff, nothing sent before Apply, invalid batches blocked, revisions saved/listed/opened as a separate draft | In the game: a staged batch applied, retried and partly failed |
+| ML-015 trigger inspector | Built | Explain sentences with real values, outcomes (applied/failed/unconfirmed), highlight sets; `examples/clean_house_diagnostic.json` (no circle: examples may not hold one) | In the game: every state on screen, refresh |
+| ML-016 rehearsal | Built | Phone starts the countdown, an optional branch cannot remove the way out, player-count variants, a changed scenario fails a saved test by step and trigger | Through the running plugin from the page |
+| ML-017 repairs | Built | Snap to walkable ground within bounds, separate enemies, duplicate number; preview, one Undo step, re-check, explanation when nothing fits | |
+| ML-018 named places | Built | Overlapping floors stay apart, rename keeps the id, map print change asks for a review, export holds only labels/coordinates/references | Names in replays of a real recording |
+| ML-019 encounter modules | Built | Two copies are independent, turning and moving keep positions/facing/routes/areas together, unbound links block export, two examples | Another map: placement on its walkable ground |
+| ML-020 three missions | Written | Strict read, Completion for every roll, round trip | Playtests with an unmodded client, measured durations, a first-time host on `docs/first-edit.md` |
+
+## v0.26
+
+Not started.
 
 ## Decisions taken while building
 

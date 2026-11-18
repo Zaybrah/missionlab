@@ -1,0 +1,75 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: Quiet Raid",
+  "id": "sc-cleanhouse-quiet",
+  "briefing": [
+    "Clean House, quiet raid. Take the phone upstairs and leave without a fight.",
+    "The way out stays shut until you hold the phone.",
+    "If they raise the alarm, help arrives from the north and you have four minutes."
+  ],
+  "squad": [1, 4],
+  "minutes": 15,
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "Pacing: quiet. Few enemies, one yard patrol, no timer until somebody is seen. Play it in a find-intel mission so that the phone is there.",
+    "Completion: take the phone (trigger 1 'Phone taken'), which opens the extraction, then extract. Failure: four minutes after the alarm (trigger 3 'Too late') the mission fails; everyone dead also ends it, as in the game.",
+    "Alarm (trigger 2): two patrols from the north come and hunt the nearest player. Nothing on the way out depends on the alarm or on any roll.",
+    "Optional content: the wanderer outside the house at (-25, 14) is there one mission in two (chance 50). The mission plays the same without him.",
+    "Minutes and squad are the author's estimate; no playtest has measured them yet."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "Phone taken",
+      "when": "intel",
+      "item": "Cell Phone",
+      "facePlayer": true,
+      "message": "Phone secured. The extraction is open."
+    },
+    {
+      "id": 2,
+      "name": "Alarm",
+      "when": "alert",
+      "delay": 10,
+      "facePlayer": true,
+      "hunt": true,
+      "red": true,
+      "message": "They know you are here. More are coming from the north: four minutes."
+    },
+    {
+      "id": 3,
+      "name": "Too late",
+      "when": "after",
+      "after": 2,
+      "delay": 240,
+      "facePlayer": true,
+      "warn": true,
+      "red": true,
+      "message": "Too late: their help has the house.",
+      "end": "failed"
+    }
+  ],
+  "objectives": [
+    {
+      "name": "Cell Phone_1",
+      "pos": [-20.75, 4.78, 6.5],
+      "yaw": 260
+    }
+  ],
+  "extraction": {
+    "after": 1
+  },
+  "insertion": "Alpha 2",
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-18.0, 0.69, -17.0], "yaw": 180, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 0, "role": "Wander", "pos": [-22.5, 3.68, -1.0], "yaw": 90, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 4, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Patrol", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},
+    {"group": 1, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "chance": 50, "patrol": []},
+    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]}
+  ]
+}

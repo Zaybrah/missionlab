@@ -1,0 +1,9 @@
+{"schema":"missionlab-rehearsal/1","name":"phone starts the countdown","players":2,"roll":12345,"steps":[
+{"at":0,"players":[[0,0,0],[2,0,0]]},
+{"at":5,"event":"intel","item":"cell phone"},
+{"at":10,"expect":{"fired":[1],"notFired":[2,3],"phase":{"2":"counting"},"extraction":"held","enemies":3}},
+{"at":66,"expect":{"fired":[2],"extraction":"open","enemies":5}},
+{"at":70,"players":[[100,0,100],[101,0,99]]},
+{"at":75,"expect":{"phase":{"3":"holding"}}},
+{"at":81,"expect":{"fired":[3]}}
+]}

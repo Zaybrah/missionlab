@@ -14,22 +14,48 @@ const r2 = v => Math.round(v * 100) / 100;
 const r3 = p => [r2(p[0]), r2(p[1]), r2(p[2])];
 const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
 function fileName() { return (state.title.trim().toLowerCase().replace(/\.json$/, '').replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'scenario') + '.json'; }
+// The file's key order is the plugin's ToJson order, so the two write alike. A plan with a shaped trigger area goes into the
+// missionlab-plan/2 envelope: older MissionLab versions then refuse it rather than read the shape as its anchor circle.
 function scenarioObject() {
-  return {
-    schema: 'missionlab-plan/1',
+  if (!state.scenarioId) state.scenarioId = newScenarioId();
+  const print = state.map && !state.map.isExample && state.map.print ? state.map.print : state.mapPrint;
+  const triggers = zonesOut(), places = placesOut(), settings = settingsOut();
+  delete settings.briefing;      // written near the top, where the plugin writes it
+  const body = {
     name: state.title.trim(),
+    id: state.scenarioId,
+    ...(state.revision > 0 ? { revision: state.revision } : {}),
+    ...(state.briefing.length ? { briefing: state.briefing.slice(0, 4) } : {}),
+    ...(state.squadRange ? { squad: state.squadRange.slice(0, 2) } : {}),
+    ...(state.minutes > 0 ? { minutes: r2(state.minutes) } : {}),
+    seed: 0,
     scene: state.scene.trim(),
     navFile: state.navFile,
-    seed: 0,
+    ...(print ? { mapPrint: print } : {}),
     notes: ['Made with the MissionLab scenario editor'],
-    triggers: zonesOut(),
+    triggers,
     objectives: objectivesOut(true),
     doors: doorsOut(),
     ...(state.things.length ? { things: thingsOut() } : {}),
-    ...settingsOut(),
+    ...(places.length ? { places } : {}),
+    ...settings,
     spawns: state.enemies.map(spawnOf),
   };
+  if (triggers.some(t => t.area)) return { schema: 'missionlab-plan/2', mission: body };
+  return { schema: 'missionlab-plan/1', ...body };
 }
+// A scenario's identity: 'sc-' and ten base-36 characters, made once and kept across renames.
+function newScenarioId() {
+  const digits = '0123456789abcdefghijklmnopqrstuvwxyz', bytes = new Uint8Array(10);
+  if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes); else for (let i = 0; i < 10; i++) bytes[i] = Math.floor(Math.random() * 256);
+  let id = 'sc-'; for (const b of bytes) id += digits[b % 36];
+  return id;
+}
+// Named places (ML-018): labels for where things happen. Key order id, name, pos, floor, area, as the plugin writes them.
+// An area painted and then erased to nothing is left out: the place is a point again, and the strict reader refuses empty parts.
+const placesOut = () => state.places.map(p => ({ id: p.id, name: p.name, pos: r3(p.pos), ...(p.floor ? { floor: [r2(p.floor[0]), r2(p.floor[1])] } : {}), ...(p.area && p.area.parts.length ? { area: areaWrite(p.area) } : {}) }));
+const placesIn = list => (Array.isArray(list) ? list : []).filter(p => p && p.id > 0 && typeof p.name === 'string' && p.name && isVec(p.pos)).map(p => ({ id: p.id | 0, name: p.name, pos: p.pos.slice(0, 3),
+  floor: Array.isArray(p.floor) && p.floor.length === 2 && p.floor.every(v => typeof v === 'number' && isFinite(v)) ? p.floor.slice(0, 2) : null, area: p.area ? areaRead(p.area) : null }));
 function spawnOf(e) {
   return {
     group: e.group, role: e.role, pos: r3(e.pos), yaw: r2(e.yaw), indoor: !!e.indoor, defensive: !!e.defensive,
@@ -124,7 +150,8 @@ const thingsOut = () => state.things.map(t => ({ name: t.name, pos: r3(t.pos), y
 const briefingIn = list => (Array.isArray(list) ? list : []).map(cleanMessage).filter(Boolean).slice(0, 4);
 const zonesOut = () => state.zones.map(z => {
   const o = { id: z.id, name: z.name || '', when: z.when || 'zone' };
-  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } if (z.everyone) o.everyone = true; }
+  // An area with no parts left (painted, then all erased) is a plain circle: {"parts":[]} would be refused as bad-area.
+  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.area && z.area.parts && z.area.parts.length) o.area = areaWrite(z.area); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } if (z.everyone) o.everyone = true; }
   if (o.when === 'door' && isVec(z.pos)) o.pos = r3(z.pos);
   if (o.when === 'down') { o.count = Math.max(0, z.count | 0); if (z.tag) o.tag = z.tag; }
   if (o.when === 'all' || o.when === 'any') o.of = (z.of || []).filter(id => id !== z.id && state.zones.some(q => q.id === id));
@@ -147,7 +174,7 @@ const zonesOut = () => state.zones.map(z => {
   if (z.end === 'success' || z.end === 'failed') o.end = z.end;
   return o;
 });
-const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false, hunt: false, respawn: false }, more || {});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, area: null, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false, hunt: false, respawn: false }, more || {});
 const cleanMessage = t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 // What a trigger waits for, in a few words.
 const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
@@ -159,6 +186,7 @@ const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id 
   of: (Array.isArray(z.of) ? z.of : []).map(v => v | 0).filter(v => v > 0), chance: Math.max(1, Math.min(100, Math.round(num(z.chance, 100)))), warn: z.warn === true,
   everyone: z.everyone === true, tag: cleanTag(z.tag), repeat: Math.max(0, Math.min(3600, num(z.repeat, 0))), times: Math.max(0, Math.min(100, num(z.times, 0) | 0)), rally: Math.max(0, Math.min(300, num(z.rally, 0))), red: z.red === true, hunt: z.hunt === true, respawn: z.respawn === true,
   name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
+  area: (z.when === 'zone' || z.when === 'hold' || !WHENS.includes(z.when)) && z.area ? areaRead(z.area) : null,
   delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
   power: z.power === 'off' || z.power === 'on' ? z.power : '', message: cleanMessage(z.message), end: z.end === 'success' || z.end === 'failed' ? z.end : '',
   doors: (Array.isArray(z.doors) ? z.doors : []).filter(d => d && isVec(d.pos) && (tri(d.locked) !== null || tri(d.open) !== null)).map(d => ({ name: typeof d.name === 'string' ? d.name : '', pos: d.pos.slice(0, 3), locked: tri(d.locked), open: tri(d.open) })) }));
@@ -230,21 +258,30 @@ function syncLayers() {
   [...sums.entries()].sort((p, q) => q[1] - p[1]).forEach(([name, n]) => row(name === 'PlayerBlock' ? 'PlayerBlock (invisible walls, shown see-through red)' : name === 'AI_VisionBlock' ? 'AI_VisionBlock (blocks only what enemies see)' : name, n, !hidden.layers.has(name), on => { if (on) hidden.layers.delete(name); else hidden.layers.add(name); }));
   row('Shapes without a visible model (often invisible walls)', bare, !hidden.unmodelled, on => { hidden.unmodelled = !on; });
 }
+// One enemy per line, so a file with many enemies stays readable; the same layout inside the plan/2 envelope.
 function scenarioText() {
-  const o = scenarioObject(), head = Object.assign({}, o); delete head.spawns;
-  return JSON.stringify(head, null, 1).replace(/\n}$/, ',\n "spawns": [\n' + o.spawns.map(s => '  ' + JSON.stringify(s)).join(',\n') + '\n ]\n}\n');
+  const o = scenarioObject(), body = o.mission || o, spawns = body.spawns, pad = o.mission ? '  ' : ' ', mark = 'MISSIONLAB_SPAWNS_GO_HERE';
+  body.spawns = mark;
+  const list = spawns.length ? '[\n' + spawns.map(s => pad + ' ' + JSON.stringify(s)).join(',\n') + '\n' + pad + ']' : '[]';
+  return JSON.stringify(o, null, 1).replace('"' + mark + '"', () => list) + '\n';
 }
 const isVec = p => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every(v => typeof v === 'number' && isFinite(v));
-// The scenario file's contract, missionlab-plan/1, as the plugin reads it (ScenarioFile.cs holds the same rules, and
+// The scenario file's contract, missionlab-plan/1 and /2, as the plugin reads it (ScenarioFile.cs holds the same rules, and
 // tests/fixtures/invalid holds files both must judge alike). Returns findings: level, a short fixed code, the place in the
 // file and a sentence. Nothing is quietly dropped or bent into shape: an error means the file is not loaded.
-const PLAN_VERSION = 1, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
+// plan/2 carries the plan/1 body under "mission"; it is written only when a trigger has a shaped area.
+const PLAN_VERSION = 2, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
 const SPAWN_FIELDS = ['n:yaw', 'n:detectionRange', 'n:hearingRange', 'n:fov', 'n:wanderDistance', 'n:patrolWaitSeconds', 'n:chance', 'i:group', 'i:trigger', 'i:lot', 'i:either', 'i:option', 'i:team', 'i:minPlayers',
   'b:indoor', 'b:defensive', 'b:fixed', 'b:prone', 'b:hvt', 'b:vehicle', 'b:nvg', 's:role', 's:type', 's:skill', 's:tag'];
 const TRIGGER_FIELDS = ['n:radius', 'n:delay', 'n:hold', 'n:chance', 'n:repeat', 'n:rally', 'i:count', 'i:times', 'i:after', 'b:facePlayer', 'b:warn', 'b:everyone', 'b:red', 'b:hunt', 'b:respawn',
   's:name', 's:when', 's:item', 's:message', 's:power', 's:end', 's:extraction', 's:tag'];
 const THING_FIELDS = ['s:name', 'n:yaw', 'n:chance', 'i:trigger'], DOOR_FIELDS = ['s:name', 'b:locked', 'b:enemiesCanOpen', 'b:open', 'n:chance'];
+// Takes the parsed file, or its text: text that is not JSON gets the plugin's not-json finding.
 function scenarioProblems(obj) {
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); }
+    catch (err) { return [{ level: 'error', code: 'not-json', path: '', text: 'this is not a JSON file: ' + (err && err.message ? err.message : err) }]; }
+  }
   const found = [], bad = (code, path, text) => found.push({ level: 'error', code, path, text }), note = (code, path, text) => found.push({ level: 'note', code, path, text });
   const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v), has = (o, k) => o[k] !== undefined && o[k] !== null;
   const whole = v => typeof v === 'number' && Number.isInteger(v), spot = v => Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every(n => typeof n === 'number');
@@ -256,14 +293,20 @@ function scenarioProblems(obj) {
   const doorsOf = (list, at) => { if (!Array.isArray(list)) return bad('wrong-type', at, '"doors" is a list');
     list.forEach((d, i) => { const one = at + '[' + i + ']'; if (!isObj(d)) return bad('wrong-type', one, 'a door is an object');
       if (!(has(d, 'pos') && spot(d.pos))) bad('missing-field', one + '.pos', 'a door needs "pos": [x, y, z], the place of its hinge'); types(d, one, DOOR_FIELDS); }); };
-  let root = obj;
+  let root = obj, version = 1;
   if (isObj(root) && isObj(root.plan)) root = root.plan;
   if (!isObj(root)) { bad('wrong-type', '', 'a scenario is a JSON object'); return found; }
-  if (!has(root, 'schema')) note('no-version', 'schema', 'the file names no format; it is read as missionlab-plan/' + PLAN_VERSION);
+  if (!has(root, 'schema')) note('no-version', 'schema', 'the file names no format; it is read as missionlab-plan/1');
   else {
     const sv = typeof root.schema === 'string' ? root.schema : '', m = /^missionlab-plan\/(\d+)$/.exec(sv), v = m ? +m[1] : 0;
     if (v <= 0) { bad('unknown-format', 'schema', '"' + sv + '" is not a MissionLab scenario format'); return found; }
     if (v > PLAN_VERSION) { bad('future-version', 'schema', 'this file is missionlab-plan/' + v + '; this version of MissionLab reads missionlab-plan/' + PLAN_VERSION + '. Update MissionLab to use it. The file was not changed'); return found; }
+    version = v;
+  }
+  // In plan/2 the body sits under "mission"; every other place named below is relative to it.
+  if (version >= 2) {
+    if (!isObj(root.mission)) { bad('wrong-type', 'mission', 'a missionlab-plan/2 file keeps its plan in "mission", an object'); return found; }
+    root = root.mission;
   }
   const ids = new Set(), link = (o, at) => { if (has(o, 'trigger') && whole(o.trigger) && o.trigger !== 0 && !ids.has(o.trigger)) bad('missing-ref', at + '.trigger', 'there is no trigger ' + o.trigger); };
   if (has(root, 'triggers')) {
@@ -281,6 +324,11 @@ function scenarioProblems(obj) {
         const when = has(t, 'when') && typeof t.when === 'string' ? t.when : 'zone';
         if (!PLAN_KINDS.includes(when)) return bad('unknown-kind', at + '.when', '"' + when + '" is not a kind of trigger this version knows');
         if ((when === 'zone' || when === 'hold' || when === 'door') && !(has(t, 'pos') && spot(t.pos))) bad('missing-field', at + '.pos', 'a ' + when + ' trigger needs "pos": [x, y, z]');
+        if (has(t, 'area')) {
+          if (when !== 'zone' && when !== 'hold') bad('bad-area', at + '.area', 'only zone and hold triggers have an area');
+          else if (version < 2) bad('bad-area', at + '.area', 'a shaped area needs missionlab-plan/2: save the file again with this MissionLab');
+          else areaProblems(t.area, at, bad);
+        }
         if (when === 'after' && has(t, 'after') && whole(t.after)) {
           if (t.after !== 0 && t.after === me) bad('self-ref', at + '.after', 'the trigger waits for itself');
           else if (t.after !== 0 && !ids.has(t.after)) bad('missing-ref', at + '.after', 'there is no trigger ' + t.after);
@@ -312,11 +360,76 @@ function scenarioProblems(obj) {
   }
   if (has(root, 'doors')) doorsOf(root.doors, 'doors');
   if (has(root, 'respawn')) { if (!isObj(root.respawn)) bad('wrong-type', 'respawn', '"respawn" is an object: {"after": seconds, "times": waves}'); else types(root.respawn, 'respawn', ['n:after', 'i:times']); }
-  types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed']);
+  if (has(root, 'places')) {
+    if (!Array.isArray(root.places)) bad('wrong-type', 'places', '"places" is a list');
+    else {
+      const seen = new Set();
+      root.places.forEach((p, i) => {
+        const at = 'places[' + i + ']';
+        if (!isObj(p)) return bad('wrong-type', at, 'a place is an object');
+        if (!has(p, 'id') || !whole(p.id) || p.id < 1) bad('bad-id', at + '.id', 'a place needs a whole number from 1 as its "id"');
+        else { if (seen.has(p.id)) bad('duplicate-id', at + '.id', 'place number ' + p.id + ' is used twice'); seen.add(p.id); }
+        if (!has(p, 'name') || (typeof p.name === 'string' && p.name.trim() === '')) bad('missing-field', at + '.name', 'a place needs a "name"');
+        if (!(has(p, 'pos') && spot(p.pos))) bad('missing-field', at + '.pos', 'a place needs "pos": [x, y, z]');
+        types(p, at, ['i:id', 's:name']);
+        if (has(p, 'floor')) {
+          const f = p.floor;
+          if (!(Array.isArray(f) && f.length === 2 && typeof f[0] === 'number' && typeof f[1] === 'number')) bad('wrong-type', at + '.floor', '"floor" is [bottom, top] in metres');
+          else if (f[1] < f[0]) bad('bad-area', at + '.floor', 'the top of the floor band is below its bottom');
+        }
+        if (has(p, 'area')) areaProblems(p.area, at, bad);
+      });
+    }
+  }
+  types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed', 's:id', 'i:revision', 'n:minutes', 's:mapPrint']);
   value(root, '', 'power', ['', 'on', 'off']); value(root, '', 'skill', ['', 'recruit', 'veteran']);
+  // What the author says about the mission: identity, save counter, recommended squad and estimated length.
+  if (typeof root.id === 'string' && !/^[A-Za-z0-9_-]{1,64}$/.test(root.id)) bad('bad-id', 'id', 'a scenario id is 1 to 64 letters, digits, "-" or "_"');
+  if (whole(root.revision) && root.revision < 0) bad('out-of-range', 'revision', 'the revision counts saves, so it is 0 or more');
+  if (has(root, 'squad')) {
+    const s = root.squad;
+    if (!(Array.isArray(s) && s.length === 2 && whole(s[0]) && whole(s[1]))) bad('wrong-type', 'squad', '"squad" is [fewest, most] players, whole numbers');
+    else if (s[0] < 1 || s[1] > 16 || s[0] > s[1]) bad('out-of-range', 'squad', 'the recommended squad is from 1 to 16 players, the fewest first');
+  }
+  if (typeof root.minutes === 'number' && (root.minutes <= 0 || root.minutes > 600)) bad('out-of-range', 'minutes', 'the estimated length is more than 0 and at most 600 minutes');
+  if (typeof root.mapPrint === 'string' && !/^fnv1a64:[0-9a-f]{16}$/.test(root.mapPrint)) bad('unknown-value', 'mapPrint', '"' + root.mapPrint + '" is not a map fingerprint this version knows');
   return found;
 }
-// Accepts a scenario, or a mission record written by the Director (the plan sits under "plan").
+// The plan inside a file: under "plan" in a mission record, then under "mission" in a missionlab-plan/2 envelope.
+function planBody(obj) {
+  let root = obj && typeof obj === 'object' && obj.plan && typeof obj.plan === 'object' && !Array.isArray(obj.plan) ? obj.plan : obj;
+  if (root && typeof root === 'object' && root.mission && typeof root.mission === 'object' && !Array.isArray(root.mission)) root = root.mission;
+  return root;
+}
+// What a plan uses, by the names Capabilities.Of gives (sorted, each once), so a reader can tell what a version must support.
+function capabilitiesOf(obj) {
+  const root = planBody(obj) || {}, list = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const trigs = list(root.triggers), spawns = list(root.spawns), things = list(root.things), doors = list(root.doors), w = root.weather;
+  const found = new Set(), add = (name, yes) => { if (yes) found.add(name); };
+  add('areas', trigs.some(t => (t.when === 'zone' || t.when === 'hold' || t.when === undefined) && t.area && Array.isArray(t.area.parts) && t.area.parts.length));
+  add('doors', doors.length > 0 || trigs.some(t => list(t.doors).length));
+  add('door-trigger', trigs.some(t => t.when === 'door'));
+  add('things', things.length > 0);
+  add('intel-move', list(root.objectives).length > 0);
+  add('respawn', (root.respawn && num(root.respawn.after, 0) > 0) || trigs.some(t => t.respawn === true));
+  add('power', root.power === 'on' || root.power === 'off' || trigs.some(t => t.power === 'on' || t.power === 'off'));
+  add('weather', !!(w && typeof w === 'object' && ['hour', 'rain', 'sandstorm'].some(k => w[k] !== undefined && w[k] !== null)));
+  add('insertion', typeof root.insertion === 'string' && root.insertion !== '');
+  add('messages', trigs.some(t => cleanMessage(t.message)) || (Array.isArray(root.briefing) && root.briefing.length > 0));
+  add('endings', trigs.some(t => t.end === 'success' || t.end === 'failed'));
+  add('hunt', trigs.some(t => t.hunt === true));
+  add('rally', trigs.some(t => num(t.rally, 0) > 0));
+  add('extraction-hold', (root.extraction && num(root.extraction.after, 0) !== 0) || trigs.some(t => t.extraction === 'open'));
+  add('vehicles', spawns.some(s => s.vehicle === true));
+  add('hvt', spawns.some(s => s.hvt === true));
+  add('teams', spawns.some(s => num(s.team, 0) > 0));
+  add('places', list(root.places).length > 0);
+  const odds = o => num(o.chance, 100) < 100;
+  add('chance', spawns.some(s => odds(s) || num(s.either, 0) > 0 || num(s.lot, 0) > 0 || num(s.minPlayers, 0) > 1) || trigs.some(odds) || things.some(odds) || doors.some(odds));
+  add('repeat', trigs.some(t => num(t.repeat, 0) > 0));
+  return [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+// Accepts a scenario (missionlab-plan/1 or /2), or a mission record written by the Director (the plan sits under "plan").
 function loadScenario(obj, name) {
   // Read strictly. A file with something wrong in it is not loaded: what is on the page stays, and the file itself is never touched.
   const found = scenarioProblems(obj), wrong = found.filter(f => f.level === 'error');
@@ -325,8 +438,8 @@ function loadScenario(obj, name) {
     return name + ' was not loaded: ' + wrong.length + (wrong.length === 1 ? ' problem' : ' problems') + '. First: ' + (wrong[0].path ? wrong[0].path + ': ' : '') + wrong[0].text + '. The file was not changed; the Mission tab lists them all.';
   }
   state.refused = null; state.readNotes = found.filter(f => f.level === 'note').map(f => name + ': ' + f.text + '. Saving writes the current format; Undo brings back what was here before.');
-  const record = obj && obj.plan && Array.isArray(obj.plan.spawns);
-  const root = record ? obj.plan : obj;
+  const record = !!(obj && obj.plan && typeof obj.plan === 'object');
+  const root = planBody(obj);
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
   pushUndo();
@@ -334,6 +447,12 @@ function loadScenario(obj, name) {
   state.things = thingsIn(root.things); state.thing = -1;
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
+  state.places = placesIn(root.places);
+  state.scenarioId = typeof root.id === 'string' ? root.id : '';
+  state.revision = Number.isInteger(root.revision) && root.revision > 0 ? root.revision : 0;
+  state.squadRange = Array.isArray(root.squad) && root.squad.length === 2 ? [root.squad[0], root.squad[1]] : null;
+  state.minutes = num(root.minutes, 0) > 0 ? root.minutes : 0;
+  state.mapPrint = typeof root.mapPrint === 'string' ? root.mapPrint : '';
   // A generated mission names one scene (day or night). Matching by map file covers both.
   state.scene = record ? '' : (typeof root.scene === 'string' ? root.scene : '');
   const nav = typeof root.navFile === 'string' ? root.navFile : '';
@@ -377,18 +496,21 @@ async function openFiles(files) {
       } else if (head[0] === 0x50 && head[1] === 0x4b) {
         const tris = await readMapFile(buf);
         const wasExample = state.example;
-        state.map = makeMap(tris, f.name, false); state.navFile = f.name; state.example = false;
+        state.map = makeMap(tris, f.name, false); state.map.print = mapPrintOf(buf); state.navFile = f.name; state.example = false;
         if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0; }
         state.ceiling = Infinity; view3d.dropMap(); fit();
         notes.push(f.name + ': ' + state.map.n.toLocaleString('en') + ' walkable triangles.');
       } else {
-        const obj = JSON.parse(new TextDecoder().decode(buf));
+        const text = new TextDecoder().decode(buf);
+        let obj;
+        // A .json file that is not JSON at all is judged as a scenario, so the page names it as the plugin does (not-json).
+        try { obj = JSON.parse(text); } catch (err) { if (/\.json$/i.test(f.name)) { notes.push(loadScenario(text, f.name)); continue; } throw err; }
         if (obj && obj.schema === 'missionlab-replay/1') {
           // A recording carries the plan it was played with; offline that is shown too, so zones and doors are on the map.
           if (!live.on && obj.plan && Array.isArray(obj.plan.spawns) && obj.plan.spawns.length) { loadScenario(obj.plan, f.name); if (!state.map) fit(); }
           notes.push(loadReplay(obj, f.name));
         }
-        else if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)))) { notes.push(loadScenario(obj, f.name)); if (!state.map) fit(); }
+        else if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)) || (typeof obj.schema === 'string' && /^missionlab-plan\//.test(obj.schema)))) { notes.push(loadScenario(obj, f.name)); if (!state.refused && !obj.plan) markSaved(f.name); if (!state.map) fit(); }
         else if (obj && (obj.infiltration || obj.raid)) notes.push(loadRecon(obj, f.name));
         else throw new Error('It is not a scenario, a mission record, a replay or a recon file.');
       }

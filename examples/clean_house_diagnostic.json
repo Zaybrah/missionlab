@@ -1,0 +1,129 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: trigger diagnostic",
+  "id": "sc-cleanhouse-diagnostic",
+  "briefing": [
+    "Clean House, trigger diagnostic. Open the browser page, Direct, and watch the trigger inspector.",
+    "Take the phone or put two of them down to open the way out."
+  ],
+  "squad": [2, 4],
+  "minutes": 10,
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "Made to show every state the trigger inspector knows, in one short mission. Play it with two players and the browser page open on Direct.",
+    "Counting, then fired: trigger 1 'Clock' fires 30 s in. Its only action is a message, which the game cannot confirm was seen, so it shows as fired with its action unconfirmed.",
+    "Cooling and exhausted: trigger 2 'Waves' fires at 60 s, then every 45 s, three times in all. Between firings it is cooling down ('fired 1 of 3'); after the third it is exhausted. Its enemy is seen to appear, so its action shows as applied.",
+    "Waiting for players, then holding: trigger 3 'Upstairs, everyone' waits until every living player stands in the upper floor's north room (the inspector says '1 of 2 living players inside'), then counts 20 s while they stay.",
+    "Waiting for a condition: trigger 4 'Phone' waits for the cell phone to be picked up; the extraction waits for it. Trigger 9 'Two down' waits for two enemies to go down and opens the extraction too.",
+    "Excluded by chance: trigger 5 'Lucky break' has a chance of 50%. On a mission where it loses its roll it is excluded, and trigger 6 'After the lucky break' says it waits for a trigger that sat this mission out. Neither is needed to finish.",
+    "By hand, and a failed action: trigger 7 'By hand: no door here' fires only on Fire now. Its door setting points at the yard, where no door stands, on purpose: firing it shows an action that failed, which looks different from a condition that is not met.",
+    "Action unconfirmed: trigger 8 'Back door' fires when the back door is opened; it shows a message and locks an inner door, which the game is asked to do but cannot be seen to do.",
+    "Not shown: two triggers that wait for each other in a circle never fire, and the inspector says so, but a circle is not allowed in a shipped example (the examples are checked for circles). Make one in the editor to see it."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "Clock",
+      "when": "time",
+      "delay": 30,
+      "facePlayer": true,
+      "message": "Thirty seconds in."
+    },
+    {
+      "id": 2,
+      "name": "Waves",
+      "when": "time",
+      "delay": 60,
+      "repeat": 45,
+      "times": 3,
+      "facePlayer": true
+    },
+    {
+      "id": 3,
+      "name": "Upstairs, everyone",
+      "when": "hold",
+      "pos": [-20.0, 3.68, 4.0],
+      "radius": 4.5,
+      "hold": 20,
+      "everyone": true,
+      "facePlayer": true
+    },
+    {
+      "id": 4,
+      "name": "Phone",
+      "when": "intel",
+      "item": "Cell Phone",
+      "facePlayer": true,
+      "message": "You have the phone. The way out is open."
+    },
+    {
+      "id": 5,
+      "name": "Lucky break",
+      "when": "alert",
+      "chance": 50,
+      "delay": 5,
+      "facePlayer": true
+    },
+    {
+      "id": 6,
+      "name": "After the lucky break",
+      "when": "after",
+      "after": 5,
+      "delay": 10,
+      "facePlayer": true,
+      "message": "The lucky break paid off."
+    },
+    {
+      "id": 7,
+      "name": "By hand: no door here",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "doors": [
+        {"name": "No door here (on purpose)", "pos": [-4.0, 0.08, -2.0], "locked": true}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Back door",
+      "when": "door",
+      "pos": [-19.55, 0.7, -19.57],
+      "facePlayer": true,
+      "doors": [
+        {"name": "Door Interior Paneled", "pos": [-24.06, 0.7, -2.67], "locked": true}
+      ],
+      "message": "The back door is open. They heard it."
+    },
+    {
+      "id": 9,
+      "name": "Two down",
+      "when": "down",
+      "count": 2,
+      "facePlayer": true,
+      "extraction": "open",
+      "message": "Two of them are down. The way out is open."
+    }
+  ],
+  "objectives": [
+    {
+      "name": "Cell Phone_1",
+      "pos": [-20.75, 4.78, 6.5],
+      "yaw": 260
+    }
+  ],
+  "extraction": {
+    "after": 4
+  },
+  "insertion": "Alpha 2",
+  "gameMaster": true,
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Wander", "pos": [-28.5, 0.51, -11.0], "yaw": 90, "indoor": false, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Wander", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 3, "hvt": false, "patrol": []},
+    {"group": 3, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []}
+  ]
+}

@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/1", "id": "has a space!", "revision": -1, "squad": [0, 4], "minutes": 0, "mapPrint": "md5:0123", "spawns": [ { "pos": [0, 0, 0] } ] }

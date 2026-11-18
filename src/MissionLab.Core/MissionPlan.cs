@@ -66,6 +66,9 @@ namespace MissionLab.Core
         public bool Hunt;                 // the enemies it brings walk to the nearest player instead of waiting where they appear
         public bool Respawn;              // it brings dead players back
         public bool Off;                  // lost its roll this mission: only "Fire now" sets it off. Not written to the file.
+        public AreaPlan Area;             // zone and hold: a shaped place that replaces the circle for who is inside (null: the circle). Pos stays the anchor
+        /// <summary>A zone or hold with a shaped area: only then is the file written as missionlab-plan/2.</summary>
+        public bool Shaped => Placed(When) && Area != null && Area.Parts.Count > 0;
     }
 
     /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
@@ -166,10 +169,65 @@ namespace MissionLab.Core
         public List<V3> Patrol = new List<V3>();
     }
 
+    /// <summary>
+    /// A named place on the map ("Rear stairs"), so that logs, replays and explanations can say where something happened
+    /// in words. A place is a label only: nothing in the mission depends on it, so older versions may ignore it safely.
+    /// </summary>
+    public sealed class PlacePlan
+    {
+        public const float Reach = 3f;    // metres: a place given as a point covers this much around it
+        public int Id;
+        public string Name = "";
+        public V3 Pos;
+        public float? Bottom, Top;        // world Y band for a point place; without it, the circle's height rule applies
+        public AreaPlan Area;             // a shaped place; then Pos only labels it
+
+        public bool Contains(V3 p)
+        {
+            if (Area != null && Area.Parts.Count > 0) return Area.Contains(p);
+            float dx = p.X - Pos.X, dz = p.Z - Pos.Z;
+            if (dx * dx + dz * dz > Reach * Reach) return false;
+            if (Bottom.HasValue && Top.HasValue) return p.Y >= Bottom.Value && p.Y <= Top.Value;
+            return System.Math.Abs(p.Y - Pos.Y) <= Membership.CircleHeight;
+        }
+    }
+
     /// <summary>A complete enemy layout for one mission, reproducible from Seed.</summary>
     public sealed class MissionPlan
     {
         public const string Schema = "missionlab-plan/1";
+        public const string Schema2 = "missionlab-plan/2";    // the envelope, written only when a trigger has a shaped area
+        public string Id = "";            // a stable identity across renames: 1 to 64 of A-Z, a-z, 0-9, _ and -
+        public int Revision;              // the author's save counter
+        public int SquadMin, SquadMax;    // the author's recommended squad size, 1 to 16 (0: not said)
+        public float Minutes;             // the author's estimate of its length (0: not said); measured times come from run records, never from here
+        public string MapPrint = "";      // ScenarioFile.MapPrint of the navmesh file the coordinates were authored on
+        public List<PlacePlan> Places = new List<PlacePlan>();
+        public const int IdLength = 64, SquadLimit = 16;
+        public const float MinutesLimit = 600f;
+
+        /// <summary>Whether a text can be a scenario id: 1 to 64 letters, digits, '_' or '-'.</summary>
+        public static bool IdOk(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length > IdLength) return false;
+            foreach (char c in id) if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) return false;
+            return true;
+        }
+
+        /// <summary>Whether a text looks like a map fingerprint: "fnv1a64:" and 16 lowercase hex digits.</summary>
+        public static bool PrintOk(string print)
+        {
+            if (print == null || print.Length != 24 || !print.StartsWith("fnv1a64:", System.StringComparison.Ordinal)) return false;
+            for (int i = 8; i < 24; i++) { char c = print[i]; if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false; }
+            return true;
+        }
+
+        /// <summary>The name of the first place that holds p, or "" when none does.</summary>
+        public string PlaceAt(V3 p)
+        {
+            foreach (PlacePlan place in Places) if (place.Contains(p)) return place.Name;
+            return "";
+        }
         public long Seed;
         public string Scene;
         public string NavFile;
@@ -267,6 +325,7 @@ namespace MissionLab.Core
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append(Text(z.Name)).Append("\",\"when\":\"").Append(z.When).Append('"');
                 if (TriggerPlan.Placed(z.When) || z.When == TriggerPlan.OnDoor)
                     sb.Append(",\"pos\":[").Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius));
+                if (z.Shaped) { sb.Append(",\"area\":"); z.Area.Write(sb); }
                 if (z.When == TriggerPlan.OnIntel) sb.Append(",\"item\":\"").Append(Text(z.Item)).Append('"');
                 if (z.When == TriggerPlan.OnAfter) sb.Append(",\"after\":").Append(z.After);
                 if (z.When == TriggerPlan.OnHold) sb.Append(",\"hold\":").Append(F(z.Hold));
@@ -355,6 +414,24 @@ namespace MissionLab.Core
             return sb.ToString();
         }
 
+        public static string PlacesJson(List<PlacePlan> places)
+        {
+            var sb = new StringBuilder(128);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            sb.Append('[');
+            for (int i = 0; i < places.Count; i++)
+            {
+                PlacePlan p = places[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(p.Id).Append(",\"name\":\"").Append(Guard.Esc(p.Name)).Append("\",\"pos\":[")
+                  .Append(F(p.Pos.X)).Append(',').Append(F(p.Pos.Y)).Append(',').Append(F(p.Pos.Z)).Append(']');
+                if (p.Bottom.HasValue && p.Top.HasValue) sb.Append(",\"floor\":[").Append(F(p.Bottom.Value)).Append(',').Append(F(p.Top.Value)).Append(']');
+                if (p.Area != null && p.Area.Parts.Count > 0) { sb.Append(",\"area\":"); p.Area.Write(sb); }
+                sb.Append('}');
+            }
+            return sb.Append(']').ToString();
+        }
+
         public string ToJson()
         {
             var sb = new StringBuilder(4096);
@@ -362,10 +439,15 @@ namespace MissionLab.Core
             string S(string s) => s == null ? "null" : "\"" + Guard.Esc(s) + "\"";
             sb.Append("{\"schema\":").Append(S(Schema));
             if (!string.IsNullOrWhiteSpace(Title)) sb.Append(",\"name\":").Append(S(Title.Trim()));
+            if (!string.IsNullOrEmpty(Id)) sb.Append(",\"id\":").Append(S(Id));
+            if (Revision > 0) sb.Append(",\"revision\":").Append(Revision);
             if (Briefing.Count > 0) { sb.Append(",\"briefing\":["); for (int i = 0; i < Briefing.Count; i++) sb.Append(i > 0 ? "," : "").Append(S(Briefing[i])); sb.Append(']'); }
+            if (SquadMin > 0 && SquadMax > 0) sb.Append(",\"squad\":[").Append(SquadMin).Append(',').Append(SquadMax).Append(']');
+            if (Minutes > 0f) sb.Append(",\"minutes\":").Append(System.Math.Round(Minutes, 2).ToString(inv));
             sb.Append(",\"seed\":").Append(Seed.ToString(inv));
             sb.Append(",\"scene\":").Append(S(Scene));
             sb.Append(",\"navFile\":").Append(S(NavFile));
+            if (!string.IsNullOrEmpty(MapPrint)) sb.Append(",\"mapPrint\":").Append(S(MapPrint));
             sb.Append(",\"requestedEnemies\":").Append(RequestedEnemies);
             sb.Append(",\"groups\":").Append(Groups);
             sb.Append(",\"notes\":[");
@@ -374,6 +456,7 @@ namespace MissionLab.Core
             sb.Append(",\"objectives\":").Append(ObjectivesJson(Objectives));
             sb.Append(",\"doors\":").Append(DoorsJson(Doors));
             if (Things.Count > 0) sb.Append(",\"things\":").Append(ThingsJson(Things));
+            if (Places.Count > 0) sb.Append(",\"places\":").Append(PlacesJson(Places));
             sb.Append(SettingsJson(this));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
@@ -382,12 +465,19 @@ namespace MissionLab.Core
                 sb.Append('\n').Append(SpawnJson(Spawns[i]));
             }
             sb.Append("\n]}");
+            // A shaped area goes under "mission": v0.23 finds no root "spawns" there and skips the file, instead of
+            // quietly reading the shape as its anchor circle.
+            if (Triggers.Exists(t => t.Shaped))
+            {
+                string plain = "{\"schema\":" + S(Schema) + ",";
+                sb.Remove(0, plain.Length).Insert(0, "{\"schema\":" + S(Schema2) + ",\"mission\":{").Append('}');
+            }
             return sb.ToString();
         }
 
         /// <summary>
-        /// Reads a plan written by ToJson, or a mission record that contains one under "plan".
-        /// Missing fields keep their defaults; sense values of 0 mean "use the map's usual value".
+        /// Reads a plan written by ToJson, or a mission record that contains one under "plan"; a missionlab-plan/2 body sits
+        /// under "mission". Missing fields keep their defaults; sense values of 0 mean "use the map's usual value".
         /// </summary>
         public static MissionPlan FromJson(string json)
         {
@@ -395,6 +485,7 @@ namespace MissionLab.Core
             {
                 JsonElement root = doc.RootElement;
                 if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("plan", out JsonElement inner) && inner.ValueKind == JsonValueKind.Object) root = inner;
+                if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("mission", out JsonElement body) && body.ValueKind == JsonValueKind.Object) root = body;
                 if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("spawns", out JsonElement spawns) || spawns.ValueKind != JsonValueKind.Array)
                     throw new System.FormatException("not a mission plan: no \"spawns\" list");
 
@@ -414,6 +505,34 @@ namespace MissionLab.Core
                     {
                         string text = line.ValueKind == JsonValueKind.String ? TriggerPlan.Clean(line.GetString()) : "";
                         if (text != "" && plan.Briefing.Count < BriefingLines) plan.Briefing.Add(text);
+                    }
+                string sid = (Str(root, "id") ?? "").Trim();
+                plan.Id = IdOk(sid) ? sid : "";
+                if (root.TryGetProperty("revision", out JsonElement rev) && rev.ValueKind == JsonValueKind.Number && rev.TryGetInt32(out int rv)) plan.Revision = System.Math.Max(0, rv);
+                if (root.TryGetProperty("squad", out JsonElement sq) && sq.ValueKind == JsonValueKind.Array && sq.GetArrayLength() == 2 && sq[0].ValueKind == JsonValueKind.Number && sq[1].ValueKind == JsonValueKind.Number)
+                {
+                    int a = (int)System.Math.Max(1f, System.Math.Min(SquadLimit, sq[0].GetSingle())), b = (int)System.Math.Max(1f, System.Math.Min(SquadLimit, sq[1].GetSingle()));
+                    plan.SquadMin = System.Math.Min(a, b); plan.SquadMax = System.Math.Max(a, b);
+                }
+                float minutes = Num(root, "minutes", 0);
+                plan.Minutes = minutes > 0f ? System.Math.Min(MinutesLimit, minutes) : 0f;
+                string print = Str(root, "mapPrint");
+                plan.MapPrint = PrintOk(print) ? print : "";
+                if (root.TryGetProperty("places", out JsonElement places) && places.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement pl in places.EnumerateArray())
+                    {
+                        if (pl.ValueKind != JsonValueKind.Object || !TryVec(pl, "pos", out V3 pp)) continue;
+                        int pid = (int)Num(pl, "id", 0);
+                        string pname = (Str(pl, "name") ?? "").Trim();
+                        if (pid < 1 || pname == "" || plan.Places.Exists(q => q.Id == pid)) continue;
+                        var place = new PlacePlan { Id = pid, Name = pname, Pos = pp };
+                        if (pl.TryGetProperty("floor", out JsonElement pf) && pf.ValueKind == JsonValueKind.Array && pf.GetArrayLength() == 2 && pf[0].ValueKind == JsonValueKind.Number && pf[1].ValueKind == JsonValueKind.Number)
+                        {
+                            float lo = pf[0].GetSingle(), hi = pf[1].GetSingle();
+                            place.Bottom = System.Math.Min(lo, hi); place.Top = System.Math.Max(lo, hi);
+                        }
+                        if (pl.TryGetProperty("area", out JsonElement pa) && pa.ValueKind == JsonValueKind.Object) place.Area = AreaPlan.Read(pa);
+                        plan.Places.Add(place);
                     }
                 if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0));
                 if (root.TryGetProperty("weather", out JsonElement we) && we.ValueKind == JsonValueKind.Object)
@@ -488,6 +607,7 @@ namespace MissionLab.Core
                                 if (o.ValueKind == JsonValueKind.Number && o.GetInt32() > 0 && o.GetInt32() != id && !t.Of.Contains(o.GetInt32())) t.Of.Add(o.GetInt32());
                         t.Power = TriggerPlan.OnOff(Str(z, "power")); t.Message = TriggerPlan.Clean(Str(z, "message")); t.End = TriggerPlan.Ending(Str(z, "end"));
                         t.Doors.RemoveAll(d => !d.Locked.HasValue && !d.Open.HasValue);
+                        if (TriggerPlan.Placed(when) && z.TryGetProperty("area", out JsonElement za) && za.ValueKind == JsonValueKind.Object) t.Area = AreaPlan.Read(za);
                         plan.Triggers.Add(t);
                     }
                 if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)

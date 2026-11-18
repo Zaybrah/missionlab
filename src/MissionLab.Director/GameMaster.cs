@@ -69,6 +69,25 @@ namespace MissionLab
             }
             public bool Down(int count, string tag) => string.IsNullOrEmpty(tag) ? GameMaster.EnemiesDown(Gm, count) : GameMaster.TaggedDown(Gm, tag, count);
             public bool DoorOpen(V3 hinge) { DoorV2 door = GameMaster.DoorAt(hinge); return door != null && (door.isDead || door.IsOpenEnoughForAI); }
+            public int Inside(TriggerPlan t, out int alive)
+            {
+                // Only asked to explain a trigger to the page: a failure says "nobody alive" rather than stopping the rules.
+                alive = 0; int inside = 0;
+                try
+                {
+                    var players = PlayerMaster.AllPlayerMasters;
+                    for (int i = 0; players != null && i < players.Count; i++)
+                    {
+                        PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                        if (body == null) continue;
+                        alive++;
+                        Vector3 p = body.transform.position;
+                        if (Membership.Inside(t, new V3(p.x, p.y, p.z))) inside++;
+                    }
+                }
+                catch { alive = 0; return 0; }
+                return inside;
+            }
         }
         private static float _zoneCheckAt;
         private static bool _yawLogged, _objectivesPlaced;
@@ -197,7 +216,7 @@ namespace MissionLab
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); Openings.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
-            Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null;
+            Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null; Firings.Clear();
         }
 
         public static void Tick(float now)
@@ -205,7 +224,7 @@ namespace MissionLab
             if (_raidPtr == IntPtr.Zero) return;
             RaidManager raid = RaidManager.singleton;
             GameManager gm = GameManager.instance;
-            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End("the mission is over"); Reset(); Director.EndSession("the mission is over"); return; }
+            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End("the mission is over"); try { RunRecord.Finish(); } catch { } Reset(); Director.EndSession("the mission is over"); return; }
 
             Replay.Tick(raid, gm, now);
             TryOuts.Tick(Time.unscaledTime);
@@ -263,6 +282,7 @@ namespace MissionLab
             for (int i = 0; i < plan.Spawns.Count; i++)
                 _markers.Add(new Marker { Plan = plan.Spawns[i], Spawn = i, Waiting = _later != null && _later.Contains(plan.Spawns[i]) });
             _zones = new List<TriggerPlan>(plan.Triggers);
+            AreaEdits.Prepare(_zones);         // painted areas get their bounds once here, so the check every frame builds nothing
             Engine.Reset(Time.unscaledTime); Engine.Sync(_zones);
             foreach (string problem in Engine.Problems) DirectorPlugin.L.LogWarning("triggers: " + problem);
             _wanted = new List<ObjectivePlan>(plan.Objectives);
@@ -919,7 +939,10 @@ namespace MissionLab
             Replay.Event("note", "countdown: " + line);
         }
 
-        /// <summary>Is every living player inside the zone? Nobody alive: no.</summary>
+        /// <summary>
+        /// Is every living player inside the zone (its painted area, or else its circle)? For a house of several parts that means
+        /// somewhere in the union, not one player in every room. Nobody alive: no. where: the last player looked at, who is inside.
+        /// </summary>
         private static bool EveryoneInside(TriggerPlan z, out Vector3 where)
         {
             where = Vector3.zero; int alive = 0;
@@ -930,8 +953,7 @@ namespace MissionLab
                 if (body == null) continue;
                 alive++;
                 Vector3 p = body.transform.position;
-                float dx = p.x - z.Pos.X, dz = p.z - z.Pos.Z;
-                if (dx * dx + dz * dz > z.Radius * z.Radius || Mathf.Abs(p.y - z.Pos.Y) > 2f) return false;
+                if (!Membership.Inside(z, new V3(p.x, p.y, p.z))) return false;
                 where = p;
             }
             return alive > 0;
@@ -1040,6 +1062,10 @@ namespace MissionLab
                 foreach (Marker m in _markers)
                     if (m.Plan.Trigger == t.Id && !m.Waiting && !m.Queued && !Special(m.Plan) && (m.Bot == IntPtr.Zero || gmNow == null || Find(gmNow, m.Bot) == null)) { m.Waiting = true; m.Bot = IntPtr.Zero; }
             }
+            // Where the player stood who set it off: the engine keeps the entrant's real position (TriggerState.Where), which for a
+            // painted area is a point inside it. Nothing here samples the zone's anchor or radius: facing turns to that player (or the
+            // player nearest each enemy), and no pop-in visibility test is made at all, so none depends on the old circle. A single
+            // check from one point could not show that a whole painted house is out of sight anyway.
             TriggerState memory = Engine.State(t.Id);
             bool stood = memory != null && memory.HasWhere;
             Vector3 who = stood ? new Vector3(memory.Where.X, memory.Where.Y, memory.Where.Z) : Vector3.zero;
@@ -1055,13 +1081,18 @@ namespace MissionLab
                     mine.Add(m);
                 }
             Enqueue(mine);
-            if (t.Hunt) foreach (Marker m in mine) m.HuntAt = -1f;
+            // What became of this firing's actions, for the page's inspector (Engine.Report). Its enemies are only known to
+            // exist once the spawner has answered, so a firing that brings any is told when the last of them settles (Landed).
+            var f = new Firing();
+            if (Firings.TryGetValue(t.Id, out Firing before)) foreach (Marker m in before.Waiting) f.Waiting.Add(m);   // fired again before the last lot was made
+            foreach (Marker m in mine) if (m.Queued) f.Waiting.Add(m);
+            if (t.Hunt && mine.Count > 0) { foreach (Marker m in mine) m.HuntAt = -1f; f.Unsure.Add("sending its enemies after the players"); }
             int doors = 0;
             foreach (DoorPlan p in t.Doors)
             {
                 if (!p.Locked.HasValue && !p.Open.HasValue) continue;
                 DoorV2 d = DoorAt(p.Pos);
-                if (d == null) continue;
+                if (d == null) { f.Fail("no door was found at (" + p.Pos.X.ToString("0.#", Inv) + ", " + p.Pos.Z.ToString("0.#", Inv) + ")"); continue; }
                 try
                 {
                     // Closing comes before locking, unlocking before opening.
@@ -1070,48 +1101,120 @@ namespace MissionLab
                     if (p.Open.HasValue && p.Open.Value) SetDoorOpen(d, true);
                     doors++;
                 }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("a door could not be set by " + TriggerName(t) + ": " + e.Message); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("a door could not be set by " + TriggerName(t) + ": " + e.Message); f.Fail("a door could not be set: " + e.Message); }
             }
+            if (doors > 0) f.Unsure.Add(doors == 1 ? "a door" : doors + " doors");     // asked of the game; an opening door swings over the next seconds
             if (t.Respawn)
-                try { string said = TryOuts.RespawnNow(true); TryOuts.Did("bringing players back (" + TriggerName(t) + ")"); DirectorPlugin.L.LogInfo(TriggerName(t) + ": " + said); Replay.Event("note", "dead players are brought back by " + TriggerName(t)); }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("players could not be brought back by " + TriggerName(t) + ": " + e.Message); }
+                try
+                {
+                    string said = TryOuts.RespawnNow(true); TryOuts.Did("bringing players back (" + TriggerName(t) + ")"); DirectorPlugin.L.LogInfo(TriggerName(t) + ": " + said); Replay.Event("note", "dead players are brought back by " + TriggerName(t));
+                    if (said.Contains("was not found")) f.Fail(said); else f.Unsure.Add("bringing dead players back");
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("players could not be brought back by " + TriggerName(t) + ": " + e.Message); f.Fail("players could not be brought back: " + e.Message); }
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
             {
                 bool wasHeld = HoldExtraction && t.Id == _holdAfter;
                 if (wasHeld) HoldExtraction = false;
+                bool opens = t.OpensExtraction || (wasHeld && ExtractionAsked);
                 if (t.OpensExtraction) OpenExtraction(raidNow, TriggerName(t) + " opens it");
                 else if (wasHeld && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
+                try { if (opens && !ExtractionOpen(raidNow)) f.Fail("the extraction did not open"); } catch { }
             }
+            else if (t.OpensExtraction) f.Fail("the mission was not found, so the extraction could not be opened");
             TryOuts.Did("trigger " + t.Id + (string.IsNullOrEmpty(t.Name) ? "" : " '" + t.Name + "'"));
             string more = "";
             if (t.Power == "off" || t.Power == "on")
-                try { TryOuts.Power(t.Power == "on"); more += ", the lights go " + t.Power; }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set by " + TriggerName(t) + ": " + e.Message); }
-            if (!string.IsNullOrEmpty(t.Message) && raidNow != null)
-                try { TryOuts.Message(raidNow, t.Message, t.Red); more += ", a message is shown"; Replay.Event("note", "message: " + t.Message); }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("the message of " + TriggerName(t) + " could not be shown: " + e.Message); }
+                try
+                {
+                    string said = TryOuts.Power(t.Power == "on"); more += ", the lights go " + t.Power;
+                    if (said.Contains("no breaker box")) f.Fail("this map has no breaker box for the lights");
+                    else if (!said.Contains("the game now says the power is " + t.Power)) f.Unsure.Add("the lights");     // the breaker boxes say what they were told: that is the effect seen
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set by " + TriggerName(t) + ": " + e.Message); f.Fail("the lights could not be set: " + e.Message); }
+            if (!string.IsNullOrEmpty(t.Message))
+            {
+                if (raidNow == null) f.Fail("the mission was not found, so the message could not be shown");
+                else
+                    try
+                    {
+                        string said = TryOuts.Message(raidNow, t.Message, t.Red); more += ", a message is shown"; Replay.Event("note", "message: " + t.Message);
+                        if (said.StartsWith("message dropped", StringComparison.Ordinal) || said.Contains("no extraction zone")) f.Fail(said); else f.Unsure.Add("a message");
+                    }
+                    catch (Exception e) { DirectorPlugin.L.LogWarning("the message of " + TriggerName(t) + " could not be shown: " + e.Message); f.Fail("the message could not be shown: " + e.Message); }
+            }
             if (t.Rally > 0f)
                 try
                 {
-                    // The place: where the player stood who set it off, the zone's middle, or else the nearest player to nobody in particular.
+                    // The place: where the player stood who set it off, else the zone's authored anchor (pos; never a middle worked out
+                    // from a painted area, which may lie outside it or in a hole), else the nearest player to nobody in particular.
                     Vector3 to = stood && who != Vector3.zero ? who : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : TryOuts.FirstPlayer();
                     int called = TryOuts.WalkTo(GameManager.instance, to, t.Rally, null);
                     more += ", " + called + (called == 1 ? " enemy is called" : " enemies are called") + " there";
+                    f.Unsure.Add("calling " + called + (called == 1 ? " enemy" : " enemies"));
                     Replay.Event("note", "called: " + TryOuts.LastWalk.Words());
                     DirectorPlugin.L.LogInfo("call by " + TriggerName(t) + ": " + TryOuts.LastWalk.Words());
                 }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("the enemies could not be called by " + TriggerName(t) + ": " + e.Message); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the enemies could not be called by " + TriggerName(t) + ": " + e.Message); f.Fail("the enemies could not be called: " + e.Message); }
+            int due = 0;
+            foreach (LiveThing lt in _things) if (!lt.Placed && lt.Plan.Trigger == t.Id) due++;
             int placedNow = PlaceThings(t.Id);
             if (placedNow > 0) more += ", " + placedNow + (placedNow == 1 ? " thing is placed" : " things are placed");
+            if (placedNow < due) f.Fail((due - placedNow) + " of " + due + (due == 1 ? " thing" : " things") + " could not be placed (see the log)");
             string why = t.When == TriggerPlan.OnDoor ? "(a door is opened)" : t.When == TriggerPlan.OnAll ? "(all of triggers " + string.Join(", ", t.Of) + ")" : t.When == TriggerPlan.OnAny ? "(one of triggers " + string.Join(", ", t.Of) + ")" :
                          t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
                          t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
                        : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
             Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more);
             if (t.End == "success" || t.End == "failed")
-                try { Say(TriggerName(t) + " ends the mission: " + TryOuts.End(t.End == "success")); }
-                catch (Exception e) { DirectorPlugin.L.LogWarning("the mission could not be ended by " + TriggerName(t) + ": " + e.Message); }
+                try
+                {
+                    string said = TryOuts.End(t.End == "success"); Say(TriggerName(t) + " ends the mission: " + said);
+                    if (said.Contains("was not found")) f.Fail(said); else f.Unsure.Add("ending the mission");
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the mission could not be ended by " + TriggerName(t) + ": " + e.Message); f.Fail("the mission could not be ended: " + e.Message); }
+            if (f.Waiting.Count > 0) Firings[t.Id] = f;
+            else Told(t.Id, f);
+        }
+
+        /// <summary>
+        /// What one firing's actions came to, until it is told to the engine. Applied: every call went through and its effect
+        /// was seen (an enemy exists, the extraction is open, the breaker boxes say so). Unconfirmed: the calls went through,
+        /// but nothing here can see them take (a message, a door, an order to walk). Failed: the first call that threw or
+        /// was refused, which says more than any later one.
+        /// </summary>
+        private sealed class Firing
+        {
+            public readonly HashSet<Marker> Waiting = new HashSet<Marker>();   // its enemies the spawner has not answered for yet
+            public int Made;
+            public string Error = "";
+            public readonly List<string> Unsure = new List<string>();
+            public void Fail(string why) { if (Error.Length == 0) Error = why; }
+        }
+        private static readonly Dictionary<int, Firing> Firings = new Dictionary<int, Firing>();
+
+        private static void Told(int id, Firing f)
+        {
+            Firings.Remove(id);
+            try
+            {
+                if (f.Error.Length > 0) Engine.Report(id, TriggerEngine.Failed, f.Error);
+                else if (f.Unsure.Count > 0) Engine.Report(id, TriggerEngine.Unconfirmed, "asked of the game, not seen to take: " + string.Join(", ", f.Unsure));
+                else Engine.Report(id, TriggerEngine.Applied, f.Made > 0 ? f.Made + (f.Made == 1 ? " enemy appeared" : " enemies appeared") : "");
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("what became of a trigger's actions could not be kept: " + e.Message); }
+        }
+
+        /// <summary>The spawner has answered for a marker: a firing that waited for its enemy hears whether it was made.</summary>
+        private static void Landed(Marker m, bool made, string why)
+        {
+            if (Firings.Count == 0) return;
+            foreach (KeyValuePair<int, Firing> p in new List<KeyValuePair<int, Firing>>(Firings))
+            {
+                if (!p.Value.Waiting.Remove(m)) continue;
+                if (made) p.Value.Made++; else p.Value.Fail(why);
+                if (p.Value.Waiting.Count == 0) Told(p.Key, p.Value);
+            }
         }
 
         /// <summary>The Game Master sets a trigger off by hand.</summary>
@@ -1590,7 +1693,7 @@ namespace MissionLab
 
         private static void Fail(Batch batch, string why)
         {
-            foreach (Marker m in batch.Items) { m.Queued = false; Settle(m, CommandLedger.Failed, why); }
+            foreach (Marker m in batch.Items) { m.Queued = false; Settle(m, CommandLedger.Failed, why); Landed(m, false, why); }
             _running = null;
             Say(why);
         }
@@ -1609,8 +1712,12 @@ namespace MissionLab
             foreach (Marker m in batch.Items)
             {
                 m.Queued = false;
-                if (m.Bot != IntPtr.Zero) { made++; FacingChecks.Add(new KeyValuePair<Marker, float>(m, now + 1.5f)); Settle(m, CommandLedger.Applied, "its enemy exists"); }
-                else Settle(m, CommandLedger.Failed, "the game did not make its enemy");
+                if (m.Bot != IntPtr.Zero) { made++; FacingChecks.Add(new KeyValuePair<Marker, float>(m, now + 1.5f)); Settle(m, CommandLedger.Applied, "its enemy exists"); Landed(m, true, ""); }
+                else
+                {
+                    Settle(m, CommandLedger.Failed, "the game did not make its enemy");
+                    Landed(m, false, "the game did not make the enemy at (" + m.Plan.Pos.X.ToString("0.#", Inv) + ", " + m.Plan.Pos.Z.ToString("0.#", Inv) + ")");
+                }
             }
             _running = null;
             Tell((made == batch.Items.Count ? "spawned " + made : "spawned " + made + " of " + batch.Items.Count) + (made == 1 ? " enemy" : " enemies") +
@@ -1945,6 +2052,11 @@ namespace MissionLab
             }
         }
 
+        /// <summary>
+        /// Is a living player inside the zone? Membership is the one rule for this, the page and the rehearsal: the painted area
+        /// when there is one (bounds prepared when the list was read), else the old circle, where the floor above or below does
+        /// not count. where: the first player found inside.
+        /// </summary>
         private static bool PlayerInside(TriggerPlan z, out Vector3 where)
         {
             where = Vector3.zero;
@@ -1955,8 +2067,7 @@ namespace MissionLab
                 PlayerNetworking body = pm == null ? null : pm.PlayerSpawnedObject;
                 if (body == null) continue;
                 Vector3 p = body.transform.position;
-                float dx = p.x - z.Pos.X, dz = p.z - z.Pos.Z;
-                if (dx * dx + dz * dz <= z.Radius * z.Radius && Mathf.Abs(p.y - z.Pos.Y) <= 2f) { where = p; return true; }      // 2 m: the floor above or below does not count
+                if (Membership.Inside(z, new V3(p.x, p.y, p.z))) { where = p; return true; }
             }
             return false;
         }
@@ -2033,6 +2144,27 @@ namespace MissionLab
             catch (Exception e) { DirectorPlugin.L.LogWarning("the result of a browser change could not be updated: " + e.Message); }
         }
 
+        private static bool _explainWarned;     // said once: the state is asked for several times a second
+
+        /// <summary>
+        /// One trigger's explanation for the page's inspector:
+        /// {"phase":"cooling","left":12.5,"why":"Fired 2 of 3 times; armed again in 13 s","fires":2,"times":3,"waiting":[],"excluded":[],
+        ///  "inside":-1,"alive":-1,"outcome":"unconfirmed","outcomeWhy":"asked of the game, not seen to take: a message"}
+        /// inside and alive are -1 where they were not asked (not a zone or hold); outcome is "" until the runtime knows.
+        /// </summary>
+        private static string ExplainJson(TriggerView v)
+        {
+            var sb = new System.Text.StringBuilder(256);
+            sb.Append("{\"phase\":\"").Append(Guard.Esc(v.Phase)).Append("\",\"left\":").Append(F(v.Left)).Append(",\"why\":\"").Append(Guard.Esc(v.Why))
+              .Append("\",\"fires\":").Append(v.Fires.ToString(Inv)).Append(",\"times\":").Append(v.Times.ToString(Inv)).Append(",\"waiting\":[");
+            for (int k = 0; k < v.Waiting.Count; k++) sb.Append(k == 0 ? "" : ",").Append(v.Waiting[k].ToString(Inv));
+            sb.Append("],\"excluded\":[");
+            for (int k = 0; k < v.Excluded.Count; k++) sb.Append(k == 0 ? "" : ",").Append(v.Excluded[k].ToString(Inv));
+            sb.Append("],\"inside\":").Append(v.Inside.ToString(Inv)).Append(",\"alive\":").Append(v.Alive.ToString(Inv))
+              .Append(",\"outcome\":\"").Append(Guard.Esc(v.Outcome)).Append("\",\"outcomeWhy\":\"").Append(Guard.Esc(v.OutcomeWhy)).Append("\"}");
+            return sb.ToString();
+        }
+
         /// <summary>Everything the browser shows: players, enemies where they really are, and the markers.</summary>
         internal static string StateJson()
         {
@@ -2047,6 +2179,7 @@ namespace MissionLab
             var sb = new System.Text.StringBuilder(8192);
             var rev = new System.Text.StringBuilder(2048);
             sb.Append("{\"mission\":true").Append(page).Append(",\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
+            { MissionPlan cp = Director.CurrentPlan; if (cp != null && !string.IsNullOrEmpty(cp.Id)) sb.Append(",\"scenarioId\":").Append(Q(cp.Id)).Append(",\"revision\":").Append(cp.Revision.ToString(Inv)); }   // the page files revisions under it (ML-014)
             sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(GeoFile(nav)) ? "true" : "false");
             var hvtPoints = raid.hvtSpawnPoints;
             sb.Append(",\"targetMission\":").Append(hvtPoints != null && hvtPoints.Length > 0 && gm.botHVTAmount > 0 ? "true" : "false");
@@ -2106,7 +2239,9 @@ namespace MissionLab
             first = true;
             foreach (int id in Engine.FiredIds()) { sb.Append(first ? "" : ",").Append(id); first = false; }
             rev.Append(MissionPlan.TriggersJson(_zones));
-            // Where every trigger stands right now, so the page can say why one waits.
+            // Where every trigger stands right now and why (ML-015), so the page can say why one waits and a reloaded page shows
+            // the same: everything comes from the engine, nothing from the page. Explain only reads, and only asks the game how
+            // many players stand in a zone, so it is cheap enough for every poll.
             sb.Append("],\"triggerState\":[");
             float stateNow = Time.unscaledTime;
             Engine.Start = Director.HandledAt;
@@ -2114,7 +2249,10 @@ namespace MissionLab
             {
                 string phase = Engine.Phase(_zones[i], stateNow, out float left);
                 sb.Append(i == 0 ? "" : ",").Append("{\"id\":").Append(_zones[i].Id).Append(",\"phase\":\"").Append(phase).Append("\",\"fires\":").Append(Engine.Fires(_zones[i].Id))
-                  .Append(",\"left\":").Append(left.ToString("0.#", Inv)).Append('}');
+                  .Append(",\"left\":").Append(left.ToString("0.#", Inv));
+                try { string json = ExplainJson(Engine.Explain(_zones[i], stateNow, Asks)); sb.Append(",\"explain\":").Append(json); }
+                catch (Exception e) { if (!_explainWarned) DirectorPlugin.L.LogWarning("a trigger could not be explained to the page: " + e.Message); _explainWarned = true; }
+                sb.Append('}');
                 rev.Append(_zones[i].Id).Append(phase[0]).Append(phase.Length).Append(Engine.Fires(_zones[i].Id));
             }
             sb.Append("],\"triggerProblems\":[");
@@ -2145,6 +2283,7 @@ namespace MissionLab
             EnsureMarkers();
             var done = new Outcome();
             var ids = new List<int>(); bool spawnNow; MissionPlan sent; MissionPlan settings = null;
+            Dictionary<int, string> refusedAreas;
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
                 System.Text.Json.JsonElement root = doc.RootElement, list = root.GetProperty("markers");
@@ -2158,6 +2297,7 @@ namespace MissionLab
                     settings = MissionPlan.FromJson("{" + (inner.Length > 0 ? inner + "," : "") + "\"spawns\":[]}");
                 }
                 string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
+                refusedAreas = AreaEdits.Refused(zs);       // checked on the text as sent, with the file rules, before anything is taken over
                 string itemsText = root.TryGetProperty("objectives", out var os) && os.ValueKind == System.Text.Json.JsonValueKind.Array ? os.GetRawText() : MissionPlan.ObjectivesJson(_wanted);
                 string doorsText = root.TryGetProperty("doors", out var ds) && ds.ValueKind == System.Text.Json.JsonValueKind.Array ? ds.GetRawText() : MissionPlan.DoorsJson(_doorPlans);
                 var thingsNow = new List<ThingPlan>(); foreach (LiveThing lt in _things) thingsNow.Add(lt.Plan);
@@ -2246,6 +2386,13 @@ namespace MissionLab
             _markers = result; _aiming = -1; _current = -1;
             // A timer made during the mission counts from now; one that was taken away forgets what it saw.
             foreach (TriggerPlan nt in sent.Triggers) { TriggerPlan was = _zones.Find(z => z.Id == nt.Id); if (was != null) nt.Off = was.Off; }   // a trigger that lost its roll stays out
+            // A painted area is one change: a shape that breaks the rules is refused whole and its trigger keeps the place it had,
+            // so the engine sees no move and its progress stands. Every area kept has its bounds worked out here, not every frame.
+            foreach (KeyValuePair<int, string> no in AreaEdits.Apply(sent.Triggers, _zones, refusedAreas))
+            {
+                Say("trigger " + no.Key.ToString(Inv) + ": " + no.Value);
+                done.Add(new CommandOp("triggers", no.Key.ToString(Inv), -1, CommandLedger.Failed, no.Value));
+            }
             _zones = sent.Triggers;
             var knownProblems = new HashSet<string>(Engine.Problems);
             Engine.Sync(_zones, now);

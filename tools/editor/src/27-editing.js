@@ -1,8 +1,10 @@
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut(), t: thingsOut() })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut(), t: thingsOut(), p: state.places })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
-  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.things = thingsIn(o.t); state.thing = -1; state.squad = []; state.selected = Math.min(o.s, o.e.length - 1); changed();
+  const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.things = thingsIn(o.t); state.thing = -1; state.squad = []; state.selected = Math.min(o.s, o.e.length - 1);
+  if (Array.isArray(o.p)) state.places = o.p;
+  changed();
 }
 // Brings a thing into view. In 3D the floors above it are hidden, or the roof would be all there is to see.
 function showAt(p, top) {

@@ -6,6 +6,62 @@ using MissionLab.Core;
 //        CoreTest --check <scenario.json> <navmesh.bytes> [recon.json]   where a hand-edited scenario's enemies stand on the map
 //                 (read leniently; for the plugin's strict reading: dotnet run --project tests/Pure -- --read <scenario.json>)
 //        CoreTest --http <port>                                         the plugin's little web server on its own, for curl
+//        CoreTest --bench-areas                                         time painted-area membership (ML-027): 4 synthetic areas of 8 parts,
+//                 200-point concave outlines with holes, 8 players; prints µs per check and per frame. Needs no game files; exit 0.
+if (args.Length == 1 && args[0] == "--bench-areas")
+{
+    // Synthetic shapes only: a 200-point star around each part's middle is concave but never crosses itself, and a 16-sided
+    // hole sits well inside its inner radius. Parts stand side by side, touching, in two rows and on two floors, so the bounds
+    // of a whole area cover many parts and the precise test is reached often.
+    List<P2> Ring(float cx, float cz, int count, float inner, float outer)
+    {
+        var ring = new List<P2>();
+        for (int k = 0; k < count; k++)
+        {
+            double angle = 2 * Math.PI * k / count, r = k % 2 == 0 ? outer : inner;
+            ring.Add(new P2((float)(cx + r * Math.Cos(angle)), (float)(cz + r * Math.Sin(angle))));
+        }
+        return ring;
+    }
+    var triggers = new List<TriggerPlan>();
+    for (int a = 0; a < 4; a++)
+    {
+        var area = new AreaPlan();
+        for (int j = 0; j < 8; j++)
+        {
+            float cx = a * 100 + (j % 4) * 18, cz = (j / 4) * 18, bottom = (j % 2) * 3.5f;
+            var part = new AreaPart { Outline = Ring(cx, cz, 200, 7f, 9f), Bottom = bottom, Top = bottom + 3.5f };
+            part.Holes.Add(Ring(cx, cz, 16, 2f, 2f));
+            area.Parts.Add(part);
+        }
+        using (var doc = JsonDocument.Parse(area.Signature()))
+        {
+            var found = new List<string>();
+            AreaPlan.Check(doc.RootElement, "triggers[" + a + "]", (code, path, text) => found.Add(code + " " + path + ": " + text));
+            if (found.Count > 0) { Console.WriteLine("bench area " + (a + 1) + " breaks the rules: " + string.Join(" | ", found)); return 1; }
+        }
+        triggers.Add(new TriggerPlan { Id = a + 1, When = TriggerPlan.OnHold, Pos = new V3(a * 100, 0, 0), Radius = 10, Area = area });
+    }
+    AreaEdits.Prepare(triggers);      // once, as the plugin does when the list is read; never in the loop below
+    // Eight players: in a wing, in a courtyard hole, upstairs, on an outline point, between parts, far away, below every floor,
+    // and on the vertex where a ground-floor part meets an upstairs part at the top of its band.
+    var players = new[]
+    {
+        new V3(5, 1, 0), new V3(0, 1, 0), new V3(23, 5, 0), new V3(9, 1, 0),
+        new V3(9, 1, 9), new V3(500, 1, 500), new V3(36, -5, 18), new V3(109, 3.5f, 18),
+    };
+    int calls = 100000, inside = 0;
+    for (int i = 0; i < 4 * 8 * 100; i++) if (Membership.Inside(triggers[i & 3], players[(i >> 2) & 7])) inside++;     // warm up
+    inside = 0;
+    var clock = Stopwatch.StartNew();
+    for (int i = 0; i < calls; i++) if (Membership.Inside(triggers[i & 3], players[(i >> 2) & 7])) inside++;
+    clock.Stop();
+    double perCall = clock.Elapsed.TotalMilliseconds * 1000.0 / calls;
+    int points = 0; foreach (var t in triggers) foreach (var p in t.Area.Parts) { points += p.Outline.Count; foreach (var h in p.Holes) points += h.Count; }
+    Console.WriteLine($"areas: {triggers.Count} of 8 parts, {points} points in all; players: {players.Length}; {calls} checks, {inside} inside, in {clock.Elapsed.TotalMilliseconds:0.0} ms");
+    Console.WriteLine($"{perCall:0.000} µs per check; {perCall * triggers.Count * players.Length:0.0} µs per frame ({triggers.Count} triggers x {players.Length} players)");
+    return 0;
+}
 if (args.Length == 2 && args[0] == "--http")
 {
     // A stand-alone run of the plugin's little web server, to test it with curl.

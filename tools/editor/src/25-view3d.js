@@ -3,7 +3,7 @@
 // so everything is drawn at (x, y, -z). That keeps the map the same way round as the flat view.
 const view3d = (() => {
   const T = window.THREE, cv = $('view3d');
-  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, ghostMesh = null, enemyGroup, extraGroup, liveGroup, raf = 0, last = 0;
+  let renderer = null, scene, camera, mapMesh = null, borderLines = null, geoMesh = null, ghostMesh = null, enemyGroup, extraGroup, liveGroup, areaGroup, raf = 0, last = 0;
   let yaw = 0, pitch = -0.7, started = false;
   const keys = new Set(), fly = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift']);
   const col = name => new T.Color(css[name]);
@@ -12,7 +12,7 @@ const view3d = (() => {
     scene = new T.Scene(); camera = new T.PerspectiveCamera(62, 1, 0.1, 3000);
     scene.add(new T.HemisphereLight(0xffffff, 0x556070, 0.95));
     const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(0.4, 1, 0.25); scene.add(sun);
-    enemyGroup = new T.Group(); extraGroup = new T.Group(); liveGroup = new T.Group(); scene.add(enemyGroup, extraGroup, liveGroup);
+    enemyGroup = new T.Group(); extraGroup = new T.Group(); liveGroup = new T.Group(); areaGroup = new T.Group(); scene.add(enemyGroup, extraGroup, liveGroup, areaGroup);
     let down = null;
     cv.addEventListener('pointerdown', ev => {
       cv.setPointerCapture(ev.pointerId);
@@ -139,13 +139,16 @@ const view3d = (() => {
       }
     });
     const blue = col('friend');
-    for (const z of state.zones) {
-      if (z.when !== 'zone') continue;
-      const pts = []; for (let a = 0; a <= 72; a++) pts.push(new T.Vector3(z.pos[0] + Math.cos(a / 72 * 6.2832) * z.radius, z.pos[1] + 0.3, -z.pos[2] + Math.sin(a / 72 * 6.2832) * z.radius));
-      extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: blue, transparent: true, opacity: state.fired.includes(z.id) ? 0.35 : 1 })));
+    state.zones.forEach(z => {
+      if (z.when !== 'zone' || !isVec(z.pos)) return;
+      if (!(z.area && z.area.parts && z.area.parts.length)) {        // a painted area is a volume of its own, see areas()
+        const pts = []; for (let a = 0; a <= 72; a++) pts.push(new T.Vector3(z.pos[0] + Math.cos(a / 72 * 6.2832) * z.radius, z.pos[1] + 0.3, -z.pos[2] + Math.sin(a / 72 * 6.2832) * z.radius));
+        extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: blue, transparent: true, opacity: state.fired.includes(z.id) ? 0.35 : 1 })));
+      }
       const post = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3, 6), new T.MeshBasicMaterial({ color: blue })); post.position.set(z.pos[0], z.pos[1] + 1.5, -z.pos[2]); extraGroup.add(post);
       const tag = label('Z' + z.id); tag.position.set(z.pos[0], z.pos[1] + 3.5, -z.pos[2]); extraGroup.add(tag);
-    }
+    });
+    areas(areaVolumes());
     const amber = col('warn');
     for (const t of state.things) {
       const bar = new T.Mesh(new T.BoxGeometry(0.9, 0.12, 0.2), new T.MeshPhongMaterial({ color: col('ink') }));
@@ -167,6 +170,30 @@ const view3d = (() => {
       slab.position.set(d.mid[0], d.mid[1], -d.mid[2]); slab.rotation.y = Math.atan2(dz, dx); slab.userData.door = n; enemyGroup.add(slab);
       if (d.enemiesCanOpen === false) { const bar = new T.Mesh(new T.BoxGeometry(0.12, 0.12, 1.1), new T.MeshBasicMaterial({ color: ink })); bar.position.copy(slab.position); bar.rotation.y = slab.rotation.y; extraGroup.add(bar); }
     });
+    invalidate3();
+  }
+  // Painted areas as see-through volumes, each part from the bottom to the top of its floor band, holes cut out, so floors,
+  // stairs, courtyards and what is left out can be looked at from any side. list: [{ area, colour (a css name), strong, faint }].
+  function areas(list) {
+    if (!renderer) return;
+    while (areaGroup.children.length) { const o = areaGroup.children.pop(); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+    for (const one of list || []) {
+      const colour = col(one.colour || 'friend');
+      for (const part of (one.area && one.area.parts) || []) {
+        const bottom = part.floor[0], top = part.floor[1];
+        if (!(top > bottom) || part.outline.length < 3) continue;
+        let g = null;
+        try {
+          const shape = new T.Shape(part.outline.map(p => new T.Vector2(p[0], p[1])));
+          for (const hole of part.holes || []) if (hole.length >= 3) shape.holes.push(new T.Path(hole.map(p => new T.Vector2(p[0], p[1]))));
+          g = new T.ExtrudeGeometry(shape, { depth: top - bottom, bevelEnabled: false });
+        } catch (e) { continue; }                         // a broken ring is shown as a finding in the panel, not here
+        // The shape lies in x and z; turned a quarter about x it stands from y = bottom up, at (x, y, -z) like everything else.
+        const mesh = new T.Mesh(g, new T.MeshBasicMaterial({ color: colour, transparent: true, opacity: one.strong ? 0.24 : one.faint ? 0.05 : 0.12, side: T.DoubleSide, depthWrite: false }));
+        const edges = new T.LineSegments(new T.EdgesGeometry(g), new T.LineBasicMaterial({ color: colour, transparent: true, opacity: one.strong ? 0.95 : one.faint ? 0.3 : 0.6 }));
+        for (const o of [mesh, edges]) { o.rotation.x = -Math.PI / 2; o.position.y = bottom; areaGroup.add(o); }
+      }
+    }
     invalidate3();
   }
   // Players and the enemies' real positions, redrawn at every update from the game.
@@ -221,7 +248,7 @@ const view3d = (() => {
   }
   function invalidate3() { if (renderer && state.mode === '3d' && !raf) raf = requestAnimationFrame(frame); }
   return {
-    available, home, focus, syncEnemies, syncLive, screenOf, invalidate: invalidate3,
+    available, home, focus, syncEnemies, syncLive, screenOf, areas, invalidate: invalidate3,
     lookFrom(p) { if (!renderer) return; camera.position.set(p[0], p[1] + 7, -(p[2] - 8)); yaw = 0; pitch = -0.72; invalidate3(); },
     open() { if (!mapMesh && state.map) buildMap(); if (!geoMesh && state.geo) buildGeo(); if (!started) { started = true; home(); } syncEnemies(); },
     dropMap() { if (renderer) { buildMap(); if (state.mode === '3d') home(); } },

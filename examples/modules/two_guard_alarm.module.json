@@ -1,0 +1,16 @@
+{
+ "schema": "missionlab-module/1",
+ "name": "Two-guard alarm response",
+ "notes": "Two guards hold a spot. When the enemy is alerted, two more come in 20 seconds later, one walking up to the guards, and every player sees a red warning. Positions are metres from the anchor; nothing here comes from a game map.",
+ "anchor": { "pos": [0, 0, 0], "yaw": 0 },
+ "spawns": [
+  {"group":0,"role":"Guard","pos":[0,0,0],"yaw":90,"indoor":false,"defensive":true,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":0,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":0,"hvt":false,"patrol":[]},
+  {"group":0,"role":"Guard","pos":[1.5,0,2],"yaw":60,"indoor":false,"defensive":true,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":0,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":0,"hvt":false,"patrol":[]},
+  {"group":1,"role":"Patrol","pos":[-14,0,-3],"yaw":90,"indoor":false,"defensive":false,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":0,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[[-14,0,-3],[-2,0,-3],[-2,0,3]]},
+  {"group":1,"role":"Wander","pos":[-14,0,3],"yaw":90,"indoor":false,"defensive":false,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":6,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[]}
+ ],
+ "triggers": [
+  {"id":1,"name":"Alarm response","when":"alert","red":true,"delay":20,"facePlayer":true,"message":"Alarm raised: two more guards are on their way"}
+ ],
+ "bindings": []
+}

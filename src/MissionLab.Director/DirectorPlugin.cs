@@ -21,7 +21,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.24.3";
+        public const string Version = "0.25.0";
 
         internal static ManualLogSource L;
 

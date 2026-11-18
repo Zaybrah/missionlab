@@ -1,0 +1,16 @@
+{
+ "schema": "missionlab-plan/1",
+ "name": "Fixture: the extraction waits for an ambush that has a chance",
+ "scene": "Fixture",
+ "extraction": { "after": 2 },
+ "objectives": [ { "name": "Cell Phone_1", "pos": [10, 0, 10], "yaw": 0 } ],
+ "triggers": [
+  { "id": 1, "name": "Phone taken", "when": "intel", "item": "cell phone" },
+  { "id": 2, "name": "Ambush", "when": "after", "after": 1, "chance": 50 },
+  { "id": 3, "name": "Reinforcements", "when": "after", "after": 2 }
+ ],
+ "spawns": [
+  { "pos": [0, 0, 0], "role": "Guard" },
+  { "pos": [5, 0, 5], "role": "Guard", "trigger": 2 }
+ ]
+}

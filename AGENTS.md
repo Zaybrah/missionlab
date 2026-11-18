@@ -42,11 +42,14 @@ Rules that are never negotiable:
 
 | Schema | Writer | Output under `BepInEx/MissionLab/` |
 |---|---|---|
-| `missionlab-plan/1` (scenario) | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
+| `missionlab-plan/1` (scenario); `missionlab-plan/2` = envelope `{"schema":"missionlab-plan/2","mission":{body}}`, written only when a zone/hold trigger has a shaped `area` | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
 | `missionlab-mission/1` | `Director.WriteRecord` | `missions/last.json` + timestamped copies |
 | `missionlab-run/1` | `RunRecord` | `runs/` (pruned to 60) |
 | `missionlab-replay/1` (`semantics:3`: rows carry `who` ids; 1 and 2 still open) | `Replay` | `replays/` |
 | `missionlab-recon/1`, `missionlab-movement/2` | Recon `ReconDump`, `MovementTracker` | `recon/` |
+| `missionlab-revision/1` | `Revisions` (page: Save revision) | `revisions/<scenario id>/r<n>.json` |
+| `missionlab-rehearsal/1` | Core `Rehearsal.Write`, page | `rehearsals/<scenario id>/<name>.json` (never under `scenarios/`: every `*.json` there is read as a scenario) |
+| `missionlab-module/1` (coordinates relative to an anchor; `docs/modules.md`) | page, `Modules` | `modules/*.module.json`; examples in `examples/modules/` |
 | `.mlgeo` (`MLGEO2\n\0`) | `MapExport` | `maps/` (local only) |
 
 The navmesh input is `OPERATOR_Data/NavMeshData/*.bytes`: a zip holding `graph0_extra.binary`, with vertices stored in Int3 millimetres. It has **three parsers that must change together**: `src/MissionLab.Core/NavMesh.cs`, the editor's `parseTiles`, and `tools/preview/navmesh.py`. The layout is described in `docs/findings.md`.
@@ -55,13 +58,16 @@ The navmesh input is `OPERATOR_Data/NavMeshData/*.bytes`: a zip holding `graph0_
 - `src/MissionLab.Core/`: pure logic.
   - Some names hide what the file holds: the JSON escaper `Guard.Esc` lives in `Resilience.cs`, and `V3` lives in `NavMesh.cs`.
   - `ScenarioFile` is the strict reader. `MissionPlan` is the model, the writer and the *lenient* reader.
+  - `Area.cs` is the painted-area model and the one membership rule (`Membership.Inside`) used by the plugin, rehearsal and (mirrored in `tools/editor/src/21a-area.js`) the editor; `tests/fixtures/area_points.json` is their shared contract.
+  - `TriggerEngine.Explain` gives the page's per-trigger sentence; `Rehearsal` runs the same engine on a scripted clock.
 - `src/MissionLab.Director/`: the plugin.
   - `GameMaster.cs` is one ~2350-line static class split by `// ---- name` dividers (life cycle, markers, triggers, doors, live spawning, keys, browser editor, saving, overlay).
   - `TryOuts.cs` holds experiments that run only from an explicit browser `{"cmd":"try"}`. It also holds shared helpers (`Message`, `WalkTo`, `RespawnNow`, `End`).
 - `src/MissionLab.Recon/`: the observer, with its own minimal JSON writer `J` (`Json.cs`).
 - `tests/Pure/`: the asset-free suite, run by CI. `tests/CoreTest/`: checks that need a real map. `tests/fixtures/`: the format contract.
-- `tools/editor/`: the editor page plus a vendored `three.min.js` (MIT). `tools/preview/`: Python/matplotlib plan renders. `tools/package.py`: builds the release ZIP.
-- `examples/`: shipped scenarios. Tests check them.
+- `tools/editor/`: the editor page (built from `tools/editor/src/*` by `tools/editor/build.py`; parts are fragments of one IIFE, sorted by name) plus a vendored `three.min.js` (MIT). `tools/preview/`: Python/matplotlib plan renders. `tools/package.py`: builds the release ZIP. `tools/build.py`: builds the plugins.
+- `tests/editor/run.mjs`: the editor's headless checks (Node, no packages), part of `./test.sh`.
+- `examples/`: shipped scenarios (top level only; tests strict-read each, check Completion, the round trip and trigger circles). `examples/modules/`: encounter modules.
 - `docs/`: `backlog.md` (ML-NNN tickets), `backlog-status.md` (where each ticket stands), `findings.md` (game internals seen in practice), `ideas.md`, `research-*.md`, `scenario.schema.json`.
 
 ## Development Commands
@@ -148,8 +154,8 @@ python3 tools/preview/render_plan.py <nav.bytes> <recon.json|-> <plan_dir> <out.
 5. `tests/fixtures/all_fields.json` plus the key list in the `files` section of `tests/Pure`. A new refusal needs an `invalid/*.json` fixture and an entry in `expected.json`.
 
 Other rules for the format:
-- The error codes are fixed: `not-json wrong-type no-version(note) unknown-format future-version bad-id duplicate-id unknown-kind missing-field self-ref missing-ref unknown-value unreadable`.
-- Raise `missionlab-plan/N` only for an incompatible change. A file with a higher N is refused (`future-version`) and never rewritten.
+- The error codes are fixed: `not-json wrong-type no-version(note) unknown-format future-version bad-id duplicate-id unknown-kind missing-field self-ref missing-ref unknown-value unreadable bad-area out-of-range`. Add a code only with an `invalid/*.json` fixture and `expected.json` entry that both readers pass.
+- Raise `missionlab-plan/N` only for an incompatible change. A file with a higher N is refused (`future-version`) and never rewritten. plan/2 exists because v0.23 ignores `schema` and unknown keys and would read a shaped area as its anchor circle; the `mission` envelope makes v0.23 refuse the file (no root `spawns`), tested against a verbatim copy of the v0.23 reader in `tests/Pure/Legacy/`.
 - There are two readers. The strict `ScenarioFile.Read` handles user files at mission start. The lenient `FromJson` clamps and defaults, and is used for runs, Game Master and live edits, and `CoreTest --check`.
 
 **Editor JS**

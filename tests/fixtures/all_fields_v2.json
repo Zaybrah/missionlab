@@ -1,0 +1,31 @@
+{
+ "schema": "missionlab-plan/2",
+ "mission": {
+  "name": "Fixture: every field of missionlab-plan/2",
+  "id": "sc-fixture01",
+  "revision": 3,
+  "squad": [2, 4],
+  "minutes": 25,
+  "scene": "Fixture",
+  "seed": 9,
+  "mapPrint": "fnv1a64:0123456789abcdef",
+  "triggers": [
+   { "id": 1, "name": "Yard", "when": "zone", "pos": [5, 0, 5], "radius": 6, "message": "In the yard.",
+     "area": { "parts": [
+      { "floor": [-1, 3], "outline": [[-10, -10], [10, -10], [10, 10], [-10, 10]], "holes": [ [[-2, -2], [2, -2], [2, 2], [-2, 2]] ] },
+      { "floor": [3, 6], "outline": [[10, -5], [20, -5], [20, 5], [10, 5]] }
+     ] } },
+   { "id": 2, "name": "Roof", "when": "hold", "pos": [35, 1, 3], "radius": 4, "hold": 10, "everyone": true, "extraction": "open",
+     "area": { "parts": [ { "floor": [0, 4], "outline": [[30, 0], [40, 0], [35, 8]] } ] } }
+  ],
+  "places": [
+   { "id": 1, "name": "Rear stairs", "pos": [1, 0, 1], "floor": [0, 3] },
+   { "id": 2, "name": "Courtyard", "pos": [50, 0, 50], "area": { "parts": [ { "floor": [-1, 2], "outline": [[45, 45], [55, 45], [55, 55], [45, 55]] } ] } }
+  ],
+  "extraction": { "after": 2 },
+  "spawns": [
+   { "pos": [0, 0, 0], "role": "Guard" },
+   { "pos": [15, 4, 0], "trigger": 1 }
+  ]
+ }
+}

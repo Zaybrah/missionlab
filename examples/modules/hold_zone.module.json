@@ -1,0 +1,16 @@
+{
+ "schema": "missionlab-module/1",
+ "name": "Hold the yard",
+ "notes": "Players must stay in a 12 by 8 metre rectangle round the anchor for 30 seconds. When they have, a squad of four comes in from about 12 metres away and makes for them. Positions are metres from the anchor; nothing here comes from a game map.",
+ "anchor": { "pos": [0, 0, 0], "yaw": 0 },
+ "spawns": [
+  {"group":0,"role":"Patrol","pos":[11,0,8],"yaw":225,"indoor":false,"defensive":false,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":0,"patrolWaitSeconds":2,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[[11,0,8],[0,0,8],[0,0,-6]]},
+  {"group":0,"role":"Wander","pos":[12,0,7],"yaw":225,"indoor":false,"defensive":false,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":5,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[]},
+  {"group":0,"role":"Wander","pos":[10,0,9],"yaw":225,"indoor":false,"defensive":false,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":5,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[]},
+  {"group":0,"role":"Guard","pos":[12,0,9],"yaw":225,"indoor":false,"defensive":true,"detectionRange":0,"hearingRange":0,"fov":0,"wanderDistance":0,"patrolWaitSeconds":4,"fixed":false,"prone":false,"type":"","trigger":1,"hvt":false,"patrol":[]}
+ ],
+ "triggers": [
+  {"id":1,"name":"Hold the yard","when":"hold","pos":[0,0,0],"radius":6,"area":{"parts":[{"floor":[-0.5,2.6],"outline":[[-6,-4],[6,-4],[6,4],[-6,4]]}]},"hold":30,"hunt":true,"facePlayer":true,"message":"The yard is held: a squad is coming for you"}
+ ],
+ "bindings": []
+}

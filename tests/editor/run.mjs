@@ -166,10 +166,8 @@ console.log('files the editor must refuse (ML-010)');
     const page = openEditor(script), before = page.api.scenarioText();
     await page.api.openFiles([fakeFile(name, text)]);
     const refused = page.api.state.refused;
-    // Text that is not JSON never reaches the strict reader: the page says it could not be opened. That is the plugin's not-json.
-    let parses = true; try { JSON.parse(text); } catch (e) { parses = false; }
-    const got = !parses && !refused && page.banner().includes(name + ' could not be opened') ? ['not-json ']
-      : refused ? refused.errors.map(f => f.code + ' ' + f.path) : [];
+    // Text that is not JSON reaches the strict reader too, which names it not-json as the plugin does.
+    const got = refused ? refused.errors.map(f => f.code + ' ' + f.path) : [];
     const want = Array.isArray(expected[name]) ? expected[name] : ['(not listed in expected.json)'];
     check('invalid/' + name + ' is refused with the listed places', got.join(' | ') === want.join(' | '), '\n        got  ' + got.join(' | ') + '\n        want ' + want.join(' | '));
     check('invalid/' + name + ' leaves the page as it was', page.api.scenarioText() === before);
@@ -185,6 +183,588 @@ console.log('mission check');
   check(name + ' loads', !page.api.state.refused && page.api.state.zones.length === 1, page.banner());
   check(name + ': the check says nobody could leave on some runs', found.some(f => f.level === 'problem' && f.text.includes('nobody could leave') && f.text.includes('50%')),
     found.map(f => f.level + ': ' + f.text).join(' / '));
+}
+
+console.log('painted areas (ML-027)');
+{
+  // The same fixture as tests/Pure/AreaTests.cs, through the editor's copy of the rules.
+  const api = openEditor(script).api;
+  const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'area_points.json'), 'utf8'));
+  const problems = area => { const found = []; api.areaProblems(area, 't', (code, at) => found.push(code + ' ' + at)); return found.join(' | '); };
+  for (const one of fixture.areas) {   // every point is in or out as the fixture says, and every area passes the strict rules
+    check(one.name + ': the area passes the strict rules', problems(one.area) === '', problems(one.area));
+    const area = api.areaRead(one.area);
+    check(one.name + ': the area reads', area !== null);
+    if (!area) continue;
+    check(one.name + ': the fixture is already written canonically', api.areaSignature(area) === JSON.stringify(one.area), api.areaSignature(area));
+    for (const point of one.points) check(one.name + ': ' + point.why + ' is ' + (point.in ? 'in' : 'out'), api.areaContains(area, point.p) === point.in, JSON.stringify(point.p));
+  }
+  for (const one of fixture.invalid) {   // every broken area is refused with exactly the listed codes and places, in order
+    const got = problems(one.area), want = one.expect.join(' | ');
+    check(one.name + ' is refused with the listed places', got === want, '\n        got  ' + got + '\n        want ' + want);
+  }
+  {   // A ring of 257 points is refused, and so is an area of more than 2048 points in rings that are each fine.
+    const generated = (parts, points) => ({ parts: Array.from({ length: parts }, (_, j) => ({ floor: [0, 3],
+      outline: Array.from({ length: points }, (_, k) => [j * 100 + Math.round(3000 * Math.cos(2 * Math.PI * k / points)) / 100, Math.round(3000 * Math.sin(2 * Math.PI * k / points)) / 100]) })) });
+    check('a ring of 257 points is refused at the ring', problems(generated(1, 257)) === 'bad-area t.area.parts[0].outline', problems(generated(1, 257)));
+    check('nine rings of 256 points are refused as an area of too many points', problems(generated(9, 256)) === 'bad-area t.area', problems(generated(9, 256)));
+  }
+  {   // Writing, reading and writing again gives the same text, with a hole and awkward decimals.
+    const area = { parts: [{ floor: [-1.234, 2.006], outline: [[0.333, -0.001], [10.126, 0], [10, 10.5], [0, 10]], holes: [[[2, 2], [4, 2], [4, 4], [2, 4]]] }] };
+    const once = JSON.stringify(api.areaWrite(area)), twice = JSON.stringify(api.areaWrite(api.areaRead(JSON.parse(once))));
+    check('an area written, read and written again is the same text', once === twice, once + ' then ' + twice);
+    check('it is written with two decimals and no minus zero', once === '{"parts":[{"floor":[-1.23,2.01],"outline":[[0.33,0],[10.13,0],[10,10.5],[0,10]],"holes":[[[2,2],[4,2],[4,4],[2,4]]]}]}', once);
+  }
+  const square = (x, z, size, bottom, top) => ({ parts: [{ floor: [bottom, top], outline: [[x, z], [x + size, z], [x + size, z + size], [x, z + size]], holes: [] }] });
+  {   // The signature changes when a corner moves, and comes back when it moves back.
+    const area = square(0, 0, 10, 0, 3), before = api.areaSignature(area);
+    area.parts[0].outline[2] = [10, 11];
+    check('moving a corner changes the signature', api.areaSignature(area) !== before);
+    area.parts[0].outline[2] = [10, 10];
+    check('moving it back gives the same signature', api.areaSignature(area) === before);
+  }
+  {   // The lenient reader turns an upside-down floor round, skips odd points and drops what cannot be used.
+    const area = api.areaRead({ parts: [{ floor: [3, 0], outline: [[0, 0], 'x', [10, 0], [10, 10], [0, 10]], holes: [[[1, 1], [2, 1]]] }, { floor: [0, 3], outline: [[0, 0], [1, 1]] }, { outline: [[0, 0], [1, 0], [1, 1]] }] });
+    check('a loose area keeps the one usable part', area !== null && area.parts.length === 1, JSON.stringify(area));
+    check('its floor is turned round and the odd point and the two-point hole are gone', area !== null && api.areaSignature(area) === '{"parts":[{"floor":[0,3],"outline":[[0,0],[10,0],[10,10],[0,10]]}]}', area && api.areaSignature(area));
+    check('an area with nothing usable reads as none, so the circle is used', api.areaRead({ parts: [{ floor: [0, 3], outline: [[0, 0], [1, 1]] }] }) === null);
+  }
+  {   // A trigger without an area keeps the circle exactly as the plugin has it.
+    const t = { pos: [100, 10, 50], radius: 5, area: null };
+    const got = [[100, 10, 50], [105, 10, 50], [105.01, 10, 50], [103, 12, 54], [103, 12.01, 54], [100, 7.99, 50], [96, 8, 47]].map(p => (api.membershipInside(t, p) ? '1' : '0')).join('');
+    check('the circle answers as before for every point', got === '1101001', got);
+    t.area = square(200, 200, 10, 0, 3);
+    check('with an area the radius no longer counts', !api.membershipInside(t, [100, 10, 50]) && api.membershipInside(t, [205, 1, 205]));
+    t.area = { parts: [] };
+    check('an area with no parts falls back to the circle', api.membershipInside(t, [100, 10, 50]));
+  }
+  {   // A concave area of 200 corners in each of 8 parts answers 10 000 questions, all of them right.
+    const area = { parts: Array.from({ length: 8 }, (_, part) => ({ floor: [part * 3, part * 3 + 2.5], holes: [],
+      outline: Array.from({ length: 200 }, (_, k) => { const r = k % 2 === 0 ? 20 : 10, angle = k * Math.PI / 100; return [part * 50 + r * Math.cos(angle), r * Math.sin(angle)]; }) })) };
+    api.areaPrepare(area);
+    let wrong = 0;
+    for (let i = 0; i < 10000; i++) {
+      const part = i % 8, spike = Math.floor(i / 8) % 100, tip = Math.floor(i / 800) % 2 === 0;    // towards a spike's tip (in) or the notch between two (out)
+      const angle = (2 * spike + (tip ? 0 : 1)) * Math.PI / 100;
+      if (api.areaContains(area, [part * 50 + 15 * Math.cos(angle), part * 3 + 1, 15 * Math.sin(angle)]) !== tip) wrong++;
+    }
+    check('10 000 points in and out of a 200-corner area are all answered right', wrong === 0, wrong + ' wrong');
+    check('a point of one part at another part\'s height is out', !api.areaContains(area, [0, 4, 0]) && api.areaContains(area, [0, 1, 0]));
+  }
+}
+
+console.log('repairs for mission check findings (ML-017)');
+{
+  // The bounded search alone, on ground given by a function: walkable where x <= 0, at height 0.
+  const api = openEditor(script).api, flat = (x, z) => (x <= 0 ? [0] : []);
+  const at = (p, o) => JSON.stringify(api.walkableNear(p, flat, Object.assign({ radius: 3 }, o || {})));
+  check('the nearest walkable spot with ground around it is found on the fixed grid', at([1, 0, 0]) === '[-0.25,0,0]', at([1, 0, 0]));
+  check('nothing is found beyond the bound', at([1, 0, 0], { radius: 1 }) === 'null', at([1, 0, 0], { radius: 1 }));
+  check('ground more than 1 m above or below does not count', at([1, 1.5, 0]) === 'null', at([1, 1.5, 0]));
+  check('a spot the caller refuses is passed over for the next nearest', at([1, 0, 0], { ok: s => s[2] >= 1 }) === '[-0.25,0,1]', at([1, 0, 0], { ok: s => s[2] >= 1 }));
+}
+{
+  // A small invented map: a ground floor and an upper floor 3 m above it over the same 10 x 10 m, and a lot 20 m to the side.
+  const plate = (x0, z0, x1, z1, y) => [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1];
+  const fresh = () => {
+    const api = openEditor(script).api, s = api.state;
+    s.map = api.makeMap(new Float32Array([...plate(0, 0, 10, 10, 0), ...plate(0, 0, 10, 10, 3), ...plate(30, 0, 40, 10, 0)]), 'repair test');
+    Object.assign(s, { infils: [], authored: [], zones: [], things: [], objectives: [], doors: [], extractionAfter: 0, selected: -1, squad: [] });
+    s.enemies = [];
+    return api;
+  };
+  const enemy = (api, pos, more) => Object.assign(api.newEnemy(pos, 'Guard', 0), more || {});
+  const offer = (api, kind, has) => api.missionCheck().find(f => f.repair && f.repair.kind === kind && (!has || f.text.includes(has)));
+  const text = v => JSON.stringify(v);
+  {   // An enemy just off the ground is moved onto it; one far off stays where it is and keeps its finding.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [11, 0, 5]), enemy(api, [15, 0, 5])];
+    const before = text(s.enemies), f = offer(api, 'snap', 'Enemy 1 ');
+    check('an enemy off the walkable ground offers a repair', !!f, api.missionCheck().map(x => x.text).join(' / '));
+    if (f) {
+      const plan = api.previewRepair(f);
+      check('the preview moves it to the nearest walkable ground, inside the searched area', plan.edits && text(plan.edits[0].to) === '[9.75,0,5]' && plan.areas[0].radius === 3, text(plan));
+      check('the preview changes nothing yet', text(s.enemies) === before);
+      check('Apply makes the change', api.applyRepair() === true && text(s.enemies[0].pos) === '[9.75,0,5]', text(s.enemies[0].pos));
+      check('the check runs again: that finding is gone, the other one stays', !offer(api, 'snap', 'Enemy 1 ') && !!offer(api, 'snap', 'Enemy 2 '));
+      api.undo();
+      check('one Undo takes the whole repair back', text(s.enemies) === before, text(s.enemies));
+    }
+    const far = api.repairPlan({ kind: 'snap', what: 'enemy', i: 1 });
+    check('with no walkable ground within 3 m there is an explanation and no edit', far.edits === null && far.why.includes('3 m') && far.areas.length === 1, text(far));
+  }
+  {   // Between two floors: the ground 1.6 m below and the floor 1.4 m above are both other floors, so nothing is moved.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [5, 1.6, 5])];
+    const plan = api.repairPlan({ kind: 'snap', what: 'enemy', i: 0 });
+    check('a repair never moves an enemy to another floor', plan.edits === null && plan.why.includes('nothing is moved'), text(plan));
+  }
+  {   // The target person is a goal of the mission: it is never moved.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [11, 0, 5], { hvt: true })];
+    const plan = api.repairPlan({ kind: 'snap', what: 'enemy', i: 0 });
+    check('the target person is never moved by a repair', plan.edits === null && plan.why.includes('target person'), text(plan));
+  }
+  {   // A patrol route stop and a thing off the ground are moved onto their own floor.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [5, 0, 5], { role: 'Patrol', patrol: [[2, 0, 2], [12, 0, 2]] })];
+    s.things = [{ name: 'AKM', pos: [10.5, 3.2, 5], yaw: 0, trigger: 0, chance: 100 }, { name: 'AKM', pos: [5, 6, 5], yaw: 0, trigger: 0, chance: 100 }];
+    const stop = offer(api, 'snap', 'Route stop 2');
+    check('a route stop off the ground offers a repair', !!stop);
+    if (stop) { api.previewRepair(stop); api.applyRepair(); }
+    check('the route stop moves, the other stop and the enemy stay', text(s.enemies[0].patrol) === '[[2,0,2],[9.75,0,2]]' && text(s.enemies[0].pos) === '[5,0,5]', text(s.enemies[0]));
+    const up = api.repairPlan({ kind: 'snap', what: 'thing', i: 0 }), high = api.repairPlan({ kind: 'snap', what: 'thing', i: 1 });
+    check('a thing just off the upper floor goes onto the upper floor', up.edits && text(up.edits[0].to) === '[9.75,3,5]', text(up));
+    check('a thing far above every floor gets an explanation', high.edits === null, text(high));
+  }
+  {   // Three enemies on one spot: the first stays, the others go at least 1 m from everybody, within 2 m, on the ground.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [5, 0, 5]), enemy(api, [5.2, 0, 5]), enemy(api, [5.1, 0, 5.1]), enemy(api, [8, 0, 8], { role: 'Patrol', patrol: [[8, 0, 8], [2, 0, 8]] })];
+    const before = text(s.enemies), f = offer(api, 'apart');
+    check('enemies on the same spot offer a repair', !!f);
+    if (f) {
+      const plan = api.previewRepair(f);
+      check('the first stays and the two later ones move', plan.edits && plan.edits.map(e => e.i).join(',') === '1,2', text(plan.edits));
+      api.applyRepair();
+      const p = s.enemies.map(e => e.pos), d = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+      check('afterwards every enemy is at least 1 m from every other', d(p[0], p[1]) >= 1 && d(p[0], p[2]) >= 1 && d(p[1], p[2]) >= 1, text(p));
+      check('each moved no more than 2 m and stays on the ground', d(p[1], [5.2, 0, 5]) <= 2 && d(p[2], [5.1, 0, 5.1]) <= 2 && p[1][1] === 0 && p[2][1] === 0, text(p));
+      check('no enemy stands on the same spot any more', !api.missionCheck().some(x => x.text.includes('same spot')));
+      api.undo();
+      check('one Undo puts all of them back, routes included', text(s.enemies) === before, text(s.enemies));
+    }
+  }
+  {   // When the later one is the target person, the other one moves.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [5, 0, 5]), enemy(api, [5.2, 0, 5], { hvt: true })];
+    const plan = api.repairPlan({ kind: 'apart', i: 0, j: 1 });
+    check('the target person stays and the other enemy moves', plan.edits && plan.edits.length === 1 && plan.edits[0].i === 0, text(plan));
+  }
+  {   // A trigger number used twice is renumbered when every reference can mean only one of them.
+    const api = fresh(), s = api.state;
+    s.zones = [api.newTrigger(1, 'after', { after: 1, message: 'After the other one' }), api.newTrigger(1, 'time', { delay: 10, message: 'Ten seconds' })];
+    const before = text(s.zones), f = offer(api, 'renumber');
+    check('a trigger number used twice offers a repair', !!f);
+    if (f) {
+      const plan = api.previewRepair(f);
+      check('the later one takes a free number and the one waiting for it follows', plan.edits && plan.edits.map(e => e.what + ':' + e.from + '>' + e.to).join(' ') === 'id:1>2 after:1>2', text(plan.edits));
+      api.applyRepair();
+      check('afterwards the numbers differ and the first waits for the second', s.zones[0].id === 1 && s.zones[0].after === 2 && s.zones[1].id === 2 && !offer(api, 'renumber'), text(s.zones));
+      api.undo();
+      check('Undo brings the old numbers and references back', text(s.zones) === before);
+    }
+    s.enemies = [enemy(api, [5, 0, 5], { trigger: 1 })];
+    const vague = api.repairPlan({ kind: 'renumber', id: 1 });
+    check('when an enemy waits for that number it could mean either: explanation, no edit', vague.edits === null && vague.why.includes('enemy 1'), text(vague));
+  }
+  {   // A gone trigger on an enemy or in an all-list: the repair only makes the page say what the saved file says.
+    const api = fresh(), s = api.state;
+    s.zones = [api.newTrigger(1, 'time', { delay: 5, message: 'Five' }), api.newTrigger(2, 'all', { of: [1, 9], message: 'Both' })];
+    s.enemies = [enemy(api, [5, 0, 5], { trigger: 7 })];
+    const file = api.scenarioText();
+    for (const kind of ['unlink', 'unlist']) { const f = offer(api, kind); check(kind + ': offered', !!f); if (f) { api.previewRepair(f); check(kind + ': applied', api.applyRepair() === true); } }
+    check('the enemy no longer waits for a gone trigger and the list holds only trigger 1', s.enemies[0].trigger === 0 && text(s.zones[1].of) === '[1]', text([s.enemies[0].trigger, s.zones[1].of]));
+    check('the saved file is exactly as before', api.scenarioText() === file);
+    s.zones[1].of = [9];
+    check('a list that would be left empty gets an explanation', api.repairPlan({ kind: 'unlist', zi: 1 }).edits === null);
+  }
+  {   // A repair never touches the extraction.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [5, 0, 5])]; s.extractionAfter = 5;
+    const f = offer(api, 'extraction'), plan = f ? api.previewRepair(f) : null;
+    check('the extraction waiting for a gone trigger is explained, never changed', !!plan && plan.edits === null && s.extractionAfter === 5, text(plan));
+  }
+  {   // Nothing is applied while the page is linked to a game, nor when the scenario changed after the preview.
+    const api = fresh(), s = api.state;
+    s.enemies = [enemy(api, [11, 0, 5])];
+    api.previewRepair(offer(api, 'snap'));
+    api.live.on = true;
+    check('Apply does nothing while linked to a running game', api.applyRepair() === false && text(s.enemies[0].pos) === '[11,0,5]');
+    api.live.on = false;
+    s.enemies[0].pos = [12, 0, 5];
+    check('a stale preview is shown again, not applied', api.applyRepair() === false && text(s.enemies[0].pos) === '[12,0,5]' && text(s.repair.edits[0].from) === '[12,0,5]', text(s.repair));
+  }
+}
+
+console.log('named places (ML-018)');
+{
+  const api = openEditor(script).api, s = api.state, text = JSON.stringify;
+  const square = (bottom, top) => ({ parts: [{ floor: [bottom, top], outline: [[20, 20], [30, 20], [30, 30], [20, 30]], holes: [] }] });
+  // A point place downstairs and one right above it, then an area place downstairs and one upstairs over the same ground.
+  const hall = api.addPlace([10, 0, 10], 'point', [-0.5, 2.5]), landing = api.addPlace([10, 3, 10], 'point', [2.6, 5.6]);
+  const shop = api.addPlace([25, 0, 25], 'area'), office = api.addPlace([25, 3, 25], 'area');
+  shop.area = square(-0.5, 2.5); office.area = square(2.6, 5.5);
+  check('new places get the next ids', text(s.places.map(p => p.id)) === '[1,2,3,4]', text(s.places.map(p => p.id)));
+  check('point places on top of each other stay apart by their floor bands', api.placeName([11, 0.1, 10]) === hall.name && api.placeName([11, 3.1, 10]) === landing.name);
+  check('area places on top of each other stay apart by their floor bands', api.placeName([22, 0.1, 28]) === shop.name && api.placeName([22, 3.1, 28]) === office.name);
+  check('more than 3 m from a pin, or outside an area, is no place', api.placeName([13.1, 0.1, 10]) === '' && api.placeName([30.5, 0.1, 25]) === '');
+  hall.floor = null;
+  check('a point place without a band takes 2 m of height either way, as the plugin does', api.placeName([10, 2, 10]) === hall.name && api.placeName([10, -2.01, 10]) === '');
+  hall.floor = [-0.5, 2.5];
+  shop.pos = [25, 0, 19];      // the pin just outside its own area: a spot near the pin but outside the area is still no place
+  check('an area place ignores the 3 m around its pin', api.placeName([25, 0.1, 19.9]) === '' && api.placeName([25, 0.1, 20.5]) === shop.name);
+  shop.pos = [25, 0, 25];
+  // Renaming keeps the id, so anything referring to the place by id still finds it.
+  const before = api.scenarioObject().places;
+  check('renaming a place is accepted', api.renamePlace(office.id, 'Upstairs office') === true);
+  const after = api.scenarioObject().places;
+  check('renaming keeps every id and changes only that name', text(after.map(p => p.id)) === text(before.map(p => p.id)) && after[3].name === 'Upstairs office' && text(after[0]) === text(before[0]), text(after));
+  check('the renamed place is found under its new name', api.placeName([22, 3.1, 28]) === 'Upstairs office');
+  // The file holds the places' own fields and nothing worked out from the map.
+  const own = after.every(p => Object.keys(p).every(k => ['id', 'name', 'pos', 'floor', 'area'].includes(k)) && (!p.area || (Object.keys(p.area).join() === 'parts' && p.area.parts.every(q => Object.keys(q).every(k => ['floor', 'outline', 'holes'].includes(k))))));
+  check('places are written with their own fields only', own, text(after));
+  check('a point place has no area and an area place keeps its shape', !('area' in after[0]) && text(after[2].area) === text(api.areaWrite(square(-0.5, 2.5))), text(after));
+  // Deleting is held back while something still names or refers to the place.
+  s.briefing = ['Meet in the Upstairs office'];
+  const uses = api.deletePlace(office.id);
+  check('a place named in the briefing is not deleted at the first press', uses.length === 1 && uses[0].includes('briefing') && s.places.length === 4, text(uses));
+  api.placeUsers.push(p => (p.id === shop.id ? ['module "two guards" binds it'] : []));
+  check('a place another part refers to by id is held back too', text(api.deletePlace(shop.id)) === '["module \\"two guards\\" binds it"]' && s.places.length === 4);
+  api.placeUsers.length = 0;
+  check('deleting anyway removes it', api.deletePlace(office.id, true).length === 0 && s.places.length === 3 && !s.places.some(p => p.id === office.id));
+  s.briefing = [];
+  // Undo brings back the places as they were.
+  api.addPlace([40, 0, 40], 'point', [-0.5, 2.6]);
+  api.undo();
+  check('undo takes back an added place', s.places.length === 3, text(s.places.map(p => p.id)));
+  // The mission check calls things by the place they are in.
+  s.enemies = [api.newEnemy([11, 0.1, 10]), api.newEnemy([11, 0.1, 10])];
+  const found = api.missionCheck().map(f => f.text);
+  check('the mission check names the place of two enemies on one spot', found.some(t => t.includes('same spot in ' + hall.name)), found.join(' / '));
+  s.enemies = [];
+  // A replay of the same map file names the places of its events; one of another map file does not.
+  s.navFile = 'house.bytes';
+  api.replay.data = { navFile: 'house.bytes' };
+  check('a replay on the scenario\'s map names the place', api.replayPlace([11, 0.1, 10]) === ' in ' + hall.name);
+  api.replay.data = { navFile: 'other.bytes' };
+  check('a replay of another map file names no place', api.replayPlace([11, 0.1, 10]) === '');
+  api.replay.data = null;
+  // The rebind review: the open map file's fingerprint against the scenario's.
+  const map = s.map, one = 'fnv1a64:' + '1'.repeat(16), two = 'fnv1a64:' + '2'.repeat(16);
+  check('the example map asks for no review', api.placeReview() === null);
+  s.map = { isExample: false, print: one }; s.mapPrint = one;
+  check('the same fingerprint asks for no review', api.placeReview() === null);
+  const written = Object.keys(api.scenarioObject()).join();
+  s.map.print = two;
+  let review = api.placeReview();
+  check('another fingerprint lists every place, none checked', review !== null && review.why === 'changed' && text(review.places.map(q => [q.id, q.mark])) === text(s.places.map(p => [p.id, ''])), text(review));
+  api.markPlace(hall.id, 'right'); api.markPlace(landing.id, 'moved');
+  review = api.placeReview();
+  check('what the author said about each place is shown', text(review.places.map(q => q.mark)) === '["right","moved",""]', text(review));
+  const reviewed = api.scenarioObject();
+  check('the review adds nothing to the file but the new fingerprint', Object.keys(reviewed).join() === written && reviewed.mapPrint === two && text(reviewed.places) === text(api.scenarioObject().places) && !text(reviewed).includes('"moved"'), Object.keys(reviewed).join());
+  s.mapPrint = '';
+  review = api.placeReview();
+  check('a scenario without a fingerprint gets the review too, unchecked again', review !== null && review.why === 'unknown' && review.places.every(q => q.mark === ''), text(review));
+  for (const p of s.places) api.markPlace(p.id, 'new');
+  check('places all made on this map need no review', api.placeReview() === null);
+  s.map = map; s.mapPrint = '';
+}
+
+console.log('staged live changes and revisions (ML-014)');
+{
+  const page = openEditor(script), api = page.api, texts = lines => lines.map(l => l.kind + ': ' + l.text).join(' / ');
+  // The semantic diff names what a change does: enemies by number, tag and place, reinforcements, doors and mission rules.
+  const before = {
+    schema: 'missionlab-plan/1', name: 'Diff', places: [{ id: 1, name: 'Garage', pos: [10, 0, 10] }], extraction: { after: 2 },
+    triggers: [{ id: 2, name: 'Alarm', when: 'alert' }], doors: [{ name: 'Front', pos: [5, 0, 5] }],
+    spawns: [{ pos: [0, 0, 0], tag: 'officer' }, { pos: [3, 0, 0] }, { pos: [6, 0, 0] }, { pos: [20, 0, 20], trigger: 2 }],
+  };
+  const after = JSON.parse(JSON.stringify(before));
+  after.spawns[0].pos = [10, 0, 11]; after.spawns[1].pos = [4, 0, 1]; after.spawns[2].pos = [7, 0, 2];
+  after.spawns.push({ pos: [21, 0, 20], trigger: 2 });
+  after.doors[0].locked = true; after.triggers[0].delay = 10; delete after.extraction; after.respawn = { after: 20, times: 3 };
+  const lines = api.semanticDiff(before, after, { fired: [2] });
+  check('the diff names the tagged enemy and the place it moved to', lines.some(l => l.kind === 'enemy' && l.text.startsWith('Enemy 1 (officer) in Garage: moved')), texts(lines));
+  check('the diff lists each of the three moved enemies', lines.filter(l => l.kind === 'enemy' && l.text.includes('moved')).length === 3, texts(lines));
+  check('the diff names the door and what happens to it', lines.some(l => l.kind === 'door' && l.text.includes('"Front"') && l.text.includes('locked (was left to the game)')), texts(lines));
+  check('the diff counts the enemies a trigger brings, and says it has fired', lines.some(l => l.kind === 'reinforcement' && l.text.includes('now brings 2 enemies (was 1)') && l.text.includes('fired already')), texts(lines));
+  check('the diff names the added reinforcement and its trigger', lines.some(l => l.kind === 'reinforcement' && l.text.includes('added') && l.text.includes('trigger 2 "Alarm"')), texts(lines));
+  check('the diff names mission rules: extraction and reinforcement waves', lines.some(l => l.kind === 'extraction' && l.text.includes('no longer waits')) && lines.some(l => l.kind === 'respawn' && l.text.includes('after 20 s, 3 times')), texts(lines));
+  check('the diff names a changed trigger', lines.some(l => l.kind === 'trigger' && l.text.includes('delay s not set → 10')), texts(lines));
+  check('an unchanged setup has no diff', api.semanticDiff(before, JSON.parse(JSON.stringify(before))).length === 0);
+  const markers = [{ id: 1, pos: [0, 0, 0] }, { id: 2, pos: [3, 0, 0], live: true }, { id: 3, pos: [6, 0, 0] }];
+  const gone = api.semanticDiff({ markers }, { markers: [markers[0], markers[2]] });
+  check('live markers pair by id: removing one is one line, saying its enemy goes too', gone.length === 1 && gone[0].text.startsWith('Enemy 2 removed') && gone[0].text.includes('its enemy in the game goes too'), texts(gone));
+
+  // Staging rules: what blocks a batch, which number a retry carries, the page's own revision store.
+  const v = api.stageVerdict([{ level: 'error', path: 'triggers[0].after', text: 'there is no trigger 77' }, { level: 'note', path: '', text: 'old' }],
+    [{ level: 'problem', text: 'New problem.' }, { level: 'problem', text: 'Old problem.' }, { level: 'warning', text: 'Look.' }, { level: 'problem', text: 'x.json was not loaded. bad' }], ['Mission check: Old problem.'], 'x.json');
+  check('a scenario refusal and a new Mission check problem block; known problems, warnings and refused files do not', v.length === 2 && v[0].includes('there is no trigger 77') && v[1] === 'Mission check: New problem.', v.join(' / '));
+  let n = 0; const make = () => 'c' + (++n);
+  const first = api.stageCommandFor(null, 'k1', make), again = api.stageCommandFor(first, 'k1', make);
+  check('a retry of the same batch carries the same command number', again.command === first.command && n === 1);
+  check('another batch gets a new number', api.stageCommandFor(first, 'k2', make).command !== first.command);
+  first.done = true;
+  check('a batch the game has answered is never reused', api.stageCommandFor(first, 'k1', make).command !== first.command);
+  check('no answer or a begun batch keeps the number; refused, expired, busy or failed does not',
+    api.stageKeepsCommand(new Error('network')) && api.stageKeepsCommand({ status: 202, result: 'pending' }) && !api.stageKeepsCommand({ status: 503, result: 'expired' }) && !api.stageKeepsCommand({ status: 409 }) && !api.stageKeepsCommand({ status: 429 }) && !api.stageKeepsCommand({ status: 500, result: 'failed' }));
+  let store = {};
+  for (let k = 1; k <= 5; k++) store = api.stageRevisionAdd(store, { id: 'sc-a', n: k, hash: 'h' + k, saved: '2026-01-0' + k + 'T00:00:00Z', note: '', scenario: 'x' }, { revisions: 3 }).all;
+  check('the page keeps the newest revisions of a scenario', store['sc-a'].map(r => r.n).join() === '5,4,3', JSON.stringify(store));
+  check('the same revision saved twice is one save', api.stageRevisionAdd(store, { id: 'sc-a', n: 5, hash: 'h5' }).again === true);
+  check('another text under a number already taken is refused', !!api.stageRevisionAdd(store, { id: 'sc-a', n: 5, hash: 'other' }).error);
+  // Each entry is 195 characters as JSON: two scenarios with one each make 411, one scenario with two makes 402.
+  const big = 'y'.repeat(120);
+  let small = api.stageRevisionAdd({}, { id: 'sc-b', n: 1, hash: 'a', saved: '2026-01-01T00:00:00Z', scenario: big }, { revisionChars: 405 }).all;
+  small = api.stageRevisionAdd(small, { id: 'sc-c', n: 1, hash: 'b', saved: '2026-01-02T00:00:00Z', scenario: big }, { revisionChars: 405 }).all;
+  small = api.stageRevisionAdd(small, { id: 'sc-c', n: 2, hash: 'c', saved: '2026-01-03T00:00:00Z', scenario: big }, { revisionChars: 405 }).all;
+  check('the store is bounded: the oldest revision of any scenario goes first', !small['sc-b'] && small['sc-c'] && small['sc-c'].length === 2, JSON.stringify(Object.keys(small)));
+  check('a text\'s fingerprint is the plugin\'s ScenarioFile.Hash', api.textHash('abc') === 'fnv1a64:e71fa2190541574b' && api.textHash('a\r\nb') === api.textHash('a\nb') && api.textHash('') === '', api.textHash('abc'));
+}
+{
+  // Draft mode while linked to a running mission: moving three enemies and changing a door is staged, not sent.
+  const file = JSON.stringify({ schema: 'missionlab-plan/1', name: 'Staging test', id: 'sc-stagetest1', navFile: 'test.bytes', places: [{ id: 1, name: 'Garage', pos: [10, 0, 10] }],
+    triggers: [{ id: 2, name: 'Alarm', when: 'alert' }], spawns: [{ pos: [0, 0, 0], tag: 'officer' }, { pos: [3, 0, 0] }, { pos: [6, 0, 0] }, { pos: [20, 0, 20], trigger: 2 }] });
+  const page = await load(script, 'staging.json', file), api = page.api, s = api.state, live = api.live;
+  check('the staging scenario loads', !s.refused && s.enemies.length === 4, page.banner());
+  s.doors.push({ name: 'Front', pos: [1, 0, 1], mid: [1, 0, 1], locked: null, enemiesCanOpen: null, open: null, chance: 100, known: true });
+  live.on = true; live.mission = true; live.session = 's1'; live.rev = 'r1';
+  api.stageSetMode('draft');
+  check('Draft mode starts from the game\'s state', api.stage.mode === 'draft' && api.stage.base !== null && !api.stage.dirty);
+  api.pushUndo();
+  s.enemies[0].pos = [10, 0, 11]; s.enemies[1].pos = [4, 0, 1]; s.enemies[2].pos = [7, 0, 2]; s.doors[s.doors.length - 1].locked = true;
+  api.changed();
+  const staged = live.staged.map(l => l.kind + ': ' + l.text).join(' / ');
+  check('in Draft mode an edit is not sent to the game', live.pushTimer === 0 && !live.sending, String(live.pushTimer));
+  check('the staged edit holds the page: the game\'s list does not overwrite it', live.pending === true && api.stage.dirty === true);
+  check('the staged list names the three moved enemies and the door', live.staged.filter(l => l.kind === 'enemy' && l.text.includes('moved')).length === 3 && live.staged.some(l => l.kind === 'door' && l.text.includes('locked')), staged);
+  api.stageSetMode('live');
+  check('Live mode is refused while changes are staged', api.stage.mode === 'draft', page.banner());
+  check('nothing is blocked in this draft', api.stageBlockers().length === 0, api.stageBlockers().join(' / '));
+  await api.applyStaged();
+  const sent = api.stage.out && api.stage.out.command;
+  check('a batch with no answer keeps its command number for the retry', !!sent && api.stage.out.done === false && api.stage.receipt && api.stage.receipt.retry === true, JSON.stringify(api.stage.receipt));
+  await api.applyStaged();
+  check('the retry asks about the same batch and sends no new one', api.stage.out.command === sent, api.stage.out.command + ' ' + sent);
+  api.undo();
+  check('Undo restores the draft, and nothing is staged any more', !api.stage.dirty && live.staged.length === 0 && live.pending === false, live.staged.map(l => l.text).join(' / '));
+  api.stage.out = null;
+  s.zones.push(api.newTrigger(9, 'after', { after: 77 }));
+  api.changed();
+  const applied = await api.applyStaged();
+  check('an invalid batch is blocked before anything is sent', applied === false && api.stage.out === null && page.banner().startsWith('Not applied: The scenario check refuses it'), page.banner());
+  check('the blocked preview stays open', api.stage.preview === true);
+}
+{
+  // Offline: a saved revision opens as a separate draft and never overwrites the author's own draft.
+  const file = JSON.stringify({ schema: 'missionlab-plan/1', name: 'Mine', id: 'sc-revtest01', navFile: 'test.bytes', spawns: [{ pos: [0, 0, 0] }, { pos: [3, 0, 0] }] });
+  const page = await load(script, 'mine.json', file), api = page.api, s = api.state;
+  check('a revision is saved in the page\'s own store', await api.saveRevision() === true && api.localRevisions()['sc-revtest01'] && api.localRevisions()['sc-revtest01'][0].n === 1, page.banner());
+  const r1 = api.localRevisions()['sc-revtest01'][0];
+  check('the revision holds the scenario text and its fingerprint', r1.hash === api.textHash(r1.scenario) && JSON.parse(r1.scenario).revision === 1, r1.hash);
+  s.enemies.push(api.newEnemy([6, 0, 0], 'Guard', 0)); api.changed();
+  check('a second save is revision 2', await api.saveRevision() === true && api.localRevisions()['sc-revtest01'][0].n === 2);
+  check('opening revision 1 as a separate draft', api.openSeparate('rev:sc-revtest01:1', 'revision 1', JSON.parse(r1.scenario), null) === true && s.enemies.length === 2 && api.stage.separate !== null, page.banner());
+  s.enemies.push(api.newEnemy([9, 0, 0], 'Guard', 0)); s.enemies.push(api.newEnemy([12, 0, 0], 'Guard', 0)); api.changed();
+  await new Promise(done => setTimeout(done, 600));      // longer than the page waits before it saves a draft
+  check('the separate draft is kept under its own key', api.separateDrafts().some(d => d.key === 'rev:sc-revtest01:1' && (d.scenario.spawns || []).length === 4));
+  api.backToMine();
+  check('back to the own draft: it was not overwritten', api.stage.separate === null && s.enemies.length === 3 && s.revision === 2, s.enemies.length + ' enemies, revision ' + s.revision);
+}
+
+console.log('trigger inspector (ML-015)');
+{
+  // The diagnostic example, first without the game (what the file alone says), then with a state answer as the plugin
+  // writes it: GameMaster.StateJson, triggerState[].explain from TriggerEngine.Explain.
+  const name = 'clean_house_diagnostic.json', text = fs.readFileSync(path.join(ROOT, 'examples', name), 'utf8');
+  const page = await load(script, name, text), api = page.api;
+  check(name + ' loads with its nine triggers', !api.state.refused && api.state.zones.length === 9, page.banner());
+  const offline = new Map(api.inspectRows(null).map(r => [r.id, r]));
+  check('offline, nothing claims to be live', [...offline.values()].every(r => !r.live && r.clock === '' && r.outcome === ''));
+  check('offline, the chance trigger is shown as left to chance', offline.get(5).kind === 'chance' && offline.get(5).word === 'Chance 50%' && offline.get(5).text.includes('excluded'), JSON.stringify(offline.get(5)));
+  check('offline, the trigger after it says it hangs on that chance', offline.get(6).kind === 'depends' && offline.get(6).text.includes('trigger 5') && offline.get(6).text.includes('50%'), JSON.stringify(offline.get(6)));
+  check('offline, the by-hand trigger says so', offline.get(7).kind === 'byhand' && offline.get(7).text.includes('Fire now'), JSON.stringify(offline.get(7)));
+  check('offline, the intel trigger can fire and names the phone', offline.get(4).kind === 'can' && offline.get(4).text === 'Fires when the cell phone is picked up', offline.get(4).text);
+  check('offline, the repeating trigger says how often it may fire', offline.get(2).count === 'up to 3 times', offline.get(2).count);
+  {   // A trigger that waits for one that is gone can never fire, and the static view says why.
+    api.state.zones.push(api.newTrigger(20, 'after', { after: 99 }));
+    const r = api.inspectRows(null).find(q => q.id === 20);
+    check('offline, a trigger waiting for a missing one never fires', r.kind === 'never' && r.text.includes('trigger 99 does not exist'), JSON.stringify(r));
+    api.state.zones.pop();
+  }
+
+  // The upper north room as a named place: the inspector's sentences use it (29b-places.js).
+  api.state.places = [{ id: 1, name: 'Upper north room', pos: [-20, 3.68, 4], floor: null, area: null }];
+  const explain = (id, phase, why, more) => ({ id, phase, fires: (more && more.fires) | 0, left: (more && more.left) || 0,
+    explain: Object.assign({ phase, left: 0, why, fires: 0, times: 0, waiting: [], excluded: [], inside: -1, alive: -1, outcome: '', outcomeWhy: '' }, more || {}) });
+  const canned = JSON.parse(JSON.stringify({ mission: true, triggerState: [
+    explain(1, 'fired', 'Fired 30 s into the mission; whether its actions took could not be seen: asked of the game, not seen to take: a message', { fires: 1, outcome: 'unconfirmed', outcomeWhy: 'asked of the game, not seen to take: a message' }),
+    explain(2, 'cooling', 'Fired 2 of 3 times; armed again in 13 s', { fires: 2, times: 3, left: 12.3, outcome: 'applied', outcomeWhy: '1 enemy appeared' }),
+    explain(3, 'waiting', '1 of 2 living players inside; every one of them has to be', { inside: 1, alive: 2 }),
+    explain(4, 'waiting', 'Waiting for the cell phone to be picked up'),
+    explain(5, 'off', 'Sat this mission out (its chance is 50%); only Fire now sets it off'),
+    explain(6, 'waiting', 'Waiting for trigger 5, which sat this mission out (chance)', { waiting: [5], excluded: [5] }),
+    explain(7, 'fired', 'Fired by hand 95 s into the mission, but its actions failed: no door was found at (-4, -2)', { fires: 1, outcome: 'failed', outcomeWhy: 'no door was found at (-4, -2)' }),
+    explain(8, 'counting', 'Condition met; 12 s left', { left: 11.6 }),
+    explain(9, 'waiting', 'Waiting for 2 enemies to go down'),
+  ] }));
+  const rows = new Map(api.inspectRows(canned).map(r => [r.id, r]));
+  check('live, every row is the game\'s', [...rows.values()].every(r => r.live));
+  check('live, waiting for the phone is said as the game says it', rows.get(4).word === 'Waiting' && rows.get(4).text === 'Waiting for the cell phone to be picked up', rows.get(4).text);
+  check('live, players inside are counted with the room\'s name', rows.get(3).text === '1 of 2 living players inside Upper north room; every one of them has to be', rows.get(3).text);
+  check('live, the countdown is the game\'s, rounded up as the engine does', rows.get(8).word === 'Counting down' && rows.get(8).clock === '12 s' && rows.get(8).text.endsWith('12 s left'), JSON.stringify(rows.get(8)));
+  check('live, the repeat count is the game\'s', rows.get(2).count === 'fired 2 of 3' && rows.get(2).word === 'Cooling down' && rows.get(2).clock === '13 s', JSON.stringify(rows.get(2)));
+  check('live, the excluded trigger is excluded', rows.get(5).word === 'Excluded' && rows.get(5).kind === 'off');
+  check('live, the dependency that was excluded is named', rows.get(6).text.includes('trigger 5') && rows.get(6).text.includes('sat this mission out') && rows.get(6).excluded.join() === '5', JSON.stringify(rows.get(6)));
+  check('live, a failed action is told apart from an unmet condition', rows.get(7).outcome === 'failed' && rows.get(7).outcomeText.startsWith('Action failed: no door') && rows.get(9).outcome === '' && rows.get(9).word === 'Waiting', JSON.stringify(rows.get(7)));
+  check('live, an unconfirmed action is told apart from a failed one', rows.get(1).outcome === 'unconfirmed' && rows.get(1).outcomeText.startsWith('Action not confirmed') && rows.get(1).word === 'Fired', JSON.stringify(rows.get(1)));
+  check('a minute or more is shown as minutes and seconds', api.inspectClock(125.2) === '2:06' && api.inspectClock(0) === '0 s' && api.inspectClock(1.001) === '1 s');
+  {   // A reloaded page knows nothing of its own: fed the same state, it shows exactly the same.
+    const again = await load(script, name, text);
+    again.api.state.places = [{ id: 1, name: 'Upper north room', pos: [-20, 3.68, 4], floor: null, area: null }];
+    check('after a reload the inspector shows the same rows', JSON.stringify(again.api.inspectRows(canned)) === JSON.stringify(api.inspectRows(canned)));
+  }
+
+  // What selecting a trigger highlights.
+  const links = id => api.inspectLinks(id);
+  check('selecting trigger 6 highlights the trigger it needs', links(6).before.join() === '5', JSON.stringify(links(6)));
+  check('selecting trigger 5 highlights the enemy it brings', links(5).enemies.join() === '5', JSON.stringify(links(5)));
+  check('selecting trigger 2 highlights its wave enemy', links(2).enemies.join() === '3');
+  check('selecting trigger 8 highlights the door it watches and the door it locks', links(8).watched !== null && links(8).watched.pos.join() === '-19.55,0.7,-19.57' && links(8).doors.length === 1 && links(8).doors[0].pos.join() === '-24.06,0.7,-2.67', JSON.stringify(links(8)));
+  check('selecting the phone trigger shows the extraction waits for it', links(4).extraction === 'holds');
+  check('selecting trigger 9 shows it opens the extraction', links(9).extraction === 'opens');
+  check('the words under a selected trigger name what it needs and brings', api.inspectLinkText(links(6)) === 'Needs trigger 5.' && api.inspectLinkText(links(5)).includes('enemy 6'), api.inspectLinkText(links(5)));
+  {   // The chain is followed all the way back.
+    api.state.zones.push(api.newTrigger(21, 'all', { of: [6, 4] }));
+    check('a prerequisite of a prerequisite is highlighted too', links(21).before.slice().sort().join() === '4,5,6', JSON.stringify(links(21)));
+    api.state.zones.pop();
+  }
+}
+
+console.log('views: Play, Create and Direct (ML-013)');
+{
+  const page = openEditor(script), api = page.api, el = api.byId;
+  check('offline the page starts in Create', api.viewIs('create') && el('tabs').hidden === false && el('playBox').hidden === true, String(api.state.pane));
+  api.setView('play');
+  check('Play hides the tabs with the enemy-placement controls, and Save', el('tabs').hidden === true && el('saveBox').hidden === true && el('playBox').hidden === false && el('directBox').hidden === true);
+  check('Play hides Undo and leaves no placing tool chosen', el('undo').hidden === true && api.state.tool === 'select', api.state.tool);
+  check('the strip names the view', el('stView').textContent === 'Play', String(el('stView').textContent));
+  check('offline the strip says next and running missions need the game', el('stNext').textContent === 'chosen in the game (not connected)' && el('stRun').textContent === 'not connected to the game');
+  check('offline the example is no scenario to show in Play', api.pageEntry() === null);
+  api.setView('direct');
+  check('Direct shows the live controls, not the tabs or Play', el('directBox').hidden === false && el('tabs').hidden === true && el('playBox').hidden === true && el('stView').textContent === 'Direct');
+  api.setView('create');
+  check('Create brings back the tabs, Undo and Save', el('tabs').hidden === false && el('undo').hidden === false && el('saveBox').hidden === false && el('playBox').hidden === true);
+  api.setView('somewhere');
+  check('an unknown view falls back to Create', api.viewIs('create'));
+
+  // A file opened offline: Play shows it with the author's words labelled as the author's, and what only the game knows as unknown.
+  const house = JSON.stringify({ schema: 'missionlab-plan/1', name: 'House', id: 'sc-house', squad: [2, 4], minutes: 20, navFile: 'suburbv2.bytes', spawns: [{ pos: [0, 0, 0], chance: 50 }, { pos: [2, 0, 2] }] });
+  await api.openFiles([fakeFile('house.json', house)]);
+  check('a file just opened counts as saved', el('stDraft').textContent === 'saved as house.json', String(el('stDraft').textContent));
+  api.state.title = 'House 2'; api.syncStrip();
+  check('an edit makes the draft unsaved', String(el('stDraft').textContent).startsWith('unsaved changes'), String(el('stDraft').textContent));
+  api.setView('play');
+  const entry = api.pageEntry(), facts = new Map(api.catalogueFacts(entry, {}));
+  check('Play shows the scenario on the page offline', entry && entry.page && entry.title === 'House 2' && entry.usable, JSON.stringify(entry && entry.title));
+  check('the squad range is labelled as the author\'s', facts.get('Squad (the author\'s recommendation)') === '2 to 4 players', JSON.stringify([...facts]));
+  check('the estimate is labelled as the author\'s', facts.get('Length (the author\'s estimate)') === 'about 20 min', JSON.stringify([...facts]));
+  check('offline the measured length is not made up', facts.get('Length (measured)') === 'not measured yet: run records are kept by the game');
+  check('offline compatibility and the last run stay unknown', facts.get('Tested with this build') === 'not known without the game' && facts.get('Last run') === 'not known without the game');
+  check('offline capabilities are neither tested nor untested', entry.capabilities.length > 0 && entry.capabilities.every(c => c.tested === null), JSON.stringify(entry.capabilities));
+
+  // A catalogue entry as the plugin writes it (Catalogue.cs): unknown stays unknown, measurements are their own row.
+  const none = new Map(api.catalogueFacts({ file: 'a.json', value: 'a', usable: true, author: { squad: null, minutes: null }, measured: { minutes: null, finished: 0, runs: 2 }, navFile: '', scene: '', map: '', compat: '', capabilities: [], lastRun: null }, {}));
+  check('no author squad or estimate says so', none.get('Squad (the author\'s recommendation)') === 'not given by the author' && none.get('Length (the author\'s estimate)') === 'not given by the author');
+  check('runs without a seen end leave the length unmeasured', none.get('Length (measured)') === 'not measured yet (2 runs on record, none seen to end)', none.get('Length (measured)'));
+  check('a file naming no map has unknown compatibility', none.get('Tested with this build') === 'unknown: the file names no map file' && none.get('Map') === 'not named in the file');
+  check('a scenario never played says so', none.get('Last run') === 'never played');
+  const measured = new Map(api.catalogueFacts({ file: 'b.json', value: 'b', usable: true, author: { squad: [1, 1], minutes: 30 }, measured: { minutes: 24.5, finished: 3, runs: 4 }, navFile: 'suburbv2.bytes', map: 'Clean House', compat: 'tested', capabilities: [], lastRun: { file: 'r', started: '2026-11-17T10:00:00Z', session: 'm1', outcome: 'used', result: 'success', minutes: 22 } }, {}));
+  check('measured and estimated lengths are different rows', measured.get('Length (measured)') === '24.5 min, the middle of 3 runs seen to end' && measured.get('Length (the author\'s estimate)') === 'about 30 min');
+  check('a tested map and the last result are named', measured.get('Tested with this build') === 'yes: this map, hosted with MissionLab' && measured.get('Last run').startsWith('ended as a success after 22 min'), measured.get('Last run'));
+  check('a run of this session without an end is running', api.lastRunWords({ started: '2026-11-17T10:00:00Z', session: 'm2', outcome: 'used', result: '', minutes: null }, { session: 'm2', mission: true }).startsWith('running now'));
+  check('a run of an earlier session without an end is not measured', api.lastRunWords({ started: '2026-11-17T10:00:00Z', session: 'm1', outcome: 'used', result: '', minutes: null }, { session: 'm2', mission: true }).includes('not measured'));
+}
+
+console.log('rehearsal (ML-016)');
+{
+  const api = openEditor(script).api;
+  const read = name => fs.readFileSync(path.join(FIXTURES, 'rehearsal', name), 'utf8').replace(/\r\n/g, '\n').trim();
+  const trace = read('editor_trace.rehearsal.json'), traced = JSON.parse(trace);
+  const meta = { name: traced.name, scenario: traced.scenario, revision: traced.revision, players: traced.players, roll: traced.roll };
+  {   // The shared fixture: the plugin's Rehearsal.Write gives this very text (tests/Pure/RehearsalsTests.cs), and so must the page.
+    const text = api.rehearseText(api.rehearseScript(api.rehearseRows(traced), meta));
+    check('the editor writes the shared trace fixture byte for byte as the plugin does', text === trace, '\n' + text);
+  }
+  {   // Rows as an author makes them, out of order: one row is one step, in time order, rows at one time keep their order.
+    const rows = [
+      { at: 20, kind: 'fired', id: 3 },
+      { at: 0, kind: 'players', players: [[0, 0, 0], [2, 0, 0]] },
+      { at: 2, kind: 'down', tag: 'officer', count: 1 },
+      { at: 3, kind: 'door', pos: [5, 0, 5] },
+      { at: 4, kind: 'intel', item: 'cell phone' },
+      { at: 5, kind: 'fired', id: 1 }, { at: 5, kind: 'notFired', id: 2 }, { at: 5, kind: 'notFired', id: 3 }, { at: 5, kind: 'phase', id: 2, phase: 'counting' },
+      { at: 6, kind: 'fire', id: 2 },
+      { at: 7, kind: 'phase', id: 2, phase: 'fired' }, { at: 7, kind: 'extraction', value: 'open' }, { at: 7, kind: 'enemies', count: 5 },
+      { at: 8, kind: 'alert' },
+      { at: 10, kind: 'phase', id: 3, phase: 'holding' },
+      { at: 9.5, kind: 'players', players: [[100.001, 0, 100], [101.25, -0.001, 99]] },
+    ];
+    const text = api.rehearseText(api.rehearseScript(rows, meta));
+    check('a trace built row by row, out of order, is written as the shared fixture', text === trace, '\n' + text);
+  }
+  {   // A script whose steps do several things reads as one row per thing, and nothing is lost on the way back.
+    const phone = JSON.parse(read('phone_countdown.rehearsal.json')), rows = api.rehearseRows(phone);
+    check('a step with five checks becomes five rows', rows.length === 14, JSON.stringify(rows));
+    const again = JSON.parse(api.rehearseText(api.rehearseScript(rows, { name: phone.name, players: phone.players, roll: phone.roll })));
+    const flat = s => s.steps.flatMap(st => [...(st.players ? ['players@' + st.at + JSON.stringify(st.players)] : []), ...(st.event ? [st.event + '@' + st.at + (st.item || '')] : []),
+      ...(st.expect ? Object.entries(st.expect).flatMap(([k, v]) => (Array.isArray(v) ? v.map(id => k + id + '@' + st.at) : typeof v === 'object' ? Object.entries(v).map(([id, w]) => k + id + w + '@' + st.at) : [k + v + '@' + st.at])) : [])]).sort().join(' ');
+    check('every event and check of the plugin\'s fixture survives rows and back', flat(again) === flat(phone), flat(again) + '\n        ' + flat(phone));
+    check('players, roll and name are kept', again.players === 2 && again.roll === 12345 && again.name === phone.name && !('scenario' in again) && !('revision' in again));
+  }
+  {   // What stops a run is named by row.
+    const found = api.rehearseProblems([{ at: -1, kind: 'alert' }, { at: 1, kind: 'players', players: null }, { at: 2, kind: 'door', pos: null }, { at: 3, kind: 'fired', id: 9 }, { at: 4, kind: 'phase', id: 1, phase: 'asleep' }, { at: 5, kind: 'players', players: [] }], [1, 2]);
+    check('each incomplete row is named by number', found.map(f => f.row).join() === '1,2,3,4,5', found.map(f => f.text).join(' / '));
+    check('a missing trigger is named', found.some(f => f.text === 'Row 4: there is no trigger 9 in this scenario.'));
+    check('an empty trace asks for a row', api.rehearseProblems([], [1]).map(f => f.text).join() === 'Add at least one row.');
+  }
+  {   // The page and the plugin say the same about a changed scenario (RehearsalFile.Match).
+    const changed = api.rehearseMatch({ scenario: 'fnv1a64:0123456789abcdef', revision: 3 }, 'fnv1a64:fedcba9876543210', 0);
+    check('a test written for other text says the scenario changed, with both revisions', changed.match === 'changed' &&
+      changed.why === 'The scenario changed since this test was written: the test was written for revision 3, this is revision 0. Its steps ran against the scenario as it is now.', changed.why);
+    check('the same revision with other content says so', api.rehearseMatch({ scenario: 'a', revision: 4 }, 'b', 4).why.includes('this is revision 4 with other content'));
+    check('the same text matches', api.rehearseMatch({ scenario: 'a', revision: 4 }, 'a', 4).match === 'same');
+    check('no fingerprint cannot be told', api.rehearseMatch({ scenario: '', revision: 0 }, 'a', 4).match === 'unknown');
+  }
+  {   // The plugin's answer as shown: expected against actual per step, the failing row, notes, the assumptions.
+    const answer = { passed: false, refused: '', blocked: '', assumptions: 'Events happen when the script says, as if injected; spotting, pathfinding, physics, networking and combat are not predicted.',
+      scenarioHash: 'fnv1a64:fedcba9876543210', revision: 0, match: 'changed', matchWhy: 'The scenario changed since this test was written: the test was written for revision 3, this is revision 0. Its steps ran against the scenario as it is now.',
+      steps: [{ at: 4, what: 'step 4 at 4 s: the cell phone is picked up', expected: '', actual: '', ok: true },
+        { at: 6, what: 'step 9 at 6 s: trigger 2 is fired by hand', expected: 'it fires', actual: 'it fired', ok: true },
+        { at: 7, what: 'step 12 at 7 s: 9 enemies are in the mission', expected: '9', actual: '5 (3 from the start, 2 brought by triggers)', ok: false }], findings: [] };
+    const rep = api.rehearseReport(answer);
+    check('a failed rehearsal says how many checks failed', rep.level === 'failed' && rep.title === 'Failed: 1 of 2 checks were not as expected.', rep.title);
+    check('a failing step shows expected and actual', rep.steps[2].detail === 'expected 9; got 5 (3 from the start, 2 brought by triggers)' && !rep.steps[2].ok, rep.steps[2].detail);
+    check('the failing step\'s row is marked', rep.failedRows.join() === '12', rep.failedRows.join());
+    check('an injected event is shown but not counted as a check', !rep.steps[0].check && rep.steps[1].check);
+    check('the changed scenario and the assumptions are shown', rep.notes.includes(answer.matchWhy) && rep.assumptions.includes('combat are not predicted'));
+    const refused = api.rehearseReport({ passed: false, refused: 'scenario', why: 'the scenario would be refused at a mission\'s start, so it cannot be rehearsed: triggers[0].when: "teleport" is not a kind of trigger this version knows', findings: [{ level: 'error', code: 'unknown-kind', path: 'triggers[0].when', text: 'not known' }], steps: [] });
+    check('a refused scenario is not run, with its findings', refused.level === 'refused' && refused.title.startsWith('Not run: the scenario would be refused') && refused.notes[0] === 'triggers[0].when: not known', refused.title);
+    const blocked = api.rehearseReport({ passed: false, refused: '', blocked: 'extraction: it waits for trigger 2, which sat this mission out', assumptions: '', match: 'same', matchWhy: '', steps: [{ at: 1, what: 'step 1 at 1 s: trigger 1 has fired', expected: 'fired', actual: 'fired', ok: true }] });
+    check('a roll the Director refuses fails even when every check passes', blocked.level === 'failed' && blocked.title.includes('Director would refuse') && blocked.notes[0].includes('sat this mission out'), blocked.title);
+    const rerun = api.rehearseRerunReport([{ file: 'a.json', name: 'phone starts the countdown', answer: { ...answer, passed: true, steps: answer.steps.slice(0, 2), match: 'same' } },
+      { file: 'b.json', name: 'reinforcements', answer }, { file: 'c.json', name: 'broken', error: 'status 404' }]);
+    check('a rerun says how many kept tests fail', rerun.title === '2 of 3 kept tests fail.', rerun.title);
+    check('a failing kept test is explained by step and trigger, and its changed scenario', rerun.lines[1].text.startsWith('reinforcements: failed: step 12 at 7 s: 9 enemies are in the mission (expected 9; got 5') && rerun.lines[1].text.includes('The scenario changed since'), rerun.lines[1].text);
+    check('a passing kept test and an unreadable one are named', rerun.lines[0].ok && rerun.lines[0].text === 'phone starts the countdown: passed.' && !rerun.lines[2].ok && rerun.lines[2].text === 'broken: not run: status 404', rerun.lines.map(l => l.text).join(' / '));
+  }
+  {   // Offline, a test file opens into rows and says that the scenario has changed since it was written.
+    const page = await load(script, 'phone_countdown.json', fs.readFileSync(path.join(FIXTURES, 'rehearsal', 'phone_countdown.json'), 'utf8'));
+    page.api.rhLoad(trace, 'editor_trace.rehearsal.json');
+    const r = page.api.state.rehearse;
+    check('a test file opens as one row per step', r.rows.length === 16 && r.players === 2 && r.roll === 12345 && r.pin.revision === 3, JSON.stringify(r.pin));
+    check('it says the scenario changed since the test was written', String(page.api.byId('rhPin').textContent).startsWith('The scenario changed since this test was written'), String(page.api.byId('rhPin').textContent));
+    check('offline Run is off and says it needs the game; saving downloads a file', page.api.byId('rhRun').disabled === true && String(page.api.byId('rhRun').title).startsWith('Running needs the game') && page.api.byId('rhSave').textContent === 'Download test',
+      String(page.api.byId('rhRun').title));
+    page.api.rhLoad('{"schema":"missionlab-rehearsal/2","steps":[]}', 'later.json');
+    check('a test from a newer version is not opened', r.rows.length === 16 && String(page.api.byId('rhStatus').textContent).includes('newer MissionLab'), String(page.api.byId('rhStatus').textContent));
+  }
+  {   // Putting players at a shaped zone whose anchor lies outside its area finds a spot that is really inside.
+    const t = { pos: [50, 0, 50], radius: 5, area: { parts: [{ floor: [0, 3], outline: [[0, 0], [10, 0], [10, 10], [0, 10]], holes: [] }] } };
+    const spot = api.rhInside(t.pos, t.area, q => api.membershipInside(t, q));
+    check('a spot inside a shaped zone is found when its anchor is outside', spot !== null && api.membershipInside(t, spot), JSON.stringify(spot));
+  }
 }
 
 console.log('editor -> plugin -> editor');
@@ -203,6 +783,7 @@ console.log('editor -> plugin -> editor');
   });
   const sources = [
     ['all_fields.json', fs.readFileSync(path.join(FIXTURES, 'all_fields.json'), 'utf8')],
+    ['all_fields_v2.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v2.json'), 'utf8')],
     ['legacy_minimal.json', fs.readFileSync(path.join(FIXTURES, 'legacy_minimal.json'), 'utf8')],
     ...fs.readdirSync(path.join(ROOT, 'examples')).filter(n => n.endsWith('.json')).sort().map(n => ['examples/' + n, fs.readFileSync(path.join(ROOT, 'examples', n), 'utf8')]),
     ['awkward_text.json', oddFile],

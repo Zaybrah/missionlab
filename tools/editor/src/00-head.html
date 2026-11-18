@@ -23,6 +23,7 @@
   --enemy: #c5402a;      /* enemies and their routes */
   --friend: #1c6dcc;     /* insertion points, primary action */
   --warn: #a4660f;       /* something to check */
+  --place: #7a4bb0;      /* named places */
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -32,14 +33,14 @@
     color-scheme: dark;
     --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
     --ground-lo: #27323c; --ground-hi: #64747f;
-    --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b;
+    --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b; --place: #b892e8;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --paper: #11171c; --panel: #19212a; --ink: #e6ebef; --ink-2: #9aa8b4; --line: #313d48;
   --ground-lo: #27323c; --ground-hi: #64747f;
-  --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b;
+  --enemy: #f07256; --friend: #62a8f2; --warn: #e2a84b; --place: #b892e8;
 }
 
 * { box-sizing: border-box; }
@@ -119,12 +120,45 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #tabs button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 5px 4px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 #tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
 #tabs button .n { opacity: .7; font-variant-numeric: tabular-nums; margin-left: 3px; }
-#side:not([data-show="map"]):not([data-show="all"]) section[data-tab="map"] { display: none !important; }
-#side:not([data-show="enemies"]):not([data-show="all"]) section[data-tab="enemies"] { display: none !important; }
-#side:not([data-show="triggers"]):not([data-show="all"]) section[data-tab="triggers"] { display: none !important; }
-#side:not([data-show="doors"]):not([data-show="all"]) section[data-tab="doors"] { display: none !important; }
-#side:not([data-show="mission"]):not([data-show="all"]) section[data-tab="mission"] { display: none !important; }
-#side:not([data-show="replay"]):not([data-show="all"]) section[data-tab="replay"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="map"]):not([data-show="all"]) section[data-tab="map"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="enemies"]):not([data-show="all"]) section[data-tab="enemies"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="triggers"]):not([data-show="all"]) section[data-tab="triggers"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="doors"]):not([data-show="all"]) section[data-tab="doors"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="mission"]):not([data-show="all"]) section[data-tab="mission"] { display: none !important; }
+#side[data-pane="create"]:not([data-show="replay"]):not([data-show="all"]) section[data-tab="replay"] { display: none !important; }
+/* ---------- views: Play, Create, Direct (ML-013). A section names its views in data-view; one without it is Create's, where the tabs pick among them. */
+#side[data-pane="play"] > section:not([data-view~="play"]),
+#side[data-pane="direct"] > section:not([data-view~="direct"]),
+#side[data-pane="create"] > section[data-view]:not([data-view~="create"]) { display: none !important; }
+#views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 10px 18px 0; }
+#views button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 6px 4px; font: 600 15px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+#views button:hover { border-color: var(--ink-2); }
+#views button[aria-selected="true"] { background: var(--friend); border-color: var(--friend); color: #fff; }
+#strip { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 0; padding: 8px 18px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#strip div { min-width: 0; }
+#strip dt { color: var(--ink-2); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+#strip dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+body[data-pane="play"] #map, body[data-pane="play"] #view3d { pointer-events: none; cursor: default; }
+#catList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+#catList button { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 1px solid transparent; background: transparent; color: inherit; border-radius: 5px; padding: 6px 8px; cursor: pointer; font-size: 13px; font-weight: 500; }
+#catList button:hover { border-color: var(--line); }
+#catList button[aria-current="true"] { background: var(--ink); color: var(--panel); }
+#catList .meta { color: var(--ink-2); font-size: 11.5px; font-weight: 400; }
+#catList button[aria-current="true"] .meta { color: inherit; opacity: .8; }
+#catList .meta.refused { color: var(--enemy); }
+#playLive, #catDetails { display: flex; flex-direction: column; gap: 8px; }
+#catDetails { padding-top: 12px; border-top: 1px solid var(--line); }
+#cdTitle { color: var(--ink); font-size: 18px; letter-spacing: .04em; }
+#cdFile { font: 11.5px var(--mono); overflow-wrap: anywhere; }
+#cdBriefing p { margin: 0; font-size: 12.5px; font-style: italic; }
+#cdFacts { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 12.5px; }
+#cdFacts dt { color: var(--ink-2); }
+#cdFacts dd { margin: 0; }
+#cdCaps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+#cdCaps .chip.untested { border-style: dashed; color: var(--warn); border-color: var(--warn); }
+#cdFindings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+#cdFindings .error { color: var(--enemy); }
+#cdFindings .note { color: var(--ink-2); }
 #replayBox input[type="range"] { width: 100%; padding: 0; }
 #replayBox select, #replayPick select { width: auto; flex: 1; min-width: 0; }
 #rpStats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
@@ -151,6 +185,16 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #thingList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
 #thingList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
 #thingList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
+#placeList { list-style: none; margin: 8px 0 0; padding: 0; }
+#placeList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
+#placeList li button span:first-child { color: var(--place); font-weight: 600; }
+#placeList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
+#placeList li button[aria-current="true"] span:first-child { color: inherit; }
+#placeList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
+#placeReviewList { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#placeReviewList li { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center; font-size: 12.5px; }
+#placeReviewList b { color: var(--place); overflow-wrap: anywhere; }
+#placeReviewBox { border-left: 3px solid var(--warn); padding-left: 10px; }
 #checkList { list-style: none; margin: 0; padding: 0; }
 #checkList li { border-top: 1px solid var(--line); }
 #checkList li button { width: 100%; display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: start; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 7px 0; cursor: pointer; }
@@ -160,7 +204,51 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #checkList .lv.problem { color: var(--enemy); }
 #checkList .lv.warning { color: var(--warn); }
 #checkList .lv.note { color: var(--ink-2); }
+#checkList li button.fix { width: auto; display: inline-block; margin: 0 0 8px 70px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+#checkList li button.fix:hover { border-color: var(--ink-2); }
+/* Trigger inspector (29c-inspect.js): the state word is a badge; a failed or unconfirmed action has its own line and colour,
+   so "its actions failed" never reads like "its condition is not met". Colour is never the only sign: the words say it too. */
+#inspectList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+#inspectList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; padding: 7px 0 7px 8px; border-top: 1px solid var(--line); box-shadow: inset 3px 0 0 transparent; }
+#inspectList li.sel { box-shadow: inset 3px 0 0 var(--ink); background: color-mix(in srgb, var(--line) 35%, transparent); }
+#inspectList li.pre { box-shadow: inset 3px 0 0 var(--friend); }
+#inspectList .pick { all: unset; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 12.5px; min-width: 0; }
+#inspectList .pick:focus-visible { outline: 2px solid var(--friend); outline-offset: 2px; }
+#inspectList .title { font-weight: 600; overflow-wrap: anywhere; }
+#inspectList .word { justify-self: end; font: 500 11.5px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+#inspectList .num { grid-column: 1 / -1; font: 11.5px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#inspectList .num:empty { display: none; }
+#inspectList .text { grid-column: 1 / -1; color: var(--ink-2); }
+#inspectList .outcome { grid-column: 1 / -1; font-weight: 600; }
+#inspectList .fire { padding: 3px 8px; font-size: 12px; }
+#inspectList .links { grid-column: 1 / -1; margin: 2px 0 0; }
+#inspectList li.k-counting .word, #inspectList li.k-holding .word, #inspectList li.k-cooling .word { border-color: var(--friend); color: var(--friend); }
+#inspectList li.k-fired .word, #inspectList li.k-exhausted .word { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+#inspectList li.k-off .word, #inspectList li.k-chance .word, #inspectList li.k-depends .word, #inspectList li.blocked .word { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+#inspectList li.k-circle .word, #inspectList li.k-never .word { border-color: var(--enemy); color: var(--enemy); }
+#inspectList li.o-failed { box-shadow: inset 3px 0 0 var(--enemy); }
+#inspectList li.o-failed .outcome { color: var(--enemy); }
+#inspectList li.o-unconfirmed .outcome { color: var(--warn); font-weight: 500; }
+#repairBox { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
+#repairTitle { margin: 0 0 4px; font-weight: 600; font-size: 13px; }
+#repairText { margin: 0 0 6px; }
+#repairEdits { margin: 0 0 8px; padding-left: 18px; font: 11.5px var(--mono); }
 #zoneList li input.msg { grid-column: 1 / -1; }
+/* Painting areas (27a-paint.js): the shape choice of a zone and the painting tools, shown in the row being painted. */
+.shape { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.shape button { border: 0; border-left: 1px solid var(--line); background: transparent; color: inherit; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 500; }
+.shape button:first-child { border-left: 0; }
+.shape button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.shape.tools { display: grid; grid-auto-columns: 1fr; }
+#paintBox { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--friend); border-radius: 6px; background: var(--paper); font-size: 12.5px; }
+#paintBox .row { gap: 6px; flex-wrap: wrap; }
+#paintBox input[type="number"] { width: 70px; padding: 3px 6px; }
+#paintBox select { width: auto; padding: 3px 6px; }
+#paintBox .btn { padding: 3px 8px; }
+#paintTitle { color: var(--friend); }
+#paintBox #paintParts, #paintBox #paintFindings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+#paintBox #paintParts li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; padding: 0; border-top: 0; }
+#paintBox #paintFindings li { display: block; padding: 0; border-top: 0; color: var(--enemy); }
 #empty { color: var(--ink-2); font-size: 12.5px; margin: 0; }
 #panel[hidden] { display: none; }
 #pos { font: 12px var(--mono); color: var(--ink-2); }
@@ -168,6 +256,48 @@ details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size
 #saveMsg:empty { display: none; }
 #saveBox { margin-top: auto; border-bottom: 0; border-top: 1px solid var(--line); background: var(--panel); }
 @media (min-height: 680px) { #saveBox { position: sticky; bottom: 0; box-shadow: 0 -6px 12px -10px rgb(0 0 0 / .35); } }
+/* staged live changes and saved revisions (ML-014) */
+body:not(.live) #stageBox { display: none; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.pair button { border: 0; background: transparent; color: inherit; padding: 6px 4px; cursor: pointer; font-weight: 500; }
+.pair button + button { border-left: 1px solid var(--line); }
+.pair button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.pair button:disabled { opacity: .45; cursor: not-allowed; }
+#stageList, #stageCheck ul, #stageReceipt ul, #revList, #revList .runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+#stageList li, #stageCheck li, #stageReceipt li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
+.kind { font: 11px/1.6 var(--mono); color: var(--ink-2); text-transform: uppercase; }
+.kind.block, .kind.failed { color: var(--enemy); font-weight: 600; }
+.kind.pending, .kind.unconfirmed, .kind.warn { color: var(--warn); }
+.kind.applied { color: var(--friend); }
+#stageCheck:empty, #stageReceipt:empty, #stageList:empty { display: none; }
+#stageCheck p, #stageReceipt p { margin: 4px 0; font-size: 12.5px; }
+#revList > li { border-top: 1px solid var(--line); padding: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+#revList .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+#revList .runs { padding-left: 12px; gap: 2px; }
+#revList .row .btn { padding: 3px 8px; }
+#revOpen { border: 1px solid var(--friend); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+#revOpen[hidden] { display: none; }
+/* rehearsal (ML-016) */
+#rhBox { display: flex; flex-direction: column; gap: 8px; }
+#rhRows, #rhSteps, #rhSaved { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+#rhRows li { display: grid; grid-template-columns: 22px 72px minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; border-top: 1px solid var(--line); padding: 5px 0 5px 4px; }
+#rhRows li > b { color: var(--ink-2); font: 11.5px var(--mono); }
+#rhRows li .what { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--ink-2); }
+#rhRows li.check .kind { color: var(--friend); }
+#rhRows li.event .kind { color: var(--warn); }
+#rhRows li.failed { box-shadow: inset 3px 0 0 var(--enemy); }
+#rhRows input, #rhRows select { padding: 3px 6px; width: auto; max-width: 100%; }
+#rhRows input[type="number"] { width: 68px; }
+#rhRows .btn { padding: 3px 8px; }
+#rhSteps li, #rhSaved li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: start; border-top: 1px solid var(--line); padding: 4px 0; }
+#rhSteps .got, #rhSaved .meta { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+#rhSteps .mark.ok, #rhSaved .mark.ok { color: var(--friend); }
+#rhSteps .mark.bad, #rhSaved .mark.bad, #rhResult .bad { color: var(--enemy); font-weight: 600; }
+#rhResult p { margin: 4px 0; font-size: 12.5px; }
+#rhResult .ok { color: var(--friend); font-weight: 600; }
+#rhResult .assume, #rhPin.changed { border-left: 3px solid var(--warn); padding-left: 8px; }
+#rhSaved .row .btn { padding: 3px 8px; }
+#rhResult:empty, #rhSaved:empty, #rhPin:empty, #rhProblems:empty, #rhStatus:empty { display: none; }
 
 /* ---------- map ---------- */
 #stage { position: relative; min-width: 0; min-height: 0; }
@@ -197,6 +327,16 @@ body.live .offline { display: none !important; }
 #readyList li.no { font-weight: 600; }
 #drop { position: absolute; inset: 12px; border: 2px dashed var(--friend); border-radius: 12px; display: none; align-items: center; justify-content: center; font: 600 22px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--friend); background: color-mix(in srgb, var(--panel) 80%, transparent); pointer-events: none; }
 body.dragging #drop { display: flex; }
+/* Modules (ML-019): save a selection, insert a copy, bind what it needs from outside */
+#moduleBox { display: flex; flex-direction: column; gap: 8px; }
+#moduleBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
+#moduleBox .row select, #moduleBox .row input { width: auto; flex: 1; min-width: 0; }
+#mdlBindings, #mdlReport { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+#mdlBindings li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+#mdlBindings li > span:first-child { flex-basis: 100%; }
+#mdlBindings select { flex: 1; min-width: 0; width: auto; padding: 3px 6px; }
+#mdlReport li { color: var(--warn); }
+#mdlReport li.sum { color: var(--ink-2); }
 
 @media (max-width: 760px) {
   body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 44%) minmax(0, 56%); }

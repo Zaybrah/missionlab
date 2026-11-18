@@ -16,8 +16,10 @@ else if (window.claude && typeof window.claude.use === 'function') window.claude
 $('save').hidden = !saver;
 $('save').addEventListener('click', async () => {
   if (live.on) { await liveCommand('save'); $('saveMsg').textContent = 'Saved in BepInEx/MissionLab/scenarios. It loads the next time you host this map.'; return; }
-  try { await saver(fileName(), scenarioText()); $('saveMsg').textContent = 'Saved as ' + fileName() + '.'; }
-  catch (err) { $('saveMsg').textContent = err && err.code === 'declined' ? 'Not saved.' : 'Saving is not possible here. Use Copy file text and paste it into a new file named ' + fileName() + '.'; }
+  // Each save counts one revision; the id is made on the first save (scenarioObject) and kept from then on.
+  state.revision++;
+  try { await saver(fileName(), scenarioText()); $('saveMsg').textContent = 'Saved as ' + fileName() + ' (revision ' + state.revision + ').'; markSaved(fileName()); changed(); }
+  catch (err) { state.revision--; $('saveMsg').textContent = err && err.code === 'declined' ? 'Not saved.' : 'Saving is not possible here. Use Copy file text and paste it into a new file named ' + fileName() + '.'; }
 });
 $('copy').addEventListener('click', async () => {
   const text = scenarioText();

@@ -133,15 +133,28 @@ function syncSide() {
       const name = mk('input', { type: 'text', value: z.name || '', placeholder: 'Name (optional)', maxLength: 40 }); name.setAttribute('aria-label', 'Name of ' + trigTitle(z));
       name.addEventListener('change', () => { pushUndo(); z.name = name.value.trim(); changed(); });
       const fire = mk('button', { type: 'button', className: 'btn', textContent: 'Fire now', hidden: !live.on || state.fired.includes(z.id) }); fire.style.padding = '3px 8px';
-      fire.title = 'Set this trigger off now, whatever it waits for'; fire.addEventListener('click', () => liveCommand('fire', { id: z.id }));
+      fire.title = 'Immediate: sets this trigger off in the game now, whatever it waits for. Never staged, also in Draft mode.'; fire.addEventListener('click', () => liveCommand('fire', { id: z.id }));
       const del = mk('button', { type: 'button', className: 'btn danger', textContent: 'Delete' }); del.style.padding = '3px 8px';
       del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); state.zones.forEach(q => { if (q.after === z.id) q.after = 0; }); if (state.extractionAfter === z.id) state.extractionAfter = 0; changed(); });
       // What it waits for.
       const what = mk('div', { className: 'what' });
       const numIn = (value, min, max, step, label, set) => { const el = mk('input', { type: 'number', min, max, step, value }); el.setAttribute('aria-label', label); el.addEventListener('change', () => { pushUndo(); set(Math.max(min, Math.min(max, +el.value || 0))); changed(); }); return el; };
       const grp = (...parts) => { const g = mk('span', { className: 'grp' }); g.append(...parts); return g; };
-      if (z.when === 'zone') what.append(grp('Players walk in. Radius', numIn(Math.round(z.radius), 2, 200, 1, 'Radius of zone ' + z.id + ' in metres', v => { z.radius = v; }), 'm'),
-                                         grp('and stay', numIn(Math.round(z.hold || 0), 0, 3600, 5, 'Seconds players must stay in zone ' + z.id, v => { z.hold = v; }), 's'));
+      if (z.when === 'zone') {
+        // Shape: the old circle, or an area painted floor by floor (27a-paint.js), which then replaces the radius.
+        const painted = !!(z.area && z.area.parts && z.area.parts.length), editing = paintIs('trigger', zi);
+        const shape = mk('span', { className: 'shape' }), circleB = mk('button', { type: 'button', textContent: 'Circle' }), areaB = mk('button', { type: 'button', textContent: 'Painted area' });
+        shape.setAttribute('role', 'group'); shape.setAttribute('aria-label', 'Shape of zone ' + z.id);
+        circleB.setAttribute('aria-pressed', String(!painted && !editing)); areaB.setAttribute('aria-pressed', String(painted || editing));
+        circleB.title = 'Within the radius of its anchor, and at most 2 m above or below it';
+        areaB.title = 'A shape painted on the map, floor by floor, with holes left out: a house without its garden, street or courtyard';
+        circleB.addEventListener('click', () => areaClear({ kind: 'trigger', index: zi }));
+        areaB.addEventListener('click', () => { if (!editing) areaEditStart({ kind: 'trigger', index: zi }, painted ? z.area.parts[0].floor.slice(0, 2) : undefined); });
+        shape.append(circleB, areaB);
+        what.append(grp('Players walk in. Shape', shape));
+        if (!painted) what.append(grp('Radius', numIn(Math.round(z.radius), 2, 200, 1, 'Radius of zone ' + z.id + ' in metres', v => { z.radius = v; }), 'm'));
+        what.append(grp('and stay', numIn(Math.round(z.hold || 0), 0, 3600, 5, 'Seconds players must stay in zone ' + z.id, v => { z.hold = v; }), 's'));
+      }
       else if (z.when === 'down') what.append(grp('Enemies down:', numIn(z.count | 0, 0, 200, 1, 'How many enemies must be down for trigger ' + z.id, v => { z.count = v | 0; })), z.count > 0 ? '' : ' (0: all of them)');
       else if (z.when === 'alert') what.append('An enemy notices the players');
       else if (z.when === 'time') what.append('The mission has started');
@@ -159,6 +172,7 @@ function syncSide() {
         sel.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; sel.addEventListener('change', () => { pushUndo(); z.after = +sel.value || 0; changed(); });
         what.append(grp('After', sel));
       }
+      if (z.when === 'zone' && isVec(z.pos)) { const at = placeName(z.pos); if (at) what.append(grp('Its spot is in ' + at)); }
       what.append(grp('Then wait', numIn(Math.round(z.delay || 0), 0, 7200, 5, 'Seconds ' + trigTitle(z) + ' waits before it fires', v => { z.delay = v; }), 's'));
       const face = mk('label'), box = mk('input', { type: 'checkbox', checked: z.facePlayer !== false });
       box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
@@ -201,7 +215,9 @@ function syncSide() {
       const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
       exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
       exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
-      li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, redL, sum); zl.appendChild(li);
+      li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, redL, sum);
+      const paintBox = paintBoxFor('trigger', zi); if (paintBox) li.append(paintBox);     // the painting tools, while this zone's area is painted
+      zl.appendChild(li);
     });
   }
   // Settings for the whole mission.
@@ -219,6 +235,12 @@ function syncSide() {
   $('respawnHint').textContent = (state.respawnAfter > 0 ? 'Reinforcement wave: ' + Math.round(state.respawnAfter) + ' s after the first death, everyone who is dead by then comes back together' + (state.respawnTimes > 0 ? ', at most ' + state.respawnTimes + (state.respawnTimes === 1 ? ' wave' : ' waves') + ' per mission.' : ', as often as needed.') + ' The game may then not save the score.' : 'Wave after: 0 leaves dead players to the game.') + waveNow();
   $('needsGm').checked = !!state.gameMaster;
   if (document.activeElement !== $('briefing')) $('briefing').value = state.briefing.join('\n');
+  setVal($('squadMin'), state.squadRange ? state.squadRange[0] : ''); setVal($('squadMax'), state.squadRange ? state.squadRange[1] : '');
+  setVal($('minutes'), state.minutes > 0 ? state.minutes : '');
+  $('scenarioId').value = state.scenarioId || 'Made on the first save'; $('revision').value = String(state.revision || 0);
+  // Positions only match the map they were placed on; a changed map file is worth a look before the mission is run.
+  $('mapPrintNote').hidden = !(state.mapPrint && state.map && !state.map.isExample && state.map.print && state.map.print !== state.mapPrint);
+  syncPlaces();     // 29b-places.js: the places list and, on another map file, the review of every place
   const wn = state.weatherNow;
   $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. Lights work on maps with a breaker box; Clean House has one. '
     + (wn ? (wn.has ? 'This map has weather' + (wn.fixedTime ? ', but its time of day is fixed.' : ' and a time of day.') : 'This map has no weather or time of day, so rain, sandstorm and hour do nothing here.')
@@ -265,19 +287,26 @@ function syncSide() {
     }
     if (document.activeElement !== sel) sel.value = e.type || '';
   }
-  const usable = state.enemies.length > 0 && !state.example;
-  $('save').disabled = $('copy').disabled = !usable;
-  $('fileText').value = usable ? scenarioText() : '';
+  // An inserted module with an outside reference still to bind (29e-modules.js) holds back every export until it is bound.
+  const usable = state.enemies.length > 0 && !state.example, held = moduleBlock();
+  $('save').disabled = $('copy').disabled = !usable || held !== '';
+  $('fileText').value = usable && held === '' ? scenarioText() : '';
   if (!usable) $('saveMsg').textContent = state.example ? 'Open a real map file first: the example cannot be saved.' : 'Place at least one enemy to save.';
+  else if (held) $('saveMsg').textContent = held;
   else if (/first|least/.test($('saveMsg').textContent)) $('saveMsg').textContent = '';
+  syncModules();
 
   const c = $('ceiling');
   if (m) { c.min = Math.floor(m.bounds.minY * 2) / 2; c.max = Math.ceil(m.bounds.maxY * 2) / 2; c.disabled = false; if (!isFinite(state.ceiling)) c.value = c.max; }
   else c.disabled = true;
   $('ceilingOut').textContent = isFinite(state.ceiling) ? 'up to ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
   $('floorDown').disabled = $('floorUp').disabled = !m;
+  syncPaint();
 }
-function changed() { syncSide(); view3d.syncEnemies(); invalidate(); if (live.on) { if (!live.applying) pushLive(); } else saveDraft(); }
+// Any other edit makes a previewed repair stale, so its preview goes (ML-017).
+// Live: the game's own state arriving (applying) becomes the staging base; in Draft mode an edit is staged, not sent (ML-014).
+// Between missions there is no game to send edits to: a scenario opened from the catalogue stays on the page until saved (ML-013).
+function changed() { if (state.repair) cancelRepair(); syncSide(); view3d.syncEnemies(); invalidate(); if (live.on) { if (live.applying) stageFollowGame(); else if (stageHolds()) stageChanged(); else if (live.mission) pushLive(); } else if (!stageKeepSeparate()) saveDraft(); viewsChanged(); }
 const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; pushUndo(); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
 
 document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => edit(e => { e.role = b.dataset.role; if (e.role === 'Patrol') { e.fixed = false; if (e.patrol.length < 2) { setTool('route'); say('Click the stops of the patrol route on the map.'); } } })));
@@ -488,6 +517,14 @@ $('recipeAdd').addEventListener('click', () => {
   changed(); say('Added. Change the texts and the times to taste' + (kind === 'waves' ? ', and bind enemies to it on the Enemies tab.' : kind === 'targets' ? ', and give enemies the tag "target".' : '.'));
 });
 $('briefing').addEventListener('change', ev => missionEdit(() => { state.briefing = briefingIn(ev.target.value.split('\n')); }));
+// The author's recommended squad: either box alone stands for both ends; both empty says nothing.
+const squadEdit = () => missionEdit(() => {
+  const read = id => { const v = Math.round(+$(id).value); return $(id).value.trim() !== '' && v > 0 ? Math.min(16, v) : 0; };
+  const lo = read('squadMin'), hi = read('squadMax');
+  state.squadRange = lo || hi ? [Math.min(lo || hi, hi || lo), Math.max(lo || hi, hi || lo)] : null;
+});
+$('squadMin').addEventListener('change', squadEdit); $('squadMax').addEventListener('change', squadEdit);
+$('minutes').addEventListener('change', ev => missionEdit(() => { const v = +ev.target.value || 0; state.minutes = v > 0 ? Math.min(600, v) : 0; }));
 $('doorChance').addEventListener('change', ev => doorEdit(d => { d.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
 $('thingChance').addEventListener('change', ev => editThing(t => { t.chance = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))); }));
 // Game Master, while a mission runs: words for the players, and the lights.

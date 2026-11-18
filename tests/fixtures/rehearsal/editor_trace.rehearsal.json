@@ -1,0 +1,18 @@
+{"schema":"missionlab-rehearsal/1","name":"editor trace: one row of every kind","scenario":"fnv1a64:0123456789abcdef","revision":3,"players":2,"roll":12345,"steps":[
+{"at":0,"players":[[0,0,0],[2,0,0]]},
+{"at":2,"event":"down","tag":"officer","count":1},
+{"at":3,"event":"door","pos":[5,0,5]},
+{"at":4,"event":"intel","item":"cell phone"},
+{"at":5,"expect":{"fired":[1]}},
+{"at":5,"expect":{"notFired":[2]}},
+{"at":5,"expect":{"notFired":[3]}},
+{"at":5,"expect":{"phase":{"2":"counting"}}},
+{"at":6,"fire":2},
+{"at":7,"expect":{"phase":{"2":"fired"}}},
+{"at":7,"expect":{"extraction":"open"}},
+{"at":7,"expect":{"enemies":5}},
+{"at":8,"event":"alert"},
+{"at":9.5,"players":[[100,0,100],[101.25,0,99]]},
+{"at":10,"expect":{"phase":{"3":"holding"}}},
+{"at":20,"expect":{"fired":[3]}}
+]}

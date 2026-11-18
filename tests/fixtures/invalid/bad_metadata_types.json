@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/1", "id": 5, "revision": "3", "squad": [1.5, 4], "minutes": "long", "spawns": [ { "pos": [0, 0, 0] } ] }

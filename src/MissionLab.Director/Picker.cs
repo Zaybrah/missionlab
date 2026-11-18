@@ -22,7 +22,7 @@ namespace MissionLab
         private static float _readAt = -100f, _showUntil = -1f;
         private static GUIStyle _style;
 
-        private static string MapName(string navFile, string scene)
+        internal static string MapName(string navFile, string scene)
         {
             if (!string.IsNullOrWhiteSpace(scene)) return scene.Trim();
             string n = Path.GetFileNameWithoutExtension(navFile ?? "").ToLowerInvariant();
@@ -71,13 +71,18 @@ namespace MissionLab
         internal static bool Choose(string value)
         {
             value = (value ?? "").Trim();
-            foreach (Choice c in Choices())
-                if (string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase))
-                {
-                    DirectorPlugin.Scenario.Value = c.Value;        // written to the settings file at once
-                    DirectorPlugin.L.LogInfo("next mission: " + c.Label);
-                    return true;
-                }
+            // A file saved from the page a moment ago is not in the list read a few seconds earlier: read the folder again once.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                foreach (Choice c in Choices())
+                    if (string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase))
+                    {
+                        DirectorPlugin.Scenario.Value = c.Value;        // written to the settings file at once
+                        DirectorPlugin.L.LogInfo("next mission: " + c.Label);
+                        return true;
+                    }
+                _readAt = -100f;
+            }
             return false;
         }
 

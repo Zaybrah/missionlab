@@ -5,15 +5,17 @@ using System.Text.Json;
 namespace MissionLab.Core
 {
     /// <summary>
-    /// The scenario file's contract, missionlab-plan/1. Reads a file strictly: a wrong type, a number used twice, a link to
+    /// The scenario file's contract, missionlab-plan/1 and /2. Reads a file strictly: a wrong type, a number used twice, a link to
     /// something that is not there, a kind this version does not know and a file written for a newer version are each named
     /// with the place in the file ("triggers[2].after") and a short code. Nothing is quietly dropped or bent into shape.
+    /// missionlab-plan/2 holds the same body under "mission"; it exists so that older versions, which would read a shaped
+    /// area as its anchor circle, refuse the file instead. Paths in findings are relative to the body.
     /// The editor carries the same rules in JavaScript; tests/fixtures/invalid holds files both must judge alike.
     /// docs/scenario.schema.json describes the same format for other tools.
     /// </summary>
     public static class ScenarioFile
     {
-        public const int Version = 1;
+        public const int Version = 2;
         public static readonly string[] Kinds = { "zone", "hold", "alert", "intel", "time", "after", "down", "all", "any", "door" };
 
         // Field tables: n number, i whole number, b yes/no, s text. The editor has the same tables.
@@ -39,6 +41,18 @@ namespace MissionLab.Core
             return "fnv1a64:" + h.ToString("x16");
         }
 
+        /// <summary>
+        /// A fingerprint of the navmesh file a scenario's coordinates were authored on: FNV-1a 64 over its raw bytes, so a
+        /// changed map can be told from the one the author used. Not a protection against tampering.
+        /// </summary>
+        public static string MapPrint(byte[] bytes)
+        {
+            if (bytes == null) return "";
+            ulong h = 14695981039346656037UL;
+            foreach (byte b in bytes) { h ^= b; h *= 1099511628211UL; }
+            return "fnv1a64:" + h.ToString("x16");
+        }
+
         /// <summary>Reads a scenario. plan is null when an error was found. The text itself is never changed.</summary>
         public static List<Finding> Read(string json, out MissionPlan plan)
         {
@@ -57,13 +71,20 @@ namespace MissionLab.Core
                 if (root.ValueKind != JsonValueKind.Object) { Bad("wrong-type", "", "a scenario is a JSON object"); return found; }
 
                 // The version comes first: a newer file is not looked at any further.
-                if (!Has(root, "schema", out JsonElement schema)) Note("no-version", "schema", "the file names no format; it is read as missionlab-plan/" + Version);
+                int version = 1;
+                if (!Has(root, "schema", out JsonElement schema)) Note("no-version", "schema", "the file names no format; it is read as missionlab-plan/1");
                 else
                 {
                     string s = schema.ValueKind == JsonValueKind.String ? schema.GetString() : "";
                     int v = s.StartsWith("missionlab-plan/", StringComparison.Ordinal) && int.TryParse(s.Substring(16), out int n) ? n : 0;
                     if (v <= 0) { Bad("unknown-format", "schema", "\"" + s + "\" is not a MissionLab scenario format"); return found; }
                     if (v > Version) { Bad("future-version", "schema", "this file is missionlab-plan/" + v + "; this version of MissionLab reads missionlab-plan/" + Version + ". Update MissionLab to use it. The file was not changed"); return found; }
+                    version = v;
+                }
+                if (version >= 2)
+                {
+                    if (!Has(root, "mission", out JsonElement body) || body.ValueKind != JsonValueKind.Object) { Bad("wrong-type", "mission", "a missionlab-plan/2 file holds its scenario as an object under \"mission\""); return found; }
+                    root = body;
                 }
 
                 var ids = new HashSet<long>();
@@ -86,6 +107,12 @@ namespace MissionLab.Core
                             string when = Text(t, "when") ?? "zone";
                             if (Array.IndexOf(Kinds, when) < 0) { Bad("unknown-kind", at + ".when", "\"" + when + "\" is not a kind of trigger this version knows"); continue; }
                             if ((when == "zone" || when == "hold" || when == "door") && !(Has(t, "pos", out JsonElement pos) && Spot(pos))) Bad("missing-field", at + ".pos", "a " + when + " trigger needs \"pos\": [x, y, z]");
+                            if (Has(t, "area", out JsonElement area))
+                            {
+                                if (when != "zone" && when != "hold") Bad("bad-area", at + ".area", "only zone and hold triggers have an area");
+                                else if (version < 2) Bad("bad-area", at + ".area", "a shaped area needs missionlab-plan/2: save the file again with this MissionLab");
+                                else AreaPlan.Check(area, at, Bad);
+                            }
                             if (when == "after" && Has(t, "after", out JsonElement after) && Whole(after))
                             {
                                 long a = after.GetInt64();
@@ -151,9 +178,45 @@ namespace MissionLab.Core
                     if (rs.ValueKind != JsonValueKind.Object) Bad("wrong-type", "respawn", "\"respawn\" is an object: {\"after\": seconds, \"times\": waves}");
                     else Types(rs, "respawn", new[] { "n:after", "i:times" }, Bad);
                 }
-                Types(root, "", new[] { "s:name", "s:scene", "s:navFile", "s:insertion", "s:power", "s:skill", "b:nvg", "b:gameMaster", "i:seed" }, Bad);
+                if (Has(root, "places", out JsonElement places))
+                {
+                    if (places.ValueKind != JsonValueKind.Array) Bad("wrong-type", "places", "\"places\" is a list");
+                    else
+                    {
+                        var placeIds = new HashSet<long>(); int i = 0;
+                        foreach (JsonElement pl in places.EnumerateArray())
+                        {
+                            string at = "places[" + i++ + "]";
+                            if (pl.ValueKind != JsonValueKind.Object) { Bad("wrong-type", at, "a place is an object"); continue; }
+                            if (!Has(pl, "id", out JsonElement id) || !Whole(id) || id.GetInt64() < 1) Bad("bad-id", at + ".id", "a place needs a whole number from 1 as its \"id\"");
+                            else if (!placeIds.Add(id.GetInt64())) Bad("duplicate-id", at + ".id", "place number " + id.GetInt64() + " is used twice");
+                            if (!Has(pl, "name", out JsonElement name) || (name.ValueKind == JsonValueKind.String && name.GetString().Trim() == "")) Bad("missing-field", at + ".name", "a place needs a \"name\" for people to read");
+                            if (!(Has(pl, "pos", out JsonElement pos) && Spot(pos))) Bad("missing-field", at + ".pos", "a place needs \"pos\": [x, y, z]");
+                            Types(pl, at, new[] { "i:id", "s:name" }, Bad);
+                            if (Has(pl, "floor", out JsonElement floor))
+                            {
+                                if (floor.ValueKind != JsonValueKind.Array || floor.GetArrayLength() != 2 || floor[0].ValueKind != JsonValueKind.Number || floor[1].ValueKind != JsonValueKind.Number) Bad("wrong-type", at + ".floor", "\"floor\" is [bottom, top] in metres");
+                                else if (floor[1].GetDouble() < floor[0].GetDouble()) Bad("bad-area", at + ".floor", "the top of the floor band is below its bottom");
+                            }
+                            if (Has(pl, "area", out JsonElement area)) AreaPlan.Check(area, at, Bad);
+                        }
+                    }
+                }
+                Types(root, "", new[] { "s:name", "s:scene", "s:navFile", "s:insertion", "s:power", "s:skill", "b:nvg", "b:gameMaster", "i:seed", "s:id", "i:revision", "n:minutes", "s:mapPrint" }, Bad);
                 Value(root, "", "power", new[] { "", "on", "off" }, Bad);
                 Value(root, "", "skill", new[] { "", "recruit", "veteran" }, Bad);
+                // Metadata the author keeps: only checked for sense, never needed to run the mission.
+                string sid = Text(root, "id");
+                if (sid != null && !MissionPlan.IdOk(sid)) Bad("bad-id", "id", "a scenario id is 1 to " + MissionPlan.IdLength + " letters, digits, '_' or '-'");
+                if (Has(root, "revision", out JsonElement rev) && Whole(rev) && rev.GetInt64() < 0) Bad("out-of-range", "revision", "\"revision\" counts saves from 0");
+                if (Has(root, "squad", out JsonElement squad))
+                {
+                    if (squad.ValueKind != JsonValueKind.Array || squad.GetArrayLength() != 2 || !Whole(squad[0]) || !Whole(squad[1])) Bad("wrong-type", "squad", "\"squad\" is [fewest, most] players, whole numbers");
+                    else if (squad[0].GetInt64() < 1 || squad[1].GetInt64() > MissionPlan.SquadLimit || squad[0].GetInt64() > squad[1].GetInt64()) Bad("out-of-range", "squad", "\"squad\" is [fewest, most] players from 1 to " + MissionPlan.SquadLimit + ", fewest first");
+                }
+                if (Has(root, "minutes", out JsonElement minutes) && minutes.ValueKind == JsonValueKind.Number && (minutes.GetDouble() <= 0 || minutes.GetDouble() > MissionPlan.MinutesLimit)) Bad("out-of-range", "minutes", "\"minutes\" is more than 0 and at most " + MissionPlan.MinutesLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                string print = Text(root, "mapPrint");
+                if (print != null && !MissionPlan.PrintOk(print)) Bad("unknown-value", "mapPrint", "\"mapPrint\" is \"fnv1a64:\" and 16 lowercase hex digits, as MissionLab writes it");
             }
             if (Blocks(found)) return found;
             try { plan = MissionPlan.FromJson(json); }

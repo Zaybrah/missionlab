@@ -1,9 +1,20 @@
 <body>
-<aside id="side" data-show="map">
+<aside id="side" data-show="map" data-pane="create">
   <header>
     <h1>MissionLab Scenario Editor</h1>
     <p>Place enemies on a map and save the layout as a scenario file. Unofficial tool for the game OPERATOR.</p>
   </header>
+  <nav id="views" role="tablist" aria-label="What you are doing">
+    <button type="button" role="tab" data-view-to="play" aria-selected="false" title="Choose a mission and start it. Nothing here changes a scenario.">Play</button>
+    <button type="button" role="tab" data-view-to="create" aria-selected="true" title="Make or change a scenario: enemies, triggers, world, mission check and saving">Create</button>
+    <button type="button" role="tab" data-view-to="direct" aria-selected="false" title="The running mission: what is happening now, and deliberate changes to it">Direct</button>
+  </nav>
+  <dl id="strip" aria-label="Where things stand">
+    <div><dt>View</dt><dd id="stView">Create</dd></div>
+    <div><dt>Draft</dt><dd id="stDraft">-</dd></div>
+    <div><dt>Next mission</dt><dd id="stNext">-</dd></div>
+    <div><dt>Running</dt><dd id="stRun">-</dd></div>
+  </dl>
   <nav id="tabs" role="tablist" aria-label="Parts of the editor">
     <button type="button" role="tab" data-tab="map" aria-selected="true">Map</button>
     <button type="button" role="tab" data-tab="enemies">Enemies<span class="n" id="tabEnemies"></span></button>
@@ -14,18 +25,44 @@
   </nav>
   <div id="liveAlert" role="alert" hidden><span id="liveAlertText"></span> <button class="btn" id="liveRecover" type="button" hidden>Try again now</button></div>
 
-  <section aria-labelledby="h-map" data-tab="map">
-    <h2 id="h-map">Map</h2>
-    <div id="liveBox">
-      <span class="chip info" id="liveChip">Live</span>
-      <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
+  <section aria-labelledby="h-play" id="playBox" data-view="play" hidden>
+    <h2 id="h-play">Missions <span id="catCount"></span></h2>
+    <div id="playOffline" class="offline">
+      <p class="hint">The mission catalogue needs the game: start OPERATOR with MissionLab and open <code>http://localhost:8765</code>. Here you can still open a scenario file to see what it holds.</p>
+      <div class="row"><button class="btn primary" id="playOpen" type="button">Open files</button></div>
+    </div>
+    <div id="playLive" hidden>
       <div class="field"><label for="nextMission">Next mission uses</label><select id="nextMission" title="What the next mission you host will load. In the game lobby, F8 steps through the same list."></select></div>
       <div class="field"><label for="repeatRun">Dice</label><select id="repeatRun" title="A new roll, or the roll of an earlier mission: the same scenario, roll and number of players give the same setup again."><option value="">A new roll</option></select></div>
+      <ul id="catList" aria-label="Scenarios in BepInEx/MissionLab/scenarios"></ul>
+      <p class="hint" id="catNote" role="status"></p>
       <details id="readyBox"><summary>Is everything ready? <span id="readySum"></span></summary>
         <ul id="readyList"></ul>
         <label class="check"><input id="readyBundle" type="checkbox"><span>Add the scenario on this page and the last run's resolved plan</span></label>
         <button class="btn" id="readyCopy" type="button" title="A short text with versions and the state of the mod. It holds no player names and no folder names, and never map files, 3D geometry, replays or game files.">Copy a report</button>
       </details>
+    </div>
+    <div id="catDetails" hidden>
+      <h2 id="cdTitle"></h2>
+      <p class="hint" id="cdFile"></p>
+      <div id="cdBriefing"></div>
+      <dl id="cdFacts"></dl>
+      <ul id="cdCaps" aria-label="What the scenario uses"></ul>
+      <ul id="cdFindings" aria-label="What MissionLab found in the file"></ul>
+      <div class="row">
+        <button class="btn primary" id="cdPlay" type="button" title="The next mission you host on its map uses this scenario">Play this next</button>
+        <button class="btn" id="cdEdit" type="button" title="Open this scenario in Create to change it">Open in Create</button>
+      </div>
+      <p class="hint" id="cdNote" role="status"></p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-direct" id="directBox" data-view="direct" hidden>
+    <h2 id="h-direct">The running mission</h2>
+    <p class="hint offline">Direct needs the game: start OPERATOR with MissionLab, host a mission and open <code>http://localhost:8765</code>.</p>
+    <div id="liveBox">
+      <span class="chip info" id="liveChip">Live</span>
+      <p class="hint" id="liveStatus" role="status">Connecting to the game...</p>
       <label class="check"><input id="spawnNow" type="checkbox" checked><span>New enemies appear in the game at once</span></label>
       <div id="gmBox" hidden>
         <div class="field"><label for="gmText">Tell players</label><input id="gmText" type="text" maxlength="120" placeholder="A message on every screen" title="{enemies}, {players} and {time} become the numbers of the moment"></div>
@@ -46,6 +83,40 @@
         <button class="btn" id="rpOpen" type="button">Open replay</button>
       </div>
     </div>
+    <div id="tryBox" hidden>
+      <h2>Try-outs <span class="chip warn">experimental</span></h2>
+      <p class="hint">One-click experiments while a mission runs. Each asks the game for one thing and reports what happened. They are not finished features; the ones that work get a proper place later.</p>
+      <div class="field"><label for="tryWhat">Try</label><select id="tryWhat">
+        <option value="message">Message on every screen</option>
+        <option value="power:off">Lights out</option>
+        <option value="power:on">Lights back on</option>
+        <option value="walk">Enemies walk to where you stand</option>
+        <option value="doors">Every door opens</option>
+        <option value="sides">Split the enemies into two sides</option>
+        <option value="thing">Place a thing</option>
+        <option value="respawn">Bring every player back</option>
+        <option value="fail">End the mission as failed</option>
+        <option value="complete">End the mission as a success</option>
+        <option value="endop">End the operation (the game's own call)</option>
+      </select></div>
+      <div class="field" id="tryTextRow"><label for="tryText">Text</label><input id="tryText" type="text" maxlength="120" placeholder="MissionLab: test message"></div>
+      <div class="field" id="tryThingRow" hidden><label for="tryThing">Thing</label><select id="tryThing"></select></div>
+      <p class="hint" id="tryHint"></p>
+      <div class="row"><button class="btn" id="tryGo" type="button">Try it</button></div>
+      <p class="hint" id="tryNote" role="status"></p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-inspect" id="inspectBox" data-view="direct" hidden>
+    <h2 id="h-inspect">Trigger inspector</h2>
+    <p class="hint" id="inspectNote" role="status"></p>
+    <p class="hint" id="inspectEmpty">This scenario has no triggers.</p>
+    <ul id="inspectList" aria-label="Triggers and where each stands"></ul>
+    <p class="hint">Select a trigger to see what it waits for and what it brings, here and on the map. A failed or unconfirmed action is told apart from a condition that is not met. Fire now changes the mission; looking does not.</p>
+  </section>
+
+  <section aria-labelledby="h-map" data-tab="map">
+    <h2 id="h-map">Map</h2>
     <div class="row offline">
       <button class="btn primary" id="openBtn" type="button">Open files</button>
       <input id="fileInput" type="file" multiple accept=".bytes,.json,.mlgeo" hidden>
@@ -63,7 +134,36 @@
     </details>
   </section>
 
-  <section aria-labelledby="h-replay" id="replayBox" data-tab="replay" hidden>
+  <section aria-labelledby="h-places" id="placesBox" data-tab="map">
+    <h2 id="h-places">Places <span id="placeCount"></span></h2>
+    <p class="hint">Names for parts of the map, such as Rear stairs or Upstairs office. Triggers, the mission check and replays then say where something is in words. A point place covers 3 m around its pin on its floor; an area place is painted.</p>
+    <div id="placeReviewBox" hidden>
+      <h2>Check the places</h2>
+      <p class="hint" id="placeReviewWhy" role="status"></p>
+      <ul id="placeReviewList"></ul>
+    </div>
+    <ul id="placeList"></ul>
+    <div class="row">
+      <button class="btn" id="placeAddPoint" type="button" title="Then click the spot on the map">Add point place</button>
+      <button class="btn" id="placeAddArea" type="button" title="Click where its name stands, then paint its shape">Add area place</button>
+    </div>
+    <div id="placePanel" hidden>
+      <div class="field"><label for="placeLabel">Name</label><input id="placeLabel" type="text" maxlength="40" title="Renaming keeps the place's number, so everything that refers to it still does."></div>
+      <div class="field"><label for="placeBottom">Floor from (m)</label><input id="placeBottom" type="number" step="0.5" placeholder="Not given" title="Height of the lowest feet that count. Empty: within 2 m of the pin's height."></div>
+      <div class="field"><label for="placeTop">Floor up to (m)</label><input id="placeTop" type="number" step="0.5" placeholder="Not given"></div>
+      <p class="hint" id="placeShape"></p>
+      <div id="placePaint"></div>
+      <div class="row">
+        <button class="btn" id="placeMove" type="button">Move</button>
+        <button class="btn" id="placeShapeEdit" type="button">Paint its shape</button>
+        <button class="btn" id="placePoint" type="button" hidden>Make it a point</button>
+        <button class="btn danger" id="placeDel" type="button">Delete place</button>
+      </div>
+      <p class="hint" id="placeUses" role="status"></p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-replay" id="replayBox" data-tab="replay" data-view="create direct" hidden>
     <h2 id="h-replay">Replay</h2>
     <p class="hint" id="rpName"></p>
     <div class="row">
@@ -140,6 +240,40 @@
     <div id="zoneBox">
       <h2>Triggers</h2>
       <ul id="zoneList"></ul>
+      <!-- Painting tools (27a-paint.js): moved into the row of whatever is being painted, and kept here otherwise. -->
+      <div id="paintHome" hidden>
+        <div id="paintBox" class="paint">
+          <b id="paintTitle">Painting</b>
+          <div class="shape tools" role="group" aria-label="Painting tool">
+            <button type="button" data-paint="brush" title="Paint cells of 0.2 m">Brush</button>
+            <button type="button" data-paint="erase" title="Clear cells of 0.2 m: holes and gaps">Erase</button>
+            <button type="button" data-paint="rect" title="Drag a rectangle: a part of its own">Rectangle</button>
+            <button type="button" data-paint="poly" title="Click the corners of a part of its own">Polygon</button>
+            <button type="button" data-paint="vertex" title="Move, add and remove corners; drag inside to move the whole area">Corners</button>
+          </div>
+          <div class="row" id="paintSizeRow">
+            <label class="grp" for="paintSize">Brush</label><input id="paintSize" type="number" min="0.4" max="30" step="0.2" value="1.5"><span>m</span>
+            <select id="paintTip" aria-label="Shape of the brush tip"><option value="round">round tip</option><option value="square">square tip</option></select>
+          </div>
+          <div class="row">
+            <label class="grp" for="paintBottom">Floor band</label><input id="paintBottom" type="number" step="0.1" aria-label="Bottom of the floor band in metres"><span>to</span><input id="paintTop" type="number" step="0.1" aria-label="Top of the floor band in metres"><span>m</span>
+          </div>
+          <div class="row">
+            <button class="btn" id="paintThisFloor" type="button" title="The floor under the middle of the view, from 0.5 m below it to 2.6 m above">This floor</button>
+            <button class="btn" id="paintAddFloor" type="button" title="Copy this floor's parts to the floor above and paint there: a whole house">Add floor</button>
+            <button class="btn" id="paintTurnL" type="button" title="Turn the whole area 15 degrees anticlockwise">Turn left</button>
+            <button class="btn" id="paintTurnR" type="button" title="Turn the whole area 15 degrees clockwise">Turn right</button>
+          </div>
+          <ul id="paintParts"></ul>
+          <p class="hint" id="paintCount"></p>
+          <ul id="paintFindings"></ul>
+          <div class="row">
+            <button class="btn" id="paintAnchor" type="button" hidden title="Its label, rally point and the fallback for orders stand there">Move the anchor inside</button>
+            <button class="btn primary" id="paintDone" type="button">Done</button>
+          </div>
+          <p class="hint" id="paintHint"></p>
+        </div>
+      </div>
       <div class="row" id="trigAdd">
         <select id="trigKind" aria-label="Kind of trigger to add">
           <option value="alert">When the enemy is alerted</option>
@@ -175,11 +309,94 @@
       <div class="row"><button class="btn" id="wvAdd" type="button">Add waves</button></div>
     </div>
   </section>
+  <section aria-labelledby="h-modules" id="moduleBox" data-tab="triggers" data-view="create">
+    <h2 id="h-modules">Modules</h2>
+    <p class="hint">A module is a whole encounter kept for reuse: the selected enemies, their routes, the triggers that bring them and what those wait for, with their messages. It is measured from the selected enemy, so it can go anywhere, turned, on this map or another. Doors, intel items, named places and triggers outside it are asked for when it is put in.</p>
+    <div class="row">
+      <input id="mdlName" type="text" maxlength="60" placeholder="Name for this module" aria-label="Name for this module">
+      <button class="btn" id="mdlSave" type="button">Save selection as module</button>
+    </div>
+    <h3>Insert module</h3>
+    <div class="row">
+      <select id="mdlPick" aria-label="Module to insert"></select>
+      <button class="btn" id="mdlOpen" type="button">Open file</button>
+      <button class="btn danger" id="mdlForget" type="button" hidden>Forget</button>
+      <input id="mdlFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="field"><label for="mdlAnchor">Anchor</label><select id="mdlAnchor">
+      <option value="view">Middle of the map view</option>
+      <option value="selected">The selected enemy</option>
+      <option value="typed">A spot I type</option>
+    </select></div>
+    <div class="row" id="mdlTyped" hidden>
+      <input id="mdlX" type="number" step="0.5" placeholder="x" aria-label="Anchor x">
+      <input id="mdlZ" type="number" step="0.5" placeholder="z" aria-label="Anchor z">
+      <input id="mdlY" type="number" step="0.5" placeholder="height" aria-label="Anchor height where nobody can walk" title="Used only where the map has no floor">
+    </div>
+    <div class="field"><label for="mdlTurn">Turned, degrees</label><input id="mdlTurn" type="number" min="0" max="359" step="15" value="0"></div>
+    <div class="row"><button class="btn" id="mdlInsert" type="button">Insert module</button><button class="btn" id="mdlCheck" type="button" hidden>Check placement</button></div>
+    <p class="hint" id="mdlMsg" role="status"></p>
+    <h3>Bindings</h3>
+    <p class="hint" id="mdlBindHint">Nothing to bind. When an inserted module needs a door, an intel item, a named place or another trigger of this mission, it is asked for here, and the scenario cannot be saved until it is chosen.</p>
+    <ul id="mdlBindings"></ul>
+    <ul id="mdlReport"></ul>
+  </section>
   <section data-tab="mission" aria-label="Mission check">
     <div id="checkBox">
       <h2>Mission check</h2>
       <p class="hint" id="checkSum"></p>
+      <div id="repairBox" role="region" aria-labelledby="repairTitle" aria-live="polite" hidden>
+        <p id="repairTitle"></p>
+        <p class="hint" id="repairText"></p>
+        <ul id="repairEdits"></ul>
+        <div class="row"><button class="btn primary" id="repairApply" type="button">Apply repair</button><button class="btn" id="repairCancel" type="button">Cancel</button></div>
+      </div>
       <ul id="checkList"></ul>
+    </div>
+  </section>
+  <section aria-labelledby="h-rehearse" id="rhSection" data-tab="mission" data-view="create">
+    <div id="rhBox">
+      <h2 id="h-rehearse">Rehearse</h2>
+      <p class="hint" id="rhAbout">Plays this scenario's triggers on a simulated clock through events you write here, with the same trigger rules the game uses, and checks what should follow. Every event is an assumption you inject: a rehearsal does not predict spotting, pathfinding, physics, networking or combat.</p>
+      <div class="field"><label for="rhName">Test name</label><input id="rhName" type="text" maxlength="80" placeholder="phone starts the countdown"></div>
+      <div class="field"><label for="rhPlayers">Players</label><input id="rhPlayers" type="number" min="1" max="16" step="1" value="2" title="How many players the mission is rolled for: it decides which players-needed enemies take part."></div>
+      <div class="field"><label for="rhRoll">Roll</label><input id="rhRoll" type="number" step="1" value="0" title="Settles chance, either/or and lots exactly as the Director's seed does. The same roll and players give the same mission."></div>
+      <p class="hint" id="rhPin"></p>
+      <ol id="rhRows"></ol>
+      <div class="row">
+        <select id="rhAdd" aria-label="Row to add">
+          <optgroup label="Injected events (assumptions)">
+            <option value="players">Players stand at</option>
+            <option value="alert">The enemy raises the alarm</option>
+            <option value="intel">Intel is picked up</option>
+            <option value="down">Enemies go down</option>
+            <option value="door">A door is opened</option>
+            <option value="fire">A trigger is fired by hand</option>
+          </optgroup>
+          <optgroup label="Checks">
+            <option value="fired">Check: a trigger has fired</option>
+            <option value="notFired">Check: a trigger has not fired</option>
+            <option value="phase">Check: a trigger's phase</option>
+            <option value="extraction">Check: the extraction is open or held</option>
+            <option value="enemies">Check: how many enemies</option>
+          </optgroup>
+        </select>
+        <button class="btn" id="rhAddBtn" type="button">Add row</button>
+      </div>
+      <p class="hint" id="rhProblems" role="status"></p>
+      <div class="row">
+        <button class="btn primary" id="rhRun" type="button">Run</button>
+        <button class="btn" id="rhSave" type="button">Save as test</button>
+        <button class="btn" id="rhRerun" type="button">Rerun saved tests</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="rhOpen" type="button">Open test file</button>
+        <button class="btn" id="rhClear" type="button">Clear</button>
+        <input id="rhFile" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="rhStatus" role="status" aria-live="polite"></p>
+      <div id="rhResult" aria-live="polite"></div>
+      <ul id="rhSaved" aria-label="Tests kept for this scenario"></ul>
     </div>
   </section>
 
@@ -200,28 +417,13 @@
       <div class="field" style="align-items:start"><label for="briefing">Briefing</label><textarea id="briefing" rows="4" maxlength="500" placeholder="Up to four lines. Each is shown on every player's screen when the mission starts, one after another."></textarea></div>
       <div class="field"><label for="wxHour">Hour of day</label><input id="wxHour" type="number" min="0" max="24" step="0.5" placeholder="Leave to the game"></div>
       <p class="hint" id="missionHint">Extraction: the mission's own rule still applies; this only holds it back until a trigger has fired. Rain, sandstorm and hour only work on maps that have weather; Clean House, Mexico Depot and Georgia do not.</p>
-    </div>
-    <div id="tryBox" hidden>
-      <h2>Try-outs</h2>
-      <p class="hint">One-click experiments while a mission runs. Each asks the game for one thing and reports what happened. They are not finished features; the ones that work get a proper place later.</p>
-      <div class="field"><label for="tryWhat">Try</label><select id="tryWhat">
-        <option value="message">Message on every screen</option>
-        <option value="power:off">Lights out</option>
-        <option value="power:on">Lights back on</option>
-        <option value="walk">Enemies walk to where you stand</option>
-        <option value="doors">Every door opens</option>
-        <option value="sides">Split the enemies into two sides</option>
-        <option value="thing">Place a thing</option>
-        <option value="respawn">Bring every player back</option>
-        <option value="fail">End the mission as failed</option>
-        <option value="complete">End the mission as a success</option>
-        <option value="endop">End the operation (the game's own call)</option>
-      </select></div>
-      <div class="field" id="tryTextRow"><label for="tryText">Text</label><input id="tryText" type="text" maxlength="120" placeholder="MissionLab: test message"></div>
-      <div class="field" id="tryThingRow" hidden><label for="tryThing">Thing</label><select id="tryThing"></select></div>
-      <p class="hint" id="tryHint"></p>
-      <div class="row"><button class="btn" id="tryGo" type="button">Try it</button></div>
-      <p class="hint" id="tryNote" role="status"></p>
+      <h2>About this mission</h2>
+      <div class="field"><label for="squadMin">Squad from</label><input id="squadMin" type="number" min="0" max="16" step="1" placeholder="Not given" title="The fewest players you recommend. Leave empty to say nothing."></div>
+      <div class="field"><label for="squadMax">Squad up to</label><input id="squadMax" type="number" min="0" max="16" step="1" placeholder="Not given" title="The most players you recommend."></div>
+      <div class="field"><label for="minutes">Your estimate (min)</label><input id="minutes" type="number" min="0" max="600" step="5" placeholder="Not given" title="Your own estimate of how long the mission takes. Measured times come from run records, not from here."></div>
+      <div class="field"><label for="scenarioId">Scenario id</label><input id="scenarioId" type="text" readonly title="Stays the same when the scenario is renamed. Made on the first save."></div>
+      <div class="field"><label for="revision">Revision</label><input id="revision" type="text" readonly title="Counts your saves of this scenario."></div>
+      <p class="hint" id="mapPrintNote" hidden>This scenario was made on another version of this map: check positions and places</p>
     </div>
 
   </section>
@@ -274,11 +476,48 @@
     <div id="doorTrigs"></div>
   </section>
 
+  <section aria-labelledby="h-stage" id="stageBox" data-view="direct">
+    <h2 id="h-stage">Changes to the game <span id="stageCount"></span></h2>
+    <div class="pair" role="group" aria-label="How your edits reach the running game">
+      <button type="button" id="stageLive" aria-pressed="true" title="Every edit is carried out in the game at once">Live</button>
+      <button type="button" id="stageDraft" aria-pressed="false" title="Edits wait here; Apply changes sends them to the game together">Draft</button>
+    </div>
+    <p class="hint" id="stageMode" role="status"></p>
+    <ul id="stageList" aria-label="Staged changes"></ul>
+    <div class="row" id="stageButtons" hidden>
+      <button class="btn" id="stagePreview" type="button">Preview changes</button>
+      <button class="btn primary" id="stageApply" type="button">Apply changes</button>
+      <button class="btn danger" id="stageDiscard" type="button">Discard draft</button>
+    </div>
+    <div id="stageCheck" role="status"></div>
+    <div id="stageReceipt" aria-live="polite"></div>
+    <p class="hint">Undo (Ctrl+Z) changes the draft only. It cannot bring back a death, a finished mission, collected intel or anything else the game has already done.</p>
+    <p class="hint">Immediate, never staged: Tell players, Lights out and on, Send selected enemies, Fire now, Spawn waiting and Remove all live enemies.</p>
+  </section>
+
+  <section aria-labelledby="h-rev" id="revBox" data-tab="mission" data-view="create">
+    <h2 id="h-rev">Revisions <span id="revCount"></span></h2>
+    <p class="hint" id="revWhere"></p>
+    <div id="revOpen" hidden>
+      <span id="revOpenText"></span>
+      <ul class="hint" id="revRun" hidden></ul>
+      <div class="row"><button class="btn" id="revBack" type="button">Back to my draft</button><button class="btn" id="revRepeat" type="button" hidden>Repeat this run next time</button></div>
+    </div>
+    <div class="field"><label for="revNote">Note</label><input id="revNote" type="text" maxlength="200" placeholder="What changed, and why (optional)"></div>
+    <div class="row">
+      <button class="btn" id="revSave" type="button">Save revision</button>
+      <button class="btn" id="revLoad" type="button">Show revisions</button>
+    </div>
+    <ul id="revList" aria-label="Saved revisions"></ul>
+    <div id="revDiff" role="status"></div>
+  </section>
+
   <section aria-labelledby="h-save" id="saveBox">
     <h2 id="h-save">Save</h2>
     <div class="field"><label for="title">File name</label><input id="title" type="text" maxlength="60" spellcheck="false"></div>
     <div class="row">
       <button class="btn primary" id="save" type="button" hidden>Save file</button>
+      <button class="btn primary" id="saveCat" type="button" hidden title="Checks the scenario as MissionLab will, then writes it into BepInEx/MissionLab/scenarios. An existing file is only written over when you agree.">Save to the scenarios folder</button>
       <button class="btn" id="copy" type="button">Copy file text</button>
     </div>
     <p class="hint" id="saveMsg" role="status"></p>

@@ -117,27 +117,34 @@ function replayNow() {
   });
   return { players: mix(a[1], b[1]).map(p => Object.assign(p, { name: replay.data.players[p.id] || 'Player' })), enemies: mix(a[2], b[2]) };
 }
+// " in Rear stairs" for a recorded position, when the recording was made on the open scenario's map file; else ''.
+function replayPlace(at) {
+  const d = replay.data;
+  if (!d || !Array.isArray(at) || (d.navFile && state.navFile && d.navFile.toLowerCase() !== state.navFile.toLowerCase())) return '';
+  return placeWords(at);
+}
 function syncReplay() {
   const d = replay.data; $('replayBox').hidden = !d; if (!d) return;
   $('rpName').textContent = replay.name + (d.scene ? ' · ' + d.scene : '');
   const tr = $('rpTime'); tr.min = d.start; tr.max = d.end; if (document.activeElement !== tr) tr.value = replay.t;
   $('rpPlay').textContent = replay.playing ? 'Pause' : 'Play';
   const now = replayNow();
-  $('rpClock').textContent = mmss(replay.t) + ' of ' + mmss(d.end) + ' · ' + now.players.length + (now.players.length === 1 ? ' player, ' : ' players, ') + now.enemies.length + (now.enemies.length === 1 ? ' enemy' : ' enemies');
-  const ul = $('rpEvents'), key = replay.name + '/' + d.events.length;
+  $('rpClock').textContent = mmss(replay.t) + ' of ' + mmss(d.end) + ' · ' + now.players.length + (now.players.length === 1 ? ' player, ' : ' players, ') + now.enemies.length + (now.enemies.length === 1 ? ' enemy' : ' enemies')
+    + now.players.map(p => { const w = replayPlace(p.pos); return w ? ' · ' + p.name + w : ''; }).join('');
+  const ul = $('rpEvents'), key = replay.name + '/' + d.events.length + '/' + state.places.map(p => p.id + ':' + p.name + ':' + p.pos.join(',')).join('|');
   if (ul.dataset.key !== key) {
     const jump = (t, at) => { replay.t = Math.max(d.start, Math.min(d.end, t - 2)); if (Array.isArray(at)) { state.view.cx = at[0]; state.view.cz = at[2]; } syncReplay(); invalidate(); };
     const st = $('rpStats'); st.textContent = '';
     for (const [label, value, t, at] of replayStats(d)) {
       const li = document.createElement('li'), a = document.createElement('span'); a.textContent = label; li.appendChild(a);
-      if (typeof t === 'number') { const b = document.createElement('button'); b.type = 'button'; b.textContent = value; b.title = 'Go to this moment'; b.addEventListener('click', () => jump(t, at)); li.appendChild(b); }
+      if (typeof t === 'number') { const b = document.createElement('button'); b.type = 'button'; b.textContent = value + replayPlace(at); b.title = 'Go to this moment'; b.addEventListener('click', () => jump(t, at)); li.appendChild(b); }
       else { const b = document.createElement('b'); b.textContent = value; li.appendChild(b); }
       st.appendChild(li);
     }
     ul.dataset.key = key; ul.textContent = '';
     d.events.forEach(ev => {
       const li = document.createElement('li'), b = document.createElement('button');
-      b.type = 'button'; b.textContent = mmss(ev[0]) + '  ' + ev[2];
+      b.type = 'button'; b.textContent = mmss(ev[0]) + '  ' + ev[2] + replayPlace(ev[3]);
       b.addEventListener('click', () => { replay.t = Math.max(d.start, Math.min(d.end, ev[0] - 2)); if (Array.isArray(ev[3])) { state.view.cx = ev[3][0]; state.view.cz = ev[3][2]; } syncReplay(); invalidate(); });
       li.appendChild(b); ul.appendChild(li);
     });
@@ -191,7 +198,7 @@ async function pollLive() {
   setTimeout(pollLive, 600);
 }
 function clearLive() {
-  if (replay.data) return;                       // a replay is being watched: its map stays
+  if (replay.data || catalogue.lobbyFile) return;  // a replay is being watched, or a scenario was opened between missions: it stays
   if (!state.map && !state.enemies.length) return;
   state.map = null; state.geo = null; state.enemies = []; state.selected = -1; state.doors = []; state.door = -1; live.rev = null; live.nav = ''; live.hasGeo = false; live.players = []; live.enemies = [];
   view3d.dropMap(); view3d.dropGeo(); live.applying = true; changed(); live.applying = false;
@@ -218,6 +225,7 @@ async function applyLive(s) {
   syncReady(s);
   live.mission = !!(s && s.mission); live.things = s && Array.isArray(s.things) ? s.things : []; live.tried = (s && s.tried) || '';
   syncTry();
+  syncModes(s);
   if (!s || !s.mission) { $('liveStatus').textContent = s && s.starting ? 'The mission is starting...' : 'Waiting for a mission. Host one in the game.'; clearLive(); return; }
   if (s.navFile && s.navFile !== live.nav) {                 // a new mission: fetch its map from the game folder
     live.nav = s.navFile; live.hasGeo = false; live.rev = null;
