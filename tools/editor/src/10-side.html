@@ -45,6 +45,7 @@
     <div id="catDetails" hidden>
       <h2 id="cdTitle"></h2>
       <p class="hint" id="cdFile"></p>
+      <div class="row" id="cdSeal" hidden><span class="chip info" id="cdSealChip">sealed</span><button class="btn" id="cdReveal" type="button" hidden title="Shows this mission as it is: enemies, rolls and trigger plans">Reveal now the run is over</button></div>
       <div id="cdBriefing"></div>
       <dl id="cdFacts"></dl>
       <ul id="cdCaps" aria-label="What the scenario uses"></ul>
@@ -55,6 +56,15 @@
       </div>
       <p class="hint" id="cdNote" role="status"></p>
     </div>
+  </section>
+
+  <section aria-labelledby="h-optplay" id="optPlayBox" data-view="play" hidden>
+    <h2 id="h-optplay">Options</h2>
+    <p class="hint" id="optPlayFor"></p>
+    <div id="optPlayList"></div>
+    <p class="hint">A choice's name is the author's word; after the dash is what it changes. How hard a choice plays has not been measured.</p>
+    <p class="hint" id="optPlayNote" role="status" aria-live="polite"></p>
+    <p class="hint" id="optPlayRun"></p>
   </section>
 
   <section aria-labelledby="h-direct" id="directBox" data-view="direct" hidden>
@@ -107,12 +117,29 @@
     </div>
   </section>
 
+  <section aria-labelledby="h-sealed" id="sealBox" data-view="direct" hidden>
+    <h2 id="h-sealed">Sealed mission <span class="chip info">spoiler avoidance</span></h2>
+    <p class="hint" id="sealNote" role="status"></p>
+    <div class="row"><button class="btn" id="sealReveal" type="button">Reveal the mission</button></div>
+  </section>
+
   <section aria-labelledby="h-inspect" id="inspectBox" data-view="direct" hidden>
     <h2 id="h-inspect">Trigger inspector</h2>
     <p class="hint" id="inspectNote" role="status"></p>
     <p class="hint" id="inspectEmpty">This scenario has no triggers.</p>
     <ul id="inspectList" aria-label="Triggers and where each stands"></ul>
     <p class="hint">Select a trigger to see what it waits for and what it brings, here and on the map. A failed or unconfirmed action is told apart from a condition that is not met. Fire now changes the mission; looking does not.</p>
+  </section>
+
+  <section aria-labelledby="h-cards" id="cardsBox" data-view="direct" hidden>
+    <h2 id="h-cards">Action cards</h2>
+    <p class="hint" id="cardsNote" role="status"></p>
+    <div class="row" id="cardsMeterRow" hidden><meter id="cardsMeter" min="0" max="10" value="0" aria-labelledby="cardsPoints"></meter><span id="cardsPoints"></span></div>
+    <label class="check" id="cardsModeRow" hidden><input id="cardsMode" type="checkbox" checked><span>Budget rules for this session: cards cost points and rest, and their triggers fire only through the cards. Off: free directing, cards fire without spending (the replay records it).</span></label>
+    <ul id="cardsList" aria-label="Action cards"></ul>
+    <h3 id="cardsSpentHead" hidden>Recent spends</h3>
+    <ol id="cardsSpent" aria-labelledby="cardsSpentHead"></ol>
+    <p class="hint">The game checks every card, whichever page plays it, and gives the points back when a card is refused, cancelled, fails or gets no answer within 30 s. Where reinforcements appear and whether a player could see them is checked by the plugin's own distance and view test; how well that matches what players see has still to be observed in the game.</p>
   </section>
 
   <section aria-labelledby="h-map" data-tab="map">
@@ -132,6 +159,31 @@
         <li>Any other mission: host it once with MissionLab installed. The banner at the top left of the game names the file, and so does <code>missions/last.json</code>.</li>
       </ul>
     </details>
+  </section>
+
+  <section aria-labelledby="h-quick" id="quickBox" data-tab="map" data-view="create">
+    <h2 id="h-quick">Quick mission</h2>
+    <p class="hint">MissionLab's generator makes a layout on a map: Generate shows it on the map, Reroll tries another seed, Keep opens it here as a new scenario to change and save.</p>
+    <p class="hint offline">The quick mission needs the game: the generator reads the map's own navigation file in your OPERATOR folder, which MissionLab never copies. Start OPERATOR with MissionLab and open <code>http://localhost:8765</code>.</p>
+    <div class="field"><label for="qmMap">Map file</label><input id="qmMap" type="text" list="qmMaps" maxlength="120" spellcheck="false" title="A map file of the game, such as suburbv2.bytes"><datalist id="qmMaps"></datalist></div>
+    <div class="field"><label for="qmEnemies">Enemies</label><input id="qmEnemies" type="number" min="2" max="60" step="1" value="12"></div>
+    <div class="field"><label for="qmGuard">Guards</label><input id="qmGuard" type="number" min="0" max="100" step="5" value="40" title="Share of enemies that stay where they are placed"></div>
+    <div class="field"><label for="qmWander">Wanderers</label><input id="qmWander" type="number" min="0" max="100" step="5" value="35" title="Share of enemies that roam around their place"></div>
+    <div class="field"><label for="qmPatrol">Patrols</label><input id="qmPatrol" type="number" min="0" max="100" step="5" value="25" title="Share of enemies that walk a route; one that finds no route wanders instead"></div>
+    <p class="hint">Shares, not counts. All three at 0: the generator's own mix, with more guards indoors.</p>
+    <label class="check"><input id="qmAlert" type="checkbox" checked><span>Alert wave: a few enemies out of doors come 15 to 35 s after the enemy is alerted</span></label>
+    <label class="check"><input id="qmAmbush" type="checkbox" checked><span>Ambush: walking into the busiest building brings enemies from near it</span></label>
+    <label class="check"><input id="qmDoors" type="checkbox"><span>Locked doors: up to three of the map's doors. Needs the map's door list, from a running mission on that map or a recon file</span></label>
+    <p class="hint">Moved intel is not offered: it needs the game itself and the RandomIntel setting, so the intel stays where the game puts it.</p>
+    <div class="field"><label for="qmSeed">Seed</label><input id="qmSeed" type="number" min="1" step="1" placeholder="a new one" title="The same seed, map and settings give the same layout"></div>
+    <div class="row">
+      <button class="btn primary" id="qmGo" type="button">Generate</button>
+      <button class="btn" id="qmReroll" type="button" title="A new seed, then Generate">Reroll</button>
+      <button class="btn" id="qmKeep" type="button">Keep</button>
+      <button class="btn" id="qmDrop" type="button" hidden>Clear the preview</button>
+    </div>
+    <p class="hint" id="qmNote" role="status" aria-live="polite"></p>
+    <ul id="qmLeft" aria-label="What this layout leaves out"></ul>
   </section>
 
   <section aria-labelledby="h-places" id="placesBox" data-tab="map">
@@ -178,6 +230,14 @@
     <h2>What happened</h2>
     <ul id="rpEvents"></ul>
     <p class="hint">Blue is a player, red an enemy; a filled red dot has noticed the players. Lines show the last half minute. Click an event to jump to it. The replay is drawn on the 2D map.</p>
+  </section>
+
+  <section aria-labelledby="h-debrief" id="debriefBox" data-tab="replay" data-view="create direct" hidden>
+    <h2 id="h-debrief">Debrief</h2>
+    <p class="hint">Facts from the recording only: each number names the event or record it was counted from, and older recordings mark their guesses. Health, shots fired and players' use of doors are not recorded, so they are never given.</p>
+    <pre id="dbText" class="debrief" tabindex="0" aria-label="Debrief as plain text"></pre>
+    <div class="row"><button class="btn" id="dbCopy" type="button">Copy as text</button></div>
+    <p class="hint" id="dbStatus" role="status"></p>
   </section>
 
   <section aria-labelledby="h-enemies" data-tab="enemies">
@@ -428,6 +488,38 @@
 
   </section>
 
+  <section aria-labelledby="h-seal" id="sealSection" data-tab="mission" data-view="create">
+    <h2 id="h-seal">Sealed</h2>
+    <label class="check"><input id="sealSealed" type="checkbox"><span>Sealed: Play and Direct leave out where enemies are, how many, what is rolled and what triggers will do</span></label>
+    <p class="hint">For a host who wants to discover the mission with the squad. This is spoiler avoidance, not secrecy: the file stays readable, and Create asks before it shows a sealed mission's enemies. A reveal lasts until the page is reloaded; another tab starts sealed.</p>
+  </section>
+
+  <section aria-labelledby="h-opt" id="optBox" data-tab="mission" data-view="create">
+    <h2 id="h-opt">Host options <span id="optCount"></span></h2>
+    <p class="hint">Choices the host makes before the mission, such as how many guards or how many reinforcement waves. A choice can drop enemies of a lot, switch triggers off, and set waves and enemy skill. Name choices for what they do; how hard one plays is your suggestion until it has been measured.</p>
+    <ol id="optList" aria-label="Options"></ol>
+    <div class="row">
+      <button class="btn" id="optAdd" type="button">Add option</button>
+      <button class="btn" id="optCheck" type="button" title="Tries every combination of choices with every squad size and a sample of rolls (the game's plugin); offline, the mission check on the default picks">Check every combination</button>
+    </div>
+    <p class="hint" id="optCheckNote" role="status" aria-live="polite"></p>
+    <ul id="optCheckList" aria-label="What the check found"></ul>
+  </section>
+
+  <section aria-labelledby="h-gb" id="cardsAuthor" data-tab="mission" data-view="create">
+    <h2 id="h-gb">Game Master budget</h2>
+    <p class="hint">Action cards for whoever directs the mission: each fires one of your triggers, costs points and rests for a while. The game checks every card itself, whichever page plays it; the host may turn the budget rules off for a session.</p>
+    <label class="check"><input id="gbOn" type="checkbox"><span>This mission has a Game Master budget</span></label>
+    <div id="gbBody" hidden>
+      <div class="field"><label for="gbBudget">Starting points</label><input id="gbBudget" type="number" min="0" max="1000" step="1" title="Points at the start, 0 to 1000. Points that come back never go above this."></div>
+      <div class="field"><label for="gbRegen">Back a minute</label><input id="gbRegen" type="number" min="0" max="100" step="1" title="Points that come back each minute, 0 to 100."></div>
+      <ol id="gbActions" aria-label="Actions"></ol>
+      <p class="hint" id="gbNoTrig" hidden>Add a trigger first: every action fires one. A trigger that waits for nothing ("After another trigger" with none chosen) fires only by hand, which suits a card best.</p>
+      <div class="row"><button class="btn" id="gbAdd" type="button">Add action</button></div>
+      <ul id="gbProblems" aria-label="Problems with the budget"></ul>
+    </div>
+  </section>
+
   <section aria-labelledby="h-sel" id="panel" data-tab="enemies" hidden>
     <h2 id="h-sel">Selected enemy <span id="selNo"></span></h2>
     <div class="seg" role="group" aria-label="Role">
@@ -456,10 +548,47 @@
     <div class="field"><label for="either">Either/or</label><select id="either"></select></div>
     <p class="hint" id="chanceHint"></p>
     <div class="field" id="typeRow" hidden><label for="type" id="typeLabel">Enemy type</label><select id="type"></select></div>
+    <div id="scEnemy" hidden>
+      <h2>Scatter</h2>
+      <div class="field"><label for="scRadius">Scatter radius (m)</label><input id="scRadius" type="number" min="0" max="30" step="0.5" title="Placed at random within this distance of where it stands, each time the mission starts. 0: exactly here."></div>
+      <div class="field"><label for="scWithin">Within</label><select id="scWithin" title="An allow area it must be placed in"></select></div>
+      <div class="field"><label for="scFallback">No spot passes</label><select id="scFallback"><option value="stay">It stays where it is placed</option><option value="skip">It is left out</option></select></div>
+      <p class="hint" id="scFallbackWhy"></p>
+      <p class="hint" id="scPreview" role="status"></p>
+      <ul id="scRemoved" aria-label="Sample points each rule removed"></ul>
+      <div class="row">
+        <label for="scSeeds">Seeds</label><input id="scSeeds" type="number" min="1" max="200" step="1" value="20">
+        <label for="scPlayers">Players</label><input id="scPlayers" type="number" min="1" max="16" step="1" value="2">
+        <button class="btn" id="scTry" type="button" title="The game starts the scenario with seeds 1 to N on the map's navmesh and lists every counterexample">Try seeds</button>
+      </div>
+      <p class="hint" id="scTried" role="status"></p>
+      <ul id="scCounter" aria-label="Counterexamples"></ul>
+    </div>
     <div id="pos"></div>
     <div class="row">
       <button class="btn" id="clearRoute" type="button">Clear route</button>
       <button class="btn danger" id="del" type="button">Delete enemy</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-placement" id="placementBox" data-tab="enemies" data-view="create">
+    <h2 id="h-placement">Placement areas <span id="plCount"></span></h2>
+    <p class="hint">For enemies with a scatter radius. An allow area is where an enemy that names it as "Within" is placed; an empty area is kept free of scattered enemies. Paint them floor by floor.</p>
+    <ul id="plList"></ul>
+    <div class="row">
+      <button class="btn" id="plAddAllow" type="button">Add allow area</button>
+      <button class="btn" id="plAddEmpty" type="button">Add empty area</button>
+    </div>
+    <div id="plPanel" hidden>
+      <div class="field"><label for="plName">Name</label><input id="plName" type="text" maxlength="40"></div>
+      <div class="field"><label for="plMode">Kind</label><select id="plMode"><option value="allow">Allow: enemies may be placed here</option><option value="empty">Empty: no scattered enemy here</option></select></div>
+      <p class="hint" id="plShape"></p>
+      <div id="plPaint"></div>
+      <div class="row">
+        <button class="btn" id="plPaintBtn" type="button">Paint its shape</button>
+        <button class="btn danger" id="plDel" type="button">Delete area</button>
+      </div>
+      <p class="hint" id="plUses" role="status"></p>
     </div>
   </section>
 
@@ -510,6 +639,41 @@
     </div>
     <ul id="revList" aria-label="Saved revisions"></ul>
     <div id="revDiff" role="status"></div>
+  </section>
+
+  <section aria-labelledby="h-unused" id="unusedBox" data-tab="mission" data-view="create">
+    <h2 id="h-unused">Unused content</h2>
+    <p class="hint">Suggestions for review, not faults: triggers that never fired and enemies that never left their idle state in any comparable run (the same scenario and the same setup after the dice). A guard can add tension without ever engaging.</p>
+    <div class="row">
+      <button class="btn" id="unusedRuns" type="button" title="Asks the game for this scenario's recorded runs">Look at past runs</button>
+      <button class="btn" id="unusedOpen" type="button" title="One recording on its own, compared with nothing">Use a replay file</button>
+      <input id="unusedFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <pre id="unusedText" class="debrief" tabindex="0" aria-label="Unused content as plain text" hidden></pre>
+    <p class="hint" id="unusedStatus" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-packs" id="packBox" data-tab="mission" data-view="create">
+    <h2 id="h-packs">Packs</h2>
+    <p class="hint">A pack is one file to give to other players: this scenario, and modules if you like, with a list of what it needs (the map file, PvE, the MissionLab version and the features it uses). It never holds the game's map data, geometry or replays: each player's own game supplies the map.</p>
+    <h3>Export pack</h3>
+    <div class="field"><label for="packName">Pack name</label><input id="packName" type="text" maxlength="60" placeholder="the scenario's name" spellcheck="false"></div>
+    <ul id="packModules" aria-label="Modules to put in the pack"></ul>
+    <div class="row">
+      <button class="btn" id="packAddModule" type="button">Add module file</button>
+      <input id="packModuleFile" type="file" accept=".json,application/json" multiple hidden>
+      <button class="btn primary" id="packExport" type="button">Export pack</button>
+    </div>
+    <p class="hint" id="packExportMsg" role="status"></p>
+    <h3>Import pack</h3>
+    <p class="hint">Opening a pack shows everything in it first; nothing is installed until you choose to, and nothing is ever written over.</p>
+    <div class="row">
+      <button class="btn" id="packOpen" type="button">Open pack file</button>
+      <input id="packFile" type="file" accept=".json,application/json" hidden>
+      <button class="btn primary" id="packInstall" type="button" hidden>Install</button>
+    </div>
+    <div id="packPreview" role="region" aria-label="What the pack holds"></div>
+    <p class="hint" id="packMsg" role="status"></p>
   </section>
 
   <section aria-labelledby="h-save" id="saveBox">

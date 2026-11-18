@@ -1,0 +1,16 @@
+MissionLab debrief: old.replay.json
+Map: Suburb
+Recording semantics 2, plugin 0.20.0
+Recorded: 1:26 [frames]
+Setup to end: not known without the run record [run.end]
+First recorded contact: 0:50, enemy 2 [frames] (a guess)
+Triggers fired: 2 of 2 [note] (a guess)
+  0:40 trigger 1 'Gate' [note] (a guess)
+  0:52 trigger 3 [note] (a guess)
+Enemies down or gone: 1 [down] (a guess)
+Taken out by an edit, not counted as down: 1 [removed]
+Players seen: 1 (Alice) [players]
+Not recorded: health, shots fired, door use by players
+Note: An older recording (semantics 2): enemies are linked by a guess and every enemy that left the game's list counts as down. Its states may show an enemy's first moments or a gun truck's gunner as alerted. Numbers marked (a guess) come from it.
+Note: Made before trigger firings and alerts were recorded as events of their own (MissionLab 0.26): milestones are read from the timeline's wording, and first contact from the enemies' recorded states.
+Note: No run record was found for this recording, so the time from setup to end, how it ended and the squad size are not known.

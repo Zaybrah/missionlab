@@ -1,0 +1,22 @@
+MissionLab debrief: 20261118-120000_Suburb.json
+Map: Suburb
+Scenario: raid.json (raid-1)
+Recording semantics 4, plugin 0.26.0
+Recorded: 1:56 [frames]
+Setup to end: 10:10 [run.end]
+How it ended: success [run.end]
+First recorded contact: 0:30, spawn #3 in Courtyard [alert]
+Triggers fired: 1 of 2, 2 firings [fire]
+  0:45 trigger 1 'Gate' in Courtyard [fire]
+  1:51 trigger 1 'Gate' [fire]
+Enemies down, as the game reported: 1 [down]
+Taken out by an edit, not counted as down: 1 [removed]
+Made again after an edit: 1 [remade]
+Gone for a reason not known: 1 [gone]
+Intel items taken: 1 [intel]
+Game Master requests: 1 [command]
+Game Master action cards: 1 asked, 1 paid, 1 fired [budget]
+Recording ended: 2:00, the mission is over [end]
+Players seen: 2 (Alice, Bob) [players]
+Squad size rolled for: 2 [run.players]
+Not recorded: health, shots fired, door use by players

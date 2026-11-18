@@ -13,8 +13,11 @@ namespace MissionLab.Core
         }
 
         // ------------------------------------------------------------------ enemies that come later
-        /// <summary>Holds some enemies back: a few come once the enemy is alerted, a few when players walk into the busiest building.</summary>
-        public static void Waves(MissionPlan plan, Rng rng, List<V3> infils, List<string> notes)
+        /// <summary>
+        /// Holds some enemies back: a few come once the enemy is alerted, a few when players walk into the busiest building.
+        /// alert and ambush say which of the two to make (a random layout makes both).
+        /// </summary>
+        public static void Waves(MissionPlan plan, Rng rng, List<V3> infils, List<string> notes, bool alert = true, bool ambush = true)
         {
             int n = plan.Spawns.Count;
             if (n < 6) return;
@@ -28,7 +31,7 @@ namespace MissionLab.Core
             var outer = plan.Spawns.FindAll(s => !s.Indoor && s.Trigger == 0 && !s.Hvt && FarFromInsertions(s, infils, 35f));
             outer.Sort((a, b) => V3.DistXZ(b.Pos, centre).CompareTo(V3.DistXZ(a.Pos, centre)));
             int took = 0;
-            for (int i = 0; i < outer.Count && took < want && budget > 0; i++, took++, budget--)
+            for (int i = 0; alert && i < outer.Count && took < want && budget > 0; i++, took++, budget--)
             {
                 outer[i].Trigger = 1; outer[i].Role = SpawnRole.Wander; outer[i].Defensive = false; outer[i].Patrol.Clear();
             }
@@ -49,7 +52,7 @@ namespace MissionLab.Core
             }
             List<SpawnPlan> house = null;
             foreach (List<SpawnPlan> list in indoor.Values) if (list.Count >= 2 && (house == null || list.Count > house.Count)) house = list;
-            if (house == null || budget <= 0) return;
+            if (!ambush || house == null || budget <= 0) return;
             float hx = 0, hz = 0;
             foreach (SpawnPlan s in house) { hx += s.Pos.X; hz += s.Pos.Z; }
             hx /= house.Count; hz /= house.Count;
@@ -72,5 +75,21 @@ namespace MissionLab.Core
             }
         }
 
+        // ------------------------------------------------------------------ doors
+        /// <summary>
+        /// Locks a few of the map's doors: those the game locks itself (Locked = true in the list) are left to it; of the others,
+        /// about one in seven is locked, three at most. Draws once per door considered, in list order.
+        /// </summary>
+        public static void LockDoors(MissionPlan plan, List<DoorPlan> doors, Rng rng, List<string> notes)
+        {
+            int locked = 0;
+            foreach (DoorPlan d in doors)
+            {
+                if (d.Locked == true || locked >= 3 || !rng.Chance(0.15)) continue;
+                plan.Doors.Add(new DoorPlan { Name = d.Name, Pos = d.Pos, Locked = true });
+                locked++;
+            }
+            if (locked > 0) notes.Add(locked + (locked == 1 ? " door" : " doors") + " locked");
+        }
     }
 }

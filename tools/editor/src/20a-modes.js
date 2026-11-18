@@ -16,7 +16,12 @@ state.pane = 'create';
 const CHOICE_WORDS = { '*': 'any scenario made for the map', '': 'a random layout', '(empty)': 'an empty map' };
 
 function setView(v, byHand) {
-  const view = VIEWS.includes(v) ? v : 'create';
+  let view = VIEWS.includes(v) ? v : 'create';
+  // Create lists every enemy: a sealed mission opens there only once it is revealed (20b-sealed.js).
+  if (view === 'create' && sealedHides() && !sealedAsk()) {
+    view = viewIs('create') ? 'play' : state.pane;
+    say('Left sealed: Create shows every enemy, so it stays closed until you reveal the mission.');
+  }
   state.pane = view;
   $('side').dataset.pane = view; document.body.dataset.pane = view;
   document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.viewTo === view)));
@@ -36,7 +41,9 @@ document.querySelectorAll('#views button').forEach(b => b.addEventListener('clic
 function startViews() {
   let v = '';
   try { v = localStorage.getItem(VIEW_KEY) || ''; } catch (e) { /* storage unavailable */ }
-  setView(VIEWS.includes(v) ? v : live.on ? 'play' : 'create');
+  v = VIEWS.includes(v) ? v : live.on ? 'play' : 'create';
+  if (v === 'create' && sealedHides()) v = 'play';       // a sealed draft after a reload: sealed again, so no question at start
+  setView(v);
   if (live.on) setInterval(() => { if (viewIs('play') && !document.hidden) refreshCatalogue(); }, 15000);
 }
 
@@ -94,7 +101,7 @@ function syncStrip() {
   if (live.on) { $('saveCat').hidden = !!(live.mission && !catalogue.lobbyFile); $('save').hidden = !$('saveCat').hidden; }
 }
 // After every edit (changed() calls this).
-function viewsChanged() { syncStrip(); if (viewIs('play')) syncPlay(); }
+function viewsChanged() { syncStrip(); syncSeal(); if (viewIs('play')) syncPlay(); }
 // The page's scenario now equals a file: one just opened or saved.
 function markSaved(name) { catalogue.savedText = state.example ? null : scenarioText(); catalogue.savedName = name || fileName(); syncStrip(); }
 
@@ -114,6 +121,7 @@ function syncModes(s) {
   const runKey = s && typeof s.run === 'string' ? s.run : null;
   if (catalogue.list && (runKey !== catalogue.runSeen || (catalogue.wasRunning && !running))) refreshCatalogue();
   catalogue.runSeen = runKey; catalogue.wasRunning = running;
+  sealedSeen(s, running);
   syncStrip(); if (viewIs('play')) syncPlay();
 }
 
@@ -136,17 +144,21 @@ async function refreshCatalogue() {
 }
 // Offline, Play shows the scenario on the page in the same shape as a catalogue entry. What only the game knows
 // (measured times, the last run, what is tested) is left unknown, never guessed.
+// A sealed scenario that is not revealed leaves its enemy count and the places in its findings out, as the game's
+// catalogue does (CatalogueInfo): what is wrong and where in the file stays.
 function pageEntry() {
   if (state.example || !state.enemies.length) return null;
-  const obj = scenarioObject(), body = planBody(obj) || {}, found = scenarioProblems(obj), name = fileName();
+  const obj = scenarioObject(), body = planBody(obj) || {}, name = fileName(), hides = state.sealed === true && !sealedPageRevealed();
+  const found = scenarioProblems(obj).map(f => (hides ? Object.assign({}, f, { text: sealedStrip(f.text) }) : f));
   const errors = found.filter(f => f.level === 'error');
   return {
     page: true, file: name, value: name.replace(/\.json$/, ''), readable: !errors.length, usable: !errors.length && state.enemies.length > 0,
     why: errors.length ? 'MissionLab would refuse it: ' + (errors[0].path ? errors[0].path + ': ' : '') + errors[0].text : '', findings: found,
-    title: typeof body.name === 'string' ? body.name : '', id: typeof body.id === 'string' ? body.id : '', revision: body.revision | 0,
+    title: typeof body.name === 'string' ? body.name : '', id: typeof body.id === 'string' ? body.id : '', revision: body.revision | 0, sealed: state.sealed === true,
     briefing: Array.isArray(body.briefing) ? body.briefing : [], author: { squad: Array.isArray(body.squad) ? body.squad : null, minutes: num(body.minutes, 0) > 0 ? body.minutes : null },
     measured: null, navFile: typeof body.navFile === 'string' ? body.navFile : '', scene: typeof body.scene === 'string' ? body.scene : '', map: '', mode: 'pve',
-    compat: null, enemies: state.enemies.length, capabilities: capabilitiesOf(obj).map(n => ({ name: n, tested: null })), lastRun: undefined,
+    compat: null, enemies: hides ? null : state.enemies.length, capabilities: capabilitiesOf(obj).map(n => ({ name: n, tested: null })), lastRun: undefined,
+    options: (state.options || []).map(o => ({ id: o.id, name: o.name, pick: o.pick | 0, choices: (o.choices || []).map(c => (c && c.name) || '') })),
   };
 }
 function pickedEntry() {
@@ -180,7 +192,13 @@ function catalogueFacts(e, ctx) {
   facts.push(['Mode', 'a PvE raid (MissionLab leaves PvP alone)']);
   facts.push(['Tested with this build', e.compat === 'tested' ? 'yes: this map, hosted with MissionLab' : e.compat === 'experimental' ? 'experimental on this map'
     : e.compat === 'untested' ? 'not tested on this map yet' : e.compat === '' ? 'unknown: the file names no map file' : 'not known without the game']);
-  facts.push(['Last run', lastRunWords(e.lastRun, ctx)]);
+  if (e.sealed) facts.push(['Sealed', sealedEntryHides(e) ? 'yes: where enemies are, how many, what is rolled and what triggers will do are left out here. Spoiler avoidance: the file itself stays readable'
+    : 'yes, and revealed on this page: a reload or another tab hides it again']);
+  if (Array.isArray(e.options) && e.options.length) {
+    facts.push(['Options (the author\'s defaults)', e.options.map(o => (o.name || o.id) + ': ' + ((o.choices || [])[o.pick | 0] || 'choice ' + ((o.pick | 0) + 1))).join('; ')]);
+  }
+  const last = lastRunWords(e.lastRun, ctx);
+  facts.push(['Last run', sealedEntryHides(e) ? sealedStrip(last) : last]);
   return facts;
 }
 function capabilityWords(c) { return c.name + (c.tested === true ? ': seen working in the game' : c.tested === false ? ': untested in the game' : ': not known without the game'); }
@@ -198,7 +216,7 @@ function syncPlay() {
   $('catNote').textContent = !live.on ? '' : catalogue.error || (!catalogue.list ? 'Reading the scenarios folder...'
     : !list.length ? 'No scenario files in BepInEx/MissionLab/scenarios yet. Make one in Create and save it there.' : '');
   const picked = pickedEntry();
-  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.usable, e.compat, e.lastRun]), picked && picked.file, choice]);
+  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.usable, e.compat, e.lastRun, e.sealed, sealedEntryHides(e)]), picked && picked.file, choice]);
   if (live.on && listKey !== catalogue.listKey) {
     catalogue.listKey = listKey;
     const ul = $('catList'); ul.textContent = '';
@@ -207,20 +225,28 @@ function syncPlay() {
       b.type = 'button'; b.setAttribute('aria-current', String(!!picked && picked.file === e.file));
       t.textContent = (e.title || e.value) + (choice !== null && String(e.value).toLowerCase() === choice ? '  · next mission' : '');
       meta.className = 'meta' + (e.usable ? '' : ' refused');
-      meta.textContent = e.usable ? [e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', shortLastRun(e.lastRun)].join(' · ') : e.why;
+      const seal = e.sealed ? [sealedEntryHides(e) ? 'sealed' : 'sealed, revealed'] : [];
+      meta.textContent = e.usable ? [...seal, e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', shortLastRun(e.lastRun)].join(' · ')
+        : (e.sealed ? seal[0] + ' · ' : '') + (sealedEntryHides(e) ? sealedStrip(e.why) : e.why);
       b.append(t, meta);
       b.addEventListener('click', () => { catalogue.pick = e.file; $('cdNote').textContent = ''; syncPlay(); });
       li.appendChild(b); ul.appendChild(li);
     }
   }
   const ctx = { session: live.session, mission: !!live.mission };
-  const detailKey = JSON.stringify([picked, ctx, choice, live.on]);
+  const hides = sealedEntryHides(picked), over = hides && sealedRunOver(picked);
+  const detailKey = JSON.stringify([picked, ctx, choice, live.on, hides, over]);
   if (detailKey === catalogue.detailKey) return;
   catalogue.detailKey = detailKey;
   $('catDetails').hidden = !picked; if (!picked) return;
   const e = picked;
   $('cdTitle').textContent = e.title || e.value;
-  $('cdFile').textContent = e.file + (e.id ? ' · id ' + e.id : '') + (e.revision ? ' · revision ' + e.revision : '') + (e.page ? ' · the scenario on this page' : '') + (e.enemies ? ' · ' + plural(e.enemies, 'enemy', 'enemies') : '');
+  // A sealed entry that is not revealed names no enemy count, and its findings name no places (Core does the same).
+  $('cdFile').textContent = e.file + (e.id ? ' · id ' + e.id : '') + (e.revision ? ' · revision ' + e.revision : '') + (e.page ? ' · the scenario on this page' : '') + (!hides && e.enemies ? ' · ' + plural(e.enemies, 'enemy', 'enemies') : '');
+  $('cdSeal').hidden = !e.sealed;
+  $('cdSealChip').textContent = hides ? 'sealed' : 'sealed, revealed';
+  $('cdSealChip').title = hides ? 'Spoiler avoidance: Play and Direct leave out where enemies are, how many, rolls and what triggers will do. The file stays readable.' : 'Revealed on this page only: a reload or another tab hides it again.';
+  $('cdReveal').hidden = !over;
   const brief = $('cdBriefing'); brief.textContent = '';
   for (const line of e.briefing || []) { const p = document.createElement('p'); p.textContent = line; brief.appendChild(p); }
   const dl = $('cdFacts'); dl.textContent = '';
@@ -231,8 +257,9 @@ function syncPlay() {
     li.textContent = (c.tested === true ? '✓ ' : c.tested === false ? '? ' : '') + c.name; li.title = capabilityWords(c); caps.appendChild(li);
   }
   const fl = $('cdFindings'); fl.textContent = '';
-  for (const f of (e.findings || []).slice(0, 5)) { const li = document.createElement('li'); li.className = f.level === 'error' ? 'error' : 'note'; li.textContent = (f.level === 'error' ? 'Problem: ' : 'Note: ') + (f.path ? f.path + ': ' : '') + f.text; fl.appendChild(li); }
-  if (!e.usable && e.why) { const li = document.createElement('li'); li.className = 'error'; li.textContent = e.why; fl.appendChild(li); }
+  const told = t => (hides ? sealedStrip(t) : t);
+  for (const f of (e.findings || []).slice(0, 5)) { const li = document.createElement('li'); li.className = f.level === 'error' ? 'error' : 'note'; li.textContent = (f.level === 'error' ? 'Problem: ' : 'Note: ') + (f.path ? f.path + ': ' : '') + told(f.text); fl.appendChild(li); }
+  if (!e.usable && e.why) { const li = document.createElement('li'); li.className = 'error'; li.textContent = told(e.why); fl.appendChild(li); }
   const chosen = choice !== null && String(e.value).toLowerCase() === choice;
   $('cdPlay').hidden = !live.on; $('cdPlay').disabled = !e.usable || chosen;
   $('cdPlay').textContent = chosen ? 'Chosen for the next mission' : 'Play this next';
@@ -255,12 +282,18 @@ $('cdEdit').addEventListener('click', async () => {
   const e = pickedEntry(); if (!e) return;
   if (!live.on || e.page) { setView('create', true); return; }
   if (live.mission) { $('cdNote').textContent = 'A mission is running and the page shows it. Open this scenario after the mission.'; return; }
+  if (sealedEntryHides(e)) {
+    if (!sealedConfirm(SEAL_ASK)) { $('cdNote').textContent = 'Left sealed: nothing was opened.'; return; }
+    sealedRevealEntry(e);
+  }
+  if (e.sealed) sealing.keep = true;         // revealed just now or before: the load keeps it revealed
   try {
     const r = await fetch('/api/scenariofile/' + encodeURIComponent(e.file), { cache: 'no-store' });
     if (!r.ok) throw new Error('the game did not hand it over (status ' + r.status + ')');
     const text = await r.text();
     let obj; try { obj = JSON.parse(text); } catch (x) { obj = text; }       // not JSON: the strict reader names it, as the plugin does
     const said = loadScenario(obj, e.file);
+    sealing.keep = false;
     if (state.refused) { setView('create', true); showTab('mission', true); say(said); return; }
     catalogue.lobbyFile = e.file;
     if (state.navFile) {
@@ -271,8 +304,9 @@ $('cdEdit').addEventListener('click', async () => {
     }
     markSaved(e.file); setView('create', true); showTab('enemies', true); changed();
     say(said + (state.map ? '' : ' Its map file could not be read from the game, so the ground is not shown.'));
-  } catch (err) { $('cdNote').textContent = e.file + ' could not be opened: ' + (err && err.message ? err.message : err) + '.'; }
+  } catch (err) { sealing.keep = false; $('cdNote').textContent = e.file + ' could not be opened: ' + (err && err.message ? err.message : err) + '.'; }
 });
+$('cdReveal').addEventListener('click', () => { const e = pickedEntry(); if (e) sealedRevealEntry(e); $('cdNote').textContent = 'Revealed on this page. A reload or another tab hides it again.'; });
 
 // ------------------------------------------------------------------ saving into the scenarios folder (between missions)
 async function saveToCatalogue(replace) {

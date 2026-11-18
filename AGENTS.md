@@ -45,11 +45,12 @@ Rules that are never negotiable:
 | `missionlab-plan/1` (scenario); `missionlab-plan/2` = envelope `{"schema":"missionlab-plan/2","mission":{body}}`, written only when a zone/hold trigger has a shaped `area` | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
 | `missionlab-mission/1` | `Director.WriteRecord` | `missions/last.json` + timestamped copies |
 | `missionlab-run/1` | `RunRecord` | `runs/` (pruned to 60) |
-| `missionlab-replay/1` (`semantics:3`: rows carry `who` ids; 1 and 2 still open) | `Replay` | `replays/` |
+| `missionlab-replay/1` (`semantics:4`: rows carry `who` ids, `alert` per enemy, `fire` per trigger; 1–3 still open) | `Replay` | `replays/` |
 | `missionlab-recon/1`, `missionlab-movement/2` | Recon `ReconDump`, `MovementTracker` | `recon/` |
 | `missionlab-revision/1` | `Revisions` (page: Save revision) | `revisions/<scenario id>/r<n>.json` |
 | `missionlab-rehearsal/1` | Core `Rehearsal.Write`, page | `rehearsals/<scenario id>/<name>.json` (never under `scenarios/`: every `*.json` there is read as a scenario) |
-| `missionlab-module/1` (coordinates relative to an anchor; `docs/modules.md`) | page, `Modules` | `modules/*.module.json`; examples in `examples/modules/` |
+| `missionlab-module/1` (coordinates relative to an anchor; `docs/modules.md`; shape check in Core `ModuleFile`) | page, `Modules` | `modules/*.module.json`; examples in `examples/modules/` |
+| `missionlab-pack/1` (scenarios and modules as exact texts plus a manifest; `docs/modules.md`) | Core `Pack.Write`, page (Export pack) | the player's download; `POST /api/pack/install` puts its files into `scenarios/` and `modules/`, never over a file |
 | `.mlgeo` (`MLGEO2\n\0`) | `MapExport` | `maps/` (local only) |
 
 The navmesh input is `OPERATOR_Data/NavMeshData/*.bytes`: a zip holding `graph0_extra.binary`, with vertices stored in Int3 millimetres. It has **three parsers that must change together**: `src/MissionLab.Core/NavMesh.cs`, the editor's `parseTiles`, and `tools/preview/navmesh.py`. The layout is described in `docs/findings.md`.

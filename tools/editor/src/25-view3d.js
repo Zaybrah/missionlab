@@ -117,7 +117,9 @@ const view3d = (() => {
     if (!renderer) return;
     for (const grp of [enemyGroup, extraGroup]) while (grp.children.length) { const o = grp.children.pop(); if (o.geometry) o.geometry.dispose(); }
     const red = col('enemy'), ink = col('ink');
+    const sealed = sealedHides();          // a sealed mission, not revealed (20b-sealed.js): no enemies, routes, zones or placed things
     state.enemies.forEach((e, i) => {
+      if (sealed) return;
       const ghost = live.on && !e.live;                     // placed, but not in the game (yet)
       const sel = i === state.selected, g = new T.Group(), mat = new T.MeshPhongMaterial({ color: red, emissive: sel ? red : 0x000000, emissiveIntensity: 0.45, transparent: ghost, opacity: ghost ? 0.4 : 1 });
       const body = e.vehicle ? new T.Mesh(new T.BoxGeometry(2, 1.8, 5.2), mat) : e.prone ? new T.Mesh(new T.BoxGeometry(0.5, 0.3, 1.7), mat) : new T.Mesh(new T.CylinderGeometry(0.28, 0.28, 1.75, 12), mat);
@@ -140,6 +142,7 @@ const view3d = (() => {
     });
     const blue = col('friend');
     state.zones.forEach(z => {
+      if (sealed) return;
       if (z.when !== 'zone' || !isVec(z.pos)) return;
       if (!(z.area && z.area.parts && z.area.parts.length)) {        // a painted area is a volume of its own, see areas()
         const pts = []; for (let a = 0; a <= 72; a++) pts.push(new T.Vector3(z.pos[0] + Math.cos(a / 72 * 6.2832) * z.radius, z.pos[1] + 0.3, -z.pos[2] + Math.sin(a / 72 * 6.2832) * z.radius));
@@ -148,9 +151,9 @@ const view3d = (() => {
       const post = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3, 6), new T.MeshBasicMaterial({ color: blue })); post.position.set(z.pos[0], z.pos[1] + 1.5, -z.pos[2]); extraGroup.add(post);
       const tag = label('Z' + z.id); tag.position.set(z.pos[0], z.pos[1] + 3.5, -z.pos[2]); extraGroup.add(tag);
     });
-    areas(areaVolumes());
+    areas(sealed ? [] : areaVolumes());
     const amber = col('warn');
-    for (const t of state.things) {
+    for (const t of sealed ? [] : state.things) {
       const bar = new T.Mesh(new T.BoxGeometry(0.9, 0.12, 0.2), new T.MeshPhongMaterial({ color: col('ink') }));
       bar.position.set(t.pos[0], t.pos[1] + 0.08, -t.pos[2]); bar.rotation.y = -(t.yaw || 0) * Math.PI / 180; extraGroup.add(bar);
       const tag = label(t.name.trim().slice(0, 8)); tag.position.set(t.pos[0], t.pos[1] + 0.7, -t.pos[2]); extraGroup.add(tag);
@@ -207,7 +210,7 @@ const view3d = (() => {
       const nose = new T.Mesh(new T.ConeGeometry(0.22, 0.8, 10), mat); nose.rotation.x = -Math.PI / 2; nose.position.set(0, 1.55, -0.7);
       g.add(body, nose); g.position.set(p.pos[0], p.pos[1], -p.pos[2]); g.rotation.y = -p.yaw * Math.PI / 180; liveGroup.add(g);
     }
-    for (const b of live.enemies) {
+    for (const b of sealedHides() ? [] : live.enemies) {
       const home = byId.get(b.marker);
       if (home && Math.hypot(home.pos[0] - b.pos[0], home.pos[2] - b.pos[2]) < 1.2) continue;
       const dot = new T.Mesh(new T.SphereGeometry(0.35, 12, 10), new T.MeshPhongMaterial({ color: red, emissive: red, emissiveIntensity: 0.3 })); dot.position.set(b.pos[0], b.pos[1] + 1.1, -b.pos[2]); liveGroup.add(dot);

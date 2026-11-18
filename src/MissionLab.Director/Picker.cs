@@ -144,5 +144,40 @@ namespace MissionLab
             for (int i = 0; i < list.Count; i++) sb.Append(i > 0 ? "," : "").Append("{\"value\":").Append(Q(list[i].Value)).Append(",\"label\":").Append(Q(list[i].Label)).Append('}');
             return sb.Append(']').ToString();
         }
+
+        // ----- host options (ML-022)
+        // The host's picks for the next mission, by option id: game thread only (set through LiveLink's job queue, read at
+        // the mission's start). Kept between missions like the scenario choice, but not across a restart. An id the next
+        // scenario does not have, or a pick it does not offer, falls back to the author's default (Options.Chosen).
+        private static readonly SortedDictionary<string, int> _picks = new SortedDictionary<string, int>(StringComparer.Ordinal);
+
+        internal static Dictionary<string, int> Picks() => new Dictionary<string, int>(_picks);
+
+        /// <summary>Replaces the picks with {"picks":{"garrison":0}}; ids and values that cannot be picks are left out.</summary>
+        internal static void SetPicks(System.Text.Json.JsonElement root)
+        {
+            _picks.Clear();
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object || !root.TryGetProperty("picks", out System.Text.Json.JsonElement picks) || picks.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+            foreach (System.Text.Json.JsonProperty p in picks.EnumerateObject())
+                if (OptionPlan.IdOk(p.Name) && p.Value.ValueKind == System.Text.Json.JsonValueKind.Number && p.Value.TryGetInt32(out int at) && at >= 0 && at < OptionPlan.MostChoices) _picks[p.Name] = at;
+            DirectorPlugin.L.LogInfo("next mission's options: " + (_picks.Count == 0 ? "the author's defaults" : PicksText(_picks)));
+        }
+
+        internal static string PicksText(IDictionary<string, int> picks)
+        {
+            var parts = new List<string>();
+            foreach (KeyValuePair<string, int> p in picks) parts.Add(p.Key + "=" + p.Value);
+            return string.Join(", ", parts);
+        }
+
+        /// <summary>{"garrison":0,...} in id order.</summary>
+        internal static string PicksJson(IDictionary<string, int> picks)
+        {
+            var sorted = new SortedDictionary<string, int>(picks, StringComparer.Ordinal);
+            var sb = new System.Text.StringBuilder(64).Append('{');
+            bool first = true;
+            foreach (KeyValuePair<string, int> p in sorted) { sb.Append(first ? "" : ",").Append('"').Append(Guard.Esc(p.Key)).Append("\":").Append(p.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)); first = false; }
+            return sb.Append('}').ToString();
+        }
     }
 }

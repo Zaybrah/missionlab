@@ -154,6 +154,16 @@ namespace MissionLab
             { HttpResponse listed = Catalogue.Handle(r); if (listed != null) return listed; }  // mission catalogue and saving a scenario: files only (ML-013)
             { HttpResponse rehearsed = Rehearsals.Handle(r); if (rehearsed != null) return rehearsed; }   // rehearsal and kept tests: Core only, no game objects (ML-016)
             { HttpResponse kept = Modules.Handle(r); if (kept != null) return kept; }         // encounter modules: files only (ML-019)
+            { HttpResponse told = Debriefs.Handle(r); if (told != null) return told; }        // debriefs and unused content: recordings and run records only (ML-024)
+            { HttpResponse packed = Packs.Handle(r); if (packed != null) return packed; }     // installing a scenario pack: files only (ML-026)
+            { HttpResponse swept = ScatterPreview.Handle(r); if (swept != null) return swept; }   // scatter seeds tried: Core and the game's navmesh file only (ML-023)
+            if (r.Path == "/api/options/validate")                                             // host options checked: Core only, no game objects (ML-022)
+            {
+                if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
+                try { string answer = MissionLab.Core.Options.Answer(r.BodyText, out int status); return HttpResponse.Json(answer, status); }
+                catch (Exception e) { return HttpResponse.Error(500, "the options could not be checked: " + e.Message); }
+            }
+            { HttpResponse made = Generate.Handle(r); if (made != null) return made; }       // quick mission: the game's own map file read, Core only (ML-022)
             if (r.Path.StartsWith("/api/command/", StringComparison.Ordinal) && !change)
             {
                 string asked = CommandLedger.Clean(Uri.UnescapeDataString(r.Path.Substring("/api/command/".Length)));
@@ -281,6 +291,11 @@ namespace MissionLab
                     if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
                     using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(r.BodyText)) Picker.Choose(doc.RootElement.GetProperty("value").GetString());
                     return HttpResponse.Json(GameMaster.StateJson());
+                case "/api/options":
+                    // The host's picks for the next mission; kept on the game's thread, where the mission's start reads them.
+                    if (r.Method == "POST")
+                        using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(r.BodyText)) Picker.SetPicks(doc.RootElement);
+                    return HttpResponse.Json("{\"picks\":" + Picker.PicksJson(Picker.Picks()) + "}");
                 default: return HttpResponse.Error(404, "not found");
             }
         }

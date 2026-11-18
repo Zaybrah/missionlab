@@ -1,0 +1,14 @@
+{
+ "schema": "missionlab-plan/1",
+ "triggers": [ { "id": 1, "when": "alert" } ],
+ "director": { "budget": 1001, "regen": -1, "actions": [
+  { "id": "", "name": "No id", "cost": 1, "fire": 1 },
+  { "id": "rear", "name": "Rear", "cost": 1001, "cooldown": 3601, "fire": 9, "minDistance": 501, "unseen": "yes", "fallback": "later" },
+  { "id": "rear", "cost": 2.5, "fire": 1 },
+  { "id": "nofire", "name": "Nothing to fire", "cost": 1 },
+  { "id": "zero", "name": "Zero", "cost": 0, "fire": 0, "cooldown": 0, "minDistance": 0, "unseen": false, "fallback": "wait" },
+  7
+ ] },
+ "sealed": "yes",
+ "spawns": [ { "pos": [0, 0, 0] } ]
+}

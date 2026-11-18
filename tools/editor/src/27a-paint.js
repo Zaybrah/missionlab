@@ -23,7 +23,7 @@ state.paint = { tool: null, size: 1.5, tip: 'round', bottom: -0.5, top: 2.6, tar
 let paintGesture = null, paintPointer = null;                    // the stroke or shape under way; the pointer on the map
 
 // ----- what is painted: { kind: 'trigger' | 'place' | 'placement', index }
-const AREA_HOLDERS = { trigger: () => state.zones, place: () => state.places, placement: () => state.placements || [] };
+const AREA_HOLDERS = { trigger: () => state.zones, place: () => state.places, placement: () => state.placement };
 function areaHolder(target) {
   const list = target && AREA_HOLDERS[target.kind] ? AREA_HOLDERS[target.kind]() : null;
   return (list && list[target.index]) || null;
@@ -705,7 +705,7 @@ function syncPaint() {
     return;
   }
   const area = areaOfTarget(t), mk = (tag, props) => Object.assign(document.createElement(tag), props || {});
-  $('paintTitle').textContent = 'Painting ' + (t.kind === 'trigger' ? trigTitle(h).toLowerCase() : t.kind === 'place' ? (h.name || 'the place') : 'the region');
+  $('paintTitle').textContent = 'Painting ' + (t.kind === 'trigger' ? trigTitle(h).toLowerCase() : t.kind === 'place' ? (h.name || 'the place') : (h.name || 'the placement area'));
   for (const b of document.querySelectorAll('#paintBox [data-paint]')) b.setAttribute('aria-pressed', String(b.dataset.paint === state.paint.tool));
   setVal($('paintSize'), state.paint.size); setVal($('paintTip'), state.paint.tip);
   setVal($('paintBottom'), state.paint.bottom); setVal($('paintTop'), state.paint.top);

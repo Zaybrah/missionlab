@@ -1,0 +1,45 @@
+{
+ "schema": "missionlab-pack/1",
+ "name": "Clean House quiet raid",
+ "made": "2026-11-18",
+ "by": "MissionLab 0.26.0",
+ "manifest": {
+  "files": [
+   {
+    "name": "clean_house_quiet_raid.json",
+    "kind": "scenario",
+    "id": "sc-cleanhouse-quiet",
+    "hash": "fnv1a64:3e9bff8ed618927c",
+    "bytes": 4670
+   },
+   {
+    "name": "two_guard_alarm.module.json",
+    "kind": "replay",
+    "hash": "fnv1a64:4f100061959994dd",
+    "bytes": 1574
+   }
+  ],
+  "requires": {
+   "maps": [
+    "suburbv2.bytes"
+   ],
+   "modes": [
+    "pve"
+   ],
+   "mod": "0.26.0",
+   "capabilities": [
+    "chance",
+    "endings",
+    "extraction-hold",
+    "hunt",
+    "insertion",
+    "intel-move",
+    "messages"
+   ]
+  }
+ },
+ "files": {
+  "clean_house_quiet_raid.json": "{\n  \"schema\": \"missionlab-plan/1\",\n  \"name\": \"Clean House: Quiet Raid\",\n  \"id\": \"sc-cleanhouse-quiet\",\n  \"briefing\": [\n    \"Clean House, quiet raid. Take the phone upstairs and leave without a fight.\",\n    \"The way out stays shut until you hold the phone.\",\n    \"If they raise the alarm, help arrives from the north and you have four minutes.\"\n  ],\n  \"squad\": [1, 4],\n  \"minutes\": 15,\n  \"scene\": \"\",\n  \"navFile\": \"suburbv2.bytes\",\n  \"seed\": 0,\n  \"notes\": [\n    \"Pacing: quiet. Few enemies, one yard patrol, no timer until somebody is seen. Play it in a find-intel mission so that the phone is there.\",\n    \"Completion: take the phone (trigger 1 'Phone taken'), which opens the extraction, then extract. Failure: four minutes after the alarm (trigger 3 'Too late') the mission fails; everyone dead also ends it, as in the game.\",\n    \"Alarm (trigger 2): two patrols from the north come and hunt the nearest player. Nothing on the way out depends on the alarm or on any roll.\",\n    \"Optional content: the wanderer outside the house at (-25, 14) is there one mission in two (chance 50). The mission plays the same without him.\",\n    \"Minutes and squad are the author's estimate; no playtest has measured them yet.\"\n  ],\n  \"triggers\": [\n    {\n      \"id\": 1,\n      \"name\": \"Phone taken\",\n      \"when\": \"intel\",\n      \"item\": \"Cell Phone\",\n      \"facePlayer\": true,\n      \"message\": \"Phone secured. The extraction is open.\"\n    },\n    {\n      \"id\": 2,\n      \"name\": \"Alarm\",\n      \"when\": \"alert\",\n      \"delay\": 10,\n      \"facePlayer\": true,\n      \"hunt\": true,\n      \"red\": true,\n      \"message\": \"They know you are here. More are coming from the north: four minutes.\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Too late\",\n      \"when\": \"after\",\n      \"after\": 2,\n      \"delay\": 240,\n      \"facePlayer\": true,\n      \"warn\": true,\n      \"red\": true,\n      \"message\": \"Too late: their help has the house.\",\n      \"end\": \"failed\"\n    }\n  ],\n  \"objectives\": [\n    {\n      \"name\": \"Cell Phone_1\",\n      \"pos\": [-20.75, 4.78, 6.5],\n      \"yaw\": 260\n    }\n  ],\n  \"extraction\": {\n    \"after\": 1\n  },\n  \"insertion\": \"Alpha 2\",\n  \"spawns\": [\n    {\"group\": 0, \"role\": \"Guard\", \"pos\": [-15.0, 0.65, -6.0], \"yaw\": 90, \"indoor\": true, \"defensive\": true, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 4, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"patrol\": []},\n    {\"group\": 0, \"role\": \"Guard\", \"pos\": [-18.0, 0.69, -17.0], \"yaw\": 180, \"indoor\": true, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 4, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"patrol\": []},\n    {\"group\": 0, \"role\": \"Guard\", \"pos\": [-19.0, 3.68, 4.0], \"yaw\": 180, \"indoor\": true, \"defensive\": true, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 4, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"patrol\": []},\n    {\"group\": 0, \"role\": \"Wander\", \"pos\": [-22.5, 3.68, -1.0], \"yaw\": 90, \"indoor\": true, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 4, \"patrolWaitSeconds\": 4, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"patrol\": []},\n    {\"group\": 1, \"role\": \"Patrol\", \"pos\": [-9.0, 0.36, 8.0], \"yaw\": 180, \"indoor\": false, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 3, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"patrol\": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},\n    {\"group\": 1, \"role\": \"Wander\", \"pos\": [-25.0, 0.5, 14.0], \"yaw\": 180, \"indoor\": false, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 8, \"patrolWaitSeconds\": 4, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 0, \"hvt\": false, \"chance\": 50, \"patrol\": []},\n    {\"group\": 2, \"role\": \"Patrol\", \"pos\": [2.0, 0.03, 62.0], \"yaw\": 180, \"indoor\": false, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 2, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 2, \"hvt\": false, \"patrol\": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},\n    {\"group\": 2, \"role\": \"Patrol\", \"pos\": [6.0, 0.11, 66.0], \"yaw\": 180, \"indoor\": false, \"defensive\": false, \"detectionRange\": 0, \"hearingRange\": 0, \"fov\": 0, \"wanderDistance\": 0, \"patrolWaitSeconds\": 2, \"fixed\": false, \"prone\": false, \"type\": \"\", \"trigger\": 2, \"hvt\": false, \"patrol\": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]}\n  ]\n}\n",
+  "two_guard_alarm.module.json": "{\n \"schema\": \"missionlab-module/1\",\n \"name\": \"Two-guard alarm response\",\n \"notes\": \"Two guards hold a spot. When the enemy is alerted, two more come in 20 seconds later, one walking up to the guards, and every player sees a red warning. Positions are metres from the anchor; nothing here comes from a game map.\",\n \"anchor\": { \"pos\": [0, 0, 0], \"yaw\": 0 },\n \"spawns\": [\n  {\"group\":0,\"role\":\"Guard\",\"pos\":[0,0,0],\"yaw\":90,\"indoor\":false,\"defensive\":true,\"detectionRange\":0,\"hearingRange\":0,\"fov\":0,\"wanderDistance\":0,\"patrolWaitSeconds\":4,\"fixed\":false,\"prone\":false,\"type\":\"\",\"trigger\":0,\"hvt\":false,\"patrol\":[]},\n  {\"group\":0,\"role\":\"Guard\",\"pos\":[1.5,0,2],\"yaw\":60,\"indoor\":false,\"defensive\":true,\"detectionRange\":0,\"hearingRange\":0,\"fov\":0,\"wanderDistance\":0,\"patrolWaitSeconds\":4,\"fixed\":false,\"prone\":false,\"type\":\"\",\"trigger\":0,\"hvt\":false,\"patrol\":[]},\n  {\"group\":1,\"role\":\"Patrol\",\"pos\":[-14,0,-3],\"yaw\":90,\"indoor\":false,\"defensive\":false,\"detectionRange\":0,\"hearingRange\":0,\"fov\":0,\"wanderDistance\":0,\"patrolWaitSeconds\":4,\"fixed\":false,\"prone\":false,\"type\":\"\",\"trigger\":1,\"hvt\":false,\"patrol\":[[-14,0,-3],[-2,0,-3],[-2,0,3]]},\n  {\"group\":1,\"role\":\"Wander\",\"pos\":[-14,0,3],\"yaw\":90,\"indoor\":false,\"defensive\":false,\"detectionRange\":0,\"hearingRange\":0,\"fov\":0,\"wanderDistance\":6,\"patrolWaitSeconds\":4,\"fixed\":false,\"prone\":false,\"type\":\"\",\"trigger\":1,\"hvt\":false,\"patrol\":[]}\n ],\n \"triggers\": [\n  {\"id\":1,\"name\":\"Alarm response\",\"when\":\"alert\",\"red\":true,\"delay\":20,\"facePlayer\":true,\"message\":\"Alarm raised: two more guards are on their way\"}\n ],\n \"bindings\": []\n}\n"
+ }
+}

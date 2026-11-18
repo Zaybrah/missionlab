@@ -25,13 +25,16 @@ namespace MissionLab
         private static string _finished = "";           // the record whose end has been written, so it is written once
         private static string _session = "";            // the mission LastFile belongs to: a later mission without a record never ends it
 
-        internal sealed class Entry { public string File = "", Scenario = "", Hash = "", Outcome = "", Scene = "", Started = "", Resolved = "", Plugin = "", ScenarioId = "", EndedUtc = "", Result = ""; public long Roll; public int Players, Revision; public double Seconds = -1; }
+        internal sealed class Entry { public string File = "", Scenario = "", Hash = "", Outcome = "", Scene = "", Started = "", Resolved = "", Plugin = "", ScenarioId = "", EndedUtc = "", Result = ""; public long Roll; public int Players, Revision; public double Seconds = -1;
+                                      public Dictionary<string, int> Picks = new Dictionary<string, int>(); }     // the host options it was played with (ML-022)
 
         internal static string Sha(string text) => ScenarioFile.Hash(text);
 
         private static string Q(string s) => "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ") + "\"";
 
-        internal static void Write(string scene, string navFile, string scenario, string authoredText, long roll, int players, MissionPlan resolved, Variants.Out gone, List<string> notes, bool used, string reason)
+        /// <summary>picks: the option chosen for every option of the scenario, by id (null or empty: it has none, and no "picks" key is written).</summary>
+        internal static void Write(string scene, string navFile, string scenario, string authoredText, long roll, int players, MissionPlan resolved, Variants.Out gone, List<string> notes, bool used, string reason,
+                                   IDictionary<string, int> picks = null)
         {
             LastFile = ""; _ending = ""; _finished = "";
             try
@@ -51,8 +54,9 @@ namespace MissionLab
                   .Append(",\"startedUtc\":").Append(Q(now.ToString("o", Inv))).Append(",\"session\":").Append(Q(Director.Session))
                   .Append(",\"scene\":").Append(Q(scene)).Append(",\"navFile\":").Append(Q(navFile)).Append(",\"scenario\":").Append(Q(scenario))
                   .Append(",\"authoredHash\":").Append(Q(Sha(authoredText))).Append(",\"scenarioId\":").Append(Q(id)).Append(",\"revision\":").Append(revision.ToString(Inv))
-                  .Append(",\"roll\":").Append(roll).Append(",\"players\":").Append(players)
-                  .Append(",\"outcome\":").Append(Q(used ? "used" : "refused")).Append(",\"reason\":").Append(Q(reason)).Append(",\"end\":null");
+                  .Append(",\"roll\":").Append(roll).Append(",\"players\":").Append(players);
+                if (picks != null && picks.Count > 0) sb.Append(",\"picks\":").Append(Picker.PicksJson(picks));
+                sb.Append(",\"outcome\":").Append(Q(used ? "used" : "refused")).Append(",\"reason\":").Append(Q(reason)).Append(",\"end\":null");
                 sb.Append(",\"leftOut\":{\"spawns\":[");
                 for (int i = 0; gone != null && i < gone.Spawns.Count; i++)
                 {
@@ -135,7 +139,7 @@ namespace MissionLab
                     var r = doc.RootElement;
                     string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : "";
                     RunSummary sum = RunSummary.Read(Path.GetFileName(path), text) ?? new RunSummary();
-                    return new Entry
+                    var entry = new Entry
                     {
                         File = Path.GetFileName(path), Scenario = S("scenario"), Hash = S("authoredHash"), Outcome = S("outcome"), Scene = S("scene"), Started = S("startedUtc"), Plugin = S("plugin"),
                         Roll = r.TryGetProperty("roll", out var roll) && roll.ValueKind == System.Text.Json.JsonValueKind.Number ? roll.GetInt64() : 0,
@@ -143,6 +147,11 @@ namespace MissionLab
                         Resolved = r.TryGetProperty("resolved", out var res) && res.ValueKind == System.Text.Json.JsonValueKind.Object ? res.GetRawText() : "",
                         ScenarioId = sum.ScenarioId, Revision = sum.Revision, EndedUtc = sum.Ended, Result = sum.Result, Seconds = sum.Seconds
                     };
+                    // The options it was played with, so "Reproduce this setup" picks them again (records before 0.26 have none).
+                    if (r.TryGetProperty("picks", out var picks) && picks.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        foreach (var p in picks.EnumerateObject())
+                            if (p.Value.ValueKind == System.Text.Json.JsonValueKind.Number && p.Value.TryGetInt32(out int at)) entry.Picks[p.Name] = at;
+                    return entry;
                 }
             }
             catch (Exception e) { DirectorPlugin.L.LogWarning("run record '" + file + "' could not be read: " + e.Message); return null; }

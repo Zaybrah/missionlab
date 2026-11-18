@@ -42,19 +42,17 @@ namespace MissionLab
 
         private static V3 HingeOf(DoorV2 d) { Vector3 h = GameMaster.Hinge(d); return new V3(h.x, h.y, h.z); }
 
-        /// <summary>Doors the game itself may lock are left to it; of the others, about one in seven is locked, three at most.</summary>
+        /// <summary>Doors the game itself may lock are left to it; of the others, about one in seven is locked, three at most (Extras.LockDoors).</summary>
         private static void Doors(MissionPlan plan, Rng rng, List<string> notes)
         {
-            int locked = 0;
+            var doors = new List<DoorPlan>();
             foreach (DoorV2 d in AllDoors())
             {
                 bool own = false;
                 try { own = d.StartLocked; } catch { }
-                if (own || locked >= 3 || !rng.Chance(0.15)) continue;
-                plan.Doors.Add(new DoorPlan { Name = d.gameObject.name, Pos = HingeOf(d), Locked = true });
-                locked++;
+                try { doors.Add(new DoorPlan { Name = d.gameObject.name, Pos = HingeOf(d), Locked = own }); } catch { }      // a door that cannot be read is left alone
             }
-            if (locked > 0) notes.Add(locked + (locked == 1 ? " door" : " doors") + " locked");
+            Extras.LockDoors(plan, doors, rng, notes);
         }
 
         // ------------------------------------------------------------------ intel

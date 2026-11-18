@@ -8,7 +8,7 @@ function facePlayers(e) {
 }
 function newEnemy(pos, role, group) {
   return { group: group || 0, role: role || 'Guard', pos: pos.slice(), yaw: 0, indoor: false, defensive: false, fixed: false, prone: false, type: '', trigger: 0, hvt: false, vehicle: false, chance: 100, lot: 0, either: 0, option: 0, team: 0, minPlayers: 0, skill: '', nvg: false, tag: '',
-           detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
+           scatter: 0, within: 0, fallback: 'stay', detectionRange: 0, hearingRange: 0, fov: 0, wanderDistance: 0, patrolWaitSeconds: 4, patrol: [] };
 }
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = p => [r2(p[0]), r2(p[1]), r2(p[2])];
@@ -28,6 +28,7 @@ function scenarioObject() {
     ...(state.briefing.length ? { briefing: state.briefing.slice(0, 4) } : {}),
     ...(state.squadRange ? { squad: state.squadRange.slice(0, 2) } : {}),
     ...(state.minutes > 0 ? { minutes: r2(state.minutes) } : {}),
+    ...(state.sealed ? { sealed: true } : {}),
     seed: 0,
     scene: state.scene.trim(),
     navFile: state.navFile,
@@ -38,6 +39,9 @@ function scenarioObject() {
     doors: doorsOut(),
     ...(state.things.length ? { things: thingsOut() } : {}),
     ...(places.length ? { places } : {}),
+    ...(state.placement.length ? { placement: placementOut() } : {}),
+    ...(state.options.length ? { options: optionsOut() } : {}),
+    ...(state.director ? { director: directorOut() } : {}),
     ...settings,
     spawns: state.enemies.map(spawnOf),
   };
@@ -64,9 +68,27 @@ function spawnOf(e) {
     prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt, ...(e.vehicle ? { vehicle: true } : {}),
     ...(e.chance < 100 ? { chance: e.chance } : {}), ...(e.chance < 100 && e.lot ? { lot: e.lot } : {}), ...(e.either ? { either: e.either, option: e.option || 1 } : {}), ...(e.team ? { team: e.team } : {}),
     ...(e.minPlayers > 1 ? { minPlayers: e.minPlayers } : {}), ...(e.skill ? { skill: e.skill } : {}), ...(e.nvg ? { nvg: true } : {}), ...(e.tag ? { tag: e.tag } : {}),
+    ...(e.scatter > 0 ? { scatter: r2(e.scatter) } : {}), ...(e.within > 0 ? { within: e.within } : {}), ...(e.fallback === 'skip' ? { fallback: 'skip' } : {}),
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
   };
 }
+// Placement areas (ML-023), options (ML-022) and the Game Master's budget (ML-025), in the plugin's ToJson key order.
+// Each key is written only when it differs from its default, so a file without them comes back unchanged.
+const placementOut = () => state.placement.filter(p => p.area && p.area.parts && p.area.parts.length).map(p => ({ id: p.id, name: p.name, ...(p.mode === 'empty' ? { mode: 'empty' } : {}), area: areaWrite(p.area) }));
+const placementIn = list => (Array.isArray(list) ? list : []).filter(p => p && p.id > 0 && p.area).map(p => ({ id: p.id | 0, name: typeof p.name === 'string' ? p.name : '', mode: p.mode === 'empty' ? 'empty' : 'allow', area: areaRead(p.area) })).filter(p => p.area && p.area.parts && p.area.parts.length);
+const choiceOut = c => ({ name: c.name, ...(c.lots.length || c.triggers.length ? { drop: { ...(c.lots.length ? { lots: c.lots.slice() } : {}), ...(c.triggers.length ? { triggers: c.triggers.slice() } : {}) } } : {}),
+  ...(c.respawnTimes >= 0 ? { respawnTimes: c.respawnTimes } : {}), ...(c.skill ? { skill: c.skill } : {}) });
+const optionsOut = () => state.options.map(o => ({ id: o.id, name: o.name, ...(o.pick > 0 ? { pick: o.pick } : {}), choices: o.choices.map(choiceOut) }));
+const wholes = v => (Array.isArray(v) ? v.filter(n => Number.isInteger(n)) : []);
+const optionsIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.id === 'string' && Array.isArray(o.choices) && o.choices.filter(c => c && typeof c === 'object').length >= 2).map(o => ({ id: o.id, name: typeof o.name === 'string' ? o.name : '', pick: Math.max(0, num(o.pick, 0) | 0),
+  choices: o.choices.filter(c => c && typeof c === 'object').slice(0, 6).map(c => { const d = c.drop && typeof c.drop === 'object' ? c.drop : {};
+    return { name: typeof c.name === 'string' ? c.name : '', lots: wholes(d.lots), triggers: wholes(d.triggers).filter(id => state.zones.some(z => z.id === id)), respawnTimes: Number.isInteger(c.respawnTimes) ? c.respawnTimes : -1, skill: c.skill === 'recruit' || c.skill === 'veteran' ? c.skill : '' }; }) }));
+const directorOut = () => { const d = state.director;
+  return { budget: d.budget, ...(d.regen > 0 ? { regen: d.regen } : {}), actions: d.actions.map(a => ({ id: a.id, name: a.name, cost: a.cost, ...(a.cooldown > 0 ? { cooldown: r2(a.cooldown) } : {}), fire: a.fire,
+    ...(a.minDistance > 0 ? { minDistance: r2(a.minDistance) } : {}), ...(a.unseen ? { unseen: true } : {}), ...(a.fallback === 'cancel' ? { fallback: 'cancel' } : {}) })) }; };
+const directorIn = d => (d && typeof d === 'object' && !Array.isArray(d) ? { budget: num(d.budget, 0) | 0, regen: num(d.regen, 0) | 0,
+  actions: (Array.isArray(d.actions) ? d.actions : []).filter(a => a && typeof a.id === 'string' && state.zones.some(z => z.id === a.fire)).map(a => ({ id: a.id, name: typeof a.name === 'string' ? a.name : '', cost: num(a.cost, 0) | 0, cooldown: num(a.cooldown, 0),
+    fire: num(a.fire, 0) | 0, minDistance: num(a.minDistance, 0), unseen: a.unseen === true, fallback: a.fallback === 'cancel' ? 'cancel' : 'wait' })) } : null);
 // A file only names the items somebody moved; the game goes on choosing the place of the others itself.
 const objectivesOut = forFile => state.objectives.filter(o => !forFile || o.moved !== false).map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
 const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained,
@@ -197,6 +219,7 @@ function enemyOf(s, i) {
   return Object.assign(newEnemy(s.pos.slice(0, 3), role, Math.max(0, num(s.group, 0) | 0)), {
     yaw: ((num(s.yaw, 0) % 360) + 360) % 360, indoor: !!s.indoor, defensive: !!s.defensive, fixed: !!s.fixed,
     prone: !!s.prone, type: typeof s.type === 'string' ? s.type : '', trigger: num(s.trigger, 0) | 0, hvt: !!s.hvt, vehicle: !!s.vehicle,
+    scatter: Math.max(0, Math.min(30, num(s.scatter, 0))), within: Math.max(0, num(s.within, 0) | 0), fallback: s.fallback === 'skip' ? 'skip' : 'stay',
     chance: Math.max(1, Math.min(100, Math.round(num(s.chance, 100)))), lot: Math.max(0, num(s.lot, 0) | 0), either: Math.max(0, num(s.either, 0) | 0), option: num(s.either, 0) > 0 ? Math.max(1, num(s.option, 1) | 0) : 0,
     team: Math.max(0, Math.min(8, num(s.team, 0) | 0)),
     minPlayers: Math.max(0, Math.min(16, num(s.minPlayers, 0) | 0)), skill: s.skill === 'recruit' || s.skill === 'veteran' ? s.skill : '', nvg: s.nvg === true, tag: cleanTag(s.tag),
@@ -271,8 +294,9 @@ const isVec = p => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every(v =>
 // file and a sentence. Nothing is quietly dropped or bent into shape: an error means the file is not loaded.
 // plan/2 carries the plan/1 body under "mission"; it is written only when a trigger has a shaped area.
 const PLAN_VERSION = 2, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
-const SPAWN_FIELDS = ['n:yaw', 'n:detectionRange', 'n:hearingRange', 'n:fov', 'n:wanderDistance', 'n:patrolWaitSeconds', 'n:chance', 'i:group', 'i:trigger', 'i:lot', 'i:either', 'i:option', 'i:team', 'i:minPlayers',
-  'b:indoor', 'b:defensive', 'b:fixed', 'b:prone', 'b:hvt', 'b:vehicle', 'b:nvg', 's:role', 's:type', 's:skill', 's:tag'];
+const SPAWN_FIELDS = ['n:yaw', 'n:detectionRange', 'n:hearingRange', 'n:fov', 'n:wanderDistance', 'n:patrolWaitSeconds', 'n:chance', 'n:scatter', 'i:group', 'i:trigger', 'i:lot', 'i:either', 'i:option', 'i:team', 'i:minPlayers', 'i:within',
+  'b:indoor', 'b:defensive', 'b:fixed', 'b:prone', 'b:hvt', 'b:vehicle', 'b:nvg', 's:role', 's:type', 's:skill', 's:tag', 's:fallback'];
+const NAME_ID = /^[A-Za-z0-9_-]{1,32}$/;
 const TRIGGER_FIELDS = ['n:radius', 'n:delay', 'n:hold', 'n:chance', 'n:repeat', 'n:rally', 'i:count', 'i:times', 'i:after', 'b:facePlayer', 'b:warn', 'b:everyone', 'b:red', 'b:hunt', 'b:respawn',
   's:name', 's:when', 's:item', 's:message', 's:power', 's:end', 's:extraction', 's:tag'];
 const THING_FIELDS = ['s:name', 'n:yaw', 'n:chance', 'i:trigger'], DOOR_FIELDS = ['s:name', 'b:locked', 'b:enemiesCanOpen', 'b:open', 'n:chance'];
@@ -290,6 +314,9 @@ function scenarioProblems(obj) {
     const ok = f[0] === 'n' ? typeof v === 'number' : f[0] === 'i' ? whole(v) : f[0] === 'b' ? typeof v === 'boolean' : typeof v === 'string';
     if (!ok) bad('wrong-type', join(at, key), '"' + key + '" must be ' + (f[0] === 'n' ? 'a number' : f[0] === 'i' ? 'a whole number' : f[0] === 'b' ? 'true or false' : 'text')); } };
   const value = (o, at, key, allowed) => { if (has(o, key) && typeof o[key] === 'string' && !allowed.includes(o[key])) bad('unknown-value', join(at, key), '"' + o[key] + '" is not a value this version knows for "' + key + '"'); };
+  // One key of a new-style object, type first: true when it is there and of the right type, so its value can be judged next.
+  const typed = (o, at, f) => { const n = found.length; types(o, at, [f]); return has(o, f.slice(2)) && found.length === n; };
+  const named = (o, at, what) => { if (!has(o, 'name') || (typeof o.name === 'string' && o.name.trim() === '')) bad('missing-field', at + '.name', what + ' needs a "name"'); else typed(o, at, 's:name'); };
   const doorsOf = (list, at) => { if (!Array.isArray(list)) return bad('wrong-type', at, '"doors" is a list');
     list.forEach((d, i) => { const one = at + '[' + i + ']'; if (!isObj(d)) return bad('wrong-type', one, 'a door is an object');
       if (!(has(d, 'pos') && spot(d.pos))) bad('missing-field', one + '.pos', 'a door needs "pos": [x, y, z], the place of its hinge'); types(d, one, DOOR_FIELDS); }); };
@@ -342,12 +369,18 @@ function scenarioProblems(obj) {
       });
     }
   }
+  // Enemies may only scatter into a placement area that lets them in.
+  const allowed = new Set(Array.isArray(root.placement) ? root.placement.filter(p => isObj(p) && whole(p.id) && (p.mode === undefined || p.mode === null || p.mode === 'allow')).map(p => p.id) : []);
   if (!has(root, 'spawns') || !Array.isArray(root.spawns)) bad('wrong-type', 'spawns', 'a scenario needs "spawns": a list of enemies');
   else root.spawns.forEach((e, i) => {
     const at = 'spawns[' + i + ']';
     if (!isObj(e)) return bad('wrong-type', at, 'an enemy is an object');
     if (!(has(e, 'pos') && spot(e.pos))) bad('missing-field', at + '.pos', 'an enemy needs "pos": [x, y, z]');
     types(e, at, SPAWN_FIELDS); value(e, at, 'skill', ['', 'recruit', 'veteran']); link(e, at);
+    if (typeof e.scatter === 'number' && (e.scatter <= 0 || e.scatter > 30)) bad('out-of-range', at + '.scatter', 'an enemy scatters more than 0 and at most 30 m from where it was placed');
+    if (whole(e.within) && e.within !== 0 && !allowed.has(e.within)) bad('missing-ref', at + '.within', 'there is no placement area ' + e.within + ' that lets enemies in');
+    value(e, at, 'fallback', ['stay', 'skip']);
+    if (e.fallback === 'skip' && (e.hvt === true || e.vehicle === true)) bad('unknown-value', at + '.fallback', 'a required target cannot be skipped');
   });
   if (has(root, 'extraction')) {
     if (!isObj(root.extraction)) bad('wrong-type', 'extraction', '"extraction" is an object');
@@ -381,7 +414,87 @@ function scenarioProblems(obj) {
       });
     }
   }
-  types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed', 's:id', 'i:revision', 'n:minutes', 's:mapPrint']);
+  if (has(root, 'placement')) {
+    if (!Array.isArray(root.placement)) bad('wrong-type', 'placement', '"placement" is a list');
+    else {
+      const seen = new Set();
+      root.placement.forEach((p, i) => {
+        const at = 'placement[' + i + ']';
+        if (!isObj(p)) return bad('wrong-type', at, 'a placement area is an object');
+        if (!has(p, 'id') || !whole(p.id) || p.id < 1) bad('bad-id', at + '.id', 'a placement area needs a whole number from 1 as its "id"');
+        else { if (seen.has(p.id)) bad('duplicate-id', at + '.id', 'placement area number ' + p.id + ' is used twice'); seen.add(p.id); }
+        named(p, at, 'a placement area');
+        if (typed(p, at, 's:mode')) value(p, at, 'mode', ['allow', 'empty']);
+        if (!has(p, 'area')) bad('missing-field', at + '.area', 'a placement area needs an "area"'); else areaProblems(p.area, at, bad);
+      });
+    }
+  }
+  if (has(root, 'options')) {
+    if (!Array.isArray(root.options)) bad('wrong-type', 'options', '"options" is a list');
+    else {
+      const seen = new Set();
+      root.options.forEach((o, i) => {
+        const at = 'options[' + i + ']';
+        if (!isObj(o)) return bad('wrong-type', at, 'an option is an object');
+        if (typeof o.id !== 'string' || !NAME_ID.test(o.id)) bad('bad-id', at + '.id', 'an option id is 1 to 32 letters, digits, "-" or "_"');
+        else { if (seen.has(o.id)) bad('duplicate-id', at + '.id', 'option "' + o.id + '" is used twice'); seen.add(o.id); }
+        named(o, at, 'an option');
+        const cs = o.choices;
+        if (!Array.isArray(cs)) bad('wrong-type', at + '.choices', '"choices" is a list of 2 to 6 choices');
+        else {
+          if (cs.length < 2 || cs.length > 6) bad('out-of-range', at + '.choices', 'an option has 2 to 6 choices');
+          cs.forEach((c, j) => {
+            const cat = at + '.choices[' + j + ']';
+            if (!isObj(c)) return bad('wrong-type', cat, 'a choice is an object');
+            named(c, cat, 'a choice');
+            if (has(c, 'drop')) {
+              const d = c.drop;
+              if (!isObj(d)) bad('wrong-type', cat + '.drop', '"drop" is an object: {"lots": [...], "triggers": [...]}');
+              else {
+                if (has(d, 'lots')) { if (!Array.isArray(d.lots)) bad('wrong-type', cat + '.drop.lots', '"lots" is a list of lot numbers');
+                  else d.lots.forEach((n, k) => { if (!whole(n)) bad('wrong-type', cat + '.drop.lots[' + k + ']', 'a lot number is a whole number'); else if (n < 1) bad('out-of-range', cat + '.drop.lots[' + k + ']', 'a lot number is 1 or more'); }); }
+                if (has(d, 'triggers')) { if (!Array.isArray(d.triggers)) bad('wrong-type', cat + '.drop.triggers', '"triggers" is a list of trigger numbers');
+                  else d.triggers.forEach((n, k) => { if (!whole(n)) bad('wrong-type', cat + '.drop.triggers[' + k + ']', 'a trigger number is a whole number'); else if (!ids.has(n)) bad('missing-ref', cat + '.drop.triggers[' + k + ']', 'there is no trigger ' + n); }); }
+              }
+            }
+            if (typed(c, cat, 'i:respawnTimes') && (c.respawnTimes < 0 || c.respawnTimes > 50)) bad('out-of-range', cat + '.respawnTimes', 'a choice sets 0 to 50 respawn waves');
+            if (typed(c, cat, 's:skill')) value(c, cat, 'skill', ['', 'recruit', 'veteran']);
+          });
+        }
+        // The default choice is checked last: it can only be judged once the choices are known.
+        if (typed(o, at, 'i:pick') && Array.isArray(cs) && (o.pick < 0 || o.pick >= cs.length)) bad('out-of-range', at + '.pick', 'the default choice is one of the option\'s choices, counted from 0');
+      });
+    }
+  }
+  if (has(root, 'director')) {
+    const d = root.director;
+    if (!isObj(d)) bad('wrong-type', 'director', '"director" is an object: {"budget": points, "regen": points a minute, "actions": [...]}');
+    else {
+      if (typed(d, 'director', 'i:budget') && (d.budget < 0 || d.budget > 1000)) bad('out-of-range', 'director.budget', 'the budget is 0 to 1000 points');
+      if (typed(d, 'director', 'i:regen') && (d.regen < 0 || d.regen > 100)) bad('out-of-range', 'director.regen', 'the budget comes back at 0 to 100 points a minute');
+      if (has(d, 'actions')) {
+        if (!Array.isArray(d.actions)) bad('wrong-type', 'director.actions', '"actions" is a list');
+        else {
+          const seen = new Set();
+          d.actions.forEach((a, j) => {
+            const at = 'director.actions[' + j + ']';
+            if (!isObj(a)) return bad('wrong-type', at, 'an action is an object');
+            if (typeof a.id !== 'string' || !NAME_ID.test(a.id)) bad('bad-id', at + '.id', 'an action id is 1 to 32 letters, digits, "-" or "_"');
+            else { if (seen.has(a.id)) bad('duplicate-id', at + '.id', 'action "' + a.id + '" is used twice'); seen.add(a.id); }
+            named(a, at, 'an action');
+            if (typed(a, at, 'i:cost') && (a.cost < 0 || a.cost > 1000)) bad('out-of-range', at + '.cost', 'an action costs 0 to 1000 points');
+            if (typed(a, at, 'n:cooldown') && (a.cooldown < 0 || a.cooldown > 3600)) bad('out-of-range', at + '.cooldown', 'the cooldown is 0 to 3600 seconds');
+            if (!has(a, 'fire')) bad('missing-field', at + '.fire', 'an action needs "fire": the trigger it fires');
+            else if (typed(a, at, 'i:fire') && !ids.has(a.fire)) bad('missing-ref', at + '.fire', 'there is no trigger ' + a.fire);
+            if (typed(a, at, 'n:minDistance') && (a.minDistance < 0 || a.minDistance > 500)) bad('out-of-range', at + '.minDistance', 'the distance from players is 0 to 500 m');
+            typed(a, at, 'b:unseen');
+            if (typed(a, at, 's:fallback')) value(a, at, 'fallback', ['wait', 'cancel']);
+          });
+        }
+      }
+    }
+  }
+  types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed', 's:id', 'i:revision', 'n:minutes', 's:mapPrint', 'b:sealed']);
   value(root, '', 'power', ['', 'on', 'off']); value(root, '', 'skill', ['', 'recruit', 'veteran']);
   // What the author says about the mission: identity, save counter, recommended squad and estimated length.
   if (typeof root.id === 'string' && !/^[A-Za-z0-9_-]{1,64}$/.test(root.id)) bad('bad-id', 'id', 'a scenario id is 1 to 64 letters, digits, "-" or "_"');
@@ -427,6 +540,10 @@ function capabilitiesOf(obj) {
   const odds = o => num(o.chance, 100) < 100;
   add('chance', spawns.some(s => odds(s) || num(s.either, 0) > 0 || num(s.lot, 0) > 0 || num(s.minPlayers, 0) > 1) || trigs.some(odds) || things.some(odds) || doors.some(odds));
   add('repeat', trigs.some(t => num(t.repeat, 0) > 0));
+  add('sealed', root.sealed === true);
+  add('options', list(root.options).length > 0);
+  add('scatter', spawns.some(s => num(s.scatter, 0) > 0));
+  add('director', !!(root.director && typeof root.director === 'object' && !Array.isArray(root.director)));
   return [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 // Accepts a scenario (missionlab-plan/1 or /2), or a mission record written by the Director (the plan sits under "plan").
@@ -453,6 +570,9 @@ function loadScenario(obj, name) {
   state.squadRange = Array.isArray(root.squad) && root.squad.length === 2 ? [root.squad[0], root.squad[1]] : null;
   state.minutes = num(root.minutes, 0) > 0 ? root.minutes : 0;
   state.mapPrint = typeof root.mapPrint === 'string' ? root.mapPrint : '';
+  state.sealed = root.sealed === true; state.options = optionsIn(root.options); state.placement = placementIn(root.placement); state.director = directorIn(root.director);
+  // As the plugin reads it: an enemy only scatters into an area that lets it in, and a required target is never skipped.
+  for (const e of state.enemies) { if (e.within && !state.placement.some(p => p.id === e.within && p.mode === 'allow')) e.within = 0; if (e.hvt || e.vehicle) e.fallback = 'stay'; }
   // A generated mission names one scene (day or night). Matching by map file covers both.
   state.scene = record ? '' : (typeof root.scene === 'string' ? root.scene : '');
   const nav = typeof root.navFile === 'string' ? root.navFile : '';

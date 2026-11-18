@@ -25,6 +25,9 @@ namespace MissionLab.Core
             if (plan.Briefing.Count > 0) found.Add("messages");
             if (plan.ExtractionAfter != 0) found.Add("extraction-hold");
             if (plan.Places.Count > 0) found.Add("places");
+            if (plan.Sealed) found.Add("sealed");
+            if (plan.Options.Count > 0) found.Add("options");
+            if (plan.Director != null) found.Add("director");
             foreach (TriggerPlan t in plan.Triggers)
             {
                 if (t.Shaped) found.Add("areas");
@@ -46,6 +49,7 @@ namespace MissionLab.Core
                 if (s.Hvt) found.Add("hvt");
                 if (s.Team > 0) found.Add("teams");
                 if (s.Chance < 100 || s.Either > 0 || s.Lot > 0 || s.MinPlayers > 1) found.Add("chance");
+                if (s.Scatter > 0f) found.Add("scatter");
             }
             foreach (ThingPlan th in plan.Things) if (th.Chance < 100) found.Add("chance");
             foreach (DoorPlan d in plan.Doors) if (d.Chance < 100) found.Add("chance");

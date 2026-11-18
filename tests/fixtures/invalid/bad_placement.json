@@ -1,0 +1,11 @@
+{
+ "schema": "missionlab-plan/1",
+ "placement": [
+  { "id": 0, "name": "Zero", "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+  { "id": 1, "name": "One", "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+  { "id": 1, "name": "", "mode": "maybe", "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+  { "id": 3, "name": "No area" },
+  { "id": 4, "name": "Thin", "mode": "empty", "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [20, 0]] } ] } }
+ ],
+ "spawns": [ { "pos": [0, 0, 0] } ]
+}

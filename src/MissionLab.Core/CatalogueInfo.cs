@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MissionLab.Core
 {
@@ -64,6 +65,8 @@ namespace MissionLab.Core
         public int Runs, Finished;                     // runs of this scenario on record; of those, used and seen to end
         public double? Measured;                       // median minutes of the finished runs; null when there is none
         public RunSummary LastRun;                     // the newest run on record, or null
+        public bool Sealed;                            // the author sealed it: Play shows no placements, rolls or future trigger outcomes (ML-021)
+        public List<OptionPlan> Options = new List<OptionPlan>();   // the host's choices before the mission, by name (ML-022)
     }
 
     /// <summary>
@@ -80,6 +83,9 @@ namespace MissionLab.Core
             var e = new CatalogueEntry { File = file ?? "", Value = ValueOf(file), Hash = ScenarioFile.Hash(text ?? "") };
             e.Findings = ScenarioFile.Read(text ?? "", out MissionPlan plan);
             e.Readable = plan != null;
+            // A refused file is sealed when its text says so, so a broken sealed mission does not spill its positions either.
+            e.Sealed = plan != null ? plan.Sealed : SealedIn(text);
+            if (e.Sealed) e.Findings = Unplaced(e.Findings);
             if (plan == null)
             {
                 Finding first = e.Findings.Find(f => f.Level == Finding.Error);
@@ -92,6 +98,7 @@ namespace MissionLab.Core
                 e.NavFile = (plan.NavFile ?? "").Trim(); e.Scene = (plan.Scene ?? "").Trim();
                 e.Briefing = new List<string>(plan.Briefing); e.Enemies = plan.Spawns.Count;
                 e.Capabilities = MissionLab.Core.Capabilities.Of(plan);
+                if (plan.Options != null) e.Options = new List<OptionPlan>(plan.Options);
                 e.Usable = plan.Spawns.Count > 0;
                 if (!e.Usable) e.Why = "it has no enemies, so MissionLab leaves the game's own mission";
             }
@@ -158,6 +165,44 @@ namespace MissionLab.Core
         }
 
         /// <summary>
+        /// Whether a scenario's text says "sealed": true, read leniently (root, or under "mission" for plan/2), so a file
+        /// the strict reader refuses is still treated as sealed when its author meant it to be.
+        /// </summary>
+        public static bool SealedIn(string text)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(text ?? "", new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }))
+                {
+                    JsonElement r = doc.RootElement;
+                    if (r.ValueKind != JsonValueKind.Object) return false;
+                    if (r.TryGetProperty("mission", out JsonElement m) && m.ValueKind == JsonValueKind.Object) r = m;
+                    return r.TryGetProperty("sealed", out JsonElement s) && s.ValueKind == JsonValueKind.True;
+                }
+            }
+            catch (Exception) { return false; }
+        }
+
+        // A place written into a message: "at (12.5, -4)", "from 12, 34", "near 1, 2, 3" or a bare "(12.5, -4)".
+        private static readonly Regex Spot = new Regex(@"\s*(?:\b(?:at|from|near)\s+\(?|\()\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?(?:\s*\))?", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A message with the places in it left out. A sealed mission's findings still say what is wrong and where in the
+        /// file (the path), but not where on the map: the host should not learn an enemy's spot from an error.
+        /// The same pattern is in the editor (20b-sealed.js, sealedStrip).
+        /// </summary>
+        public static string Unplaced(string text) => string.IsNullOrEmpty(text) ? text ?? "" : Spot.Replace(text, "");
+
+        /// <summary>Copies of the findings with the places left out of their text (see Unplaced).</summary>
+        public static List<Finding> Unplaced(List<Finding> found)
+        {
+            var list = new List<Finding>();
+            foreach (Finding f in found ?? new List<Finding>())
+                list.Add(new Finding { Level = f.Level, Code = f.Code, Path = f.Path, Text = Unplaced(f.Text) });
+            return list;
+        }
+
+        /// <summary>
         /// A safe file name for the scenarios folder: letters, digits, '_' and '-' only, at most 60 of them, ".json" added.
         /// "" when nothing usable is left. Never a folder, so a save cannot land anywhere else.
         /// </summary>
@@ -206,7 +251,8 @@ namespace MissionLab.Core
               .Append(",\"readable\":").Append(e.Readable ? "true" : "false").Append(",\"usable\":").Append(e.Usable ? "true" : "false").Append(",\"why\":").Append(Q(e.Why))
               .Append(",\"findings\":");
             WriteFindings(sb, e.Findings);
-            sb.Append(",\"title\":").Append(Q(e.Title)).Append(",\"id\":").Append(Q(e.Id)).Append(",\"revision\":").Append(e.Revision.ToString(Inv)).Append(",\"briefing\":[");
+            sb.Append(",\"title\":").Append(Q(e.Title)).Append(",\"id\":").Append(Q(e.Id)).Append(",\"revision\":").Append(e.Revision.ToString(Inv))
+              .Append(",\"sealed\":").Append(e.Sealed ? "true" : "false").Append(",\"briefing\":[");
             for (int i = 0; i < e.Briefing.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(e.Briefing[i]));
             sb.Append("],\"author\":{\"squad\":");
             if (e.SquadMin > 0 && e.SquadMax > 0) sb.Append('[').Append(e.SquadMin.ToString(Inv)).Append(',').Append(e.SquadMax.ToString(Inv)).Append(']'); else sb.Append("null");
@@ -214,7 +260,18 @@ namespace MissionLab.Core
             sb.Append("},\"measured\":{\"minutes\":").Append(e.Measured.HasValue ? Math.Round(e.Measured.Value, 1).ToString(Inv) : "null")
               .Append(",\"finished\":").Append(e.Finished.ToString(Inv)).Append(",\"runs\":").Append(e.Runs.ToString(Inv)).Append('}');
             sb.Append(",\"navFile\":").Append(Q(e.NavFile)).Append(",\"scene\":").Append(Q(e.Scene)).Append(",\"map\":").Append(Q(mapLabel))
-              .Append(",\"mode\":\"pve\",\"compat\":").Append(Q(compat)).Append(",\"enemies\":").Append(e.Enemies.ToString(Inv)).Append(",\"capabilities\":[");
+              .Append(",\"mode\":\"pve\",\"compat\":").Append(Q(compat)).Append(",\"enemies\":");
+            // A sealed mission leaves its enemy count out: knowing there are exactly twelve tells the squad when the house is
+            // clear, which is a tactical spoiler. The author's squad range and minutes still give the scale.
+            sb.Append(e.Sealed ? "null" : e.Enemies.ToString(Inv)).Append(",\"options\":[");
+            for (int i = 0; i < e.Options.Count; i++)
+            {
+                OptionPlan o = e.Options[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(Q(o.Id)).Append(",\"name\":").Append(Q(o.Name)).Append(",\"pick\":").Append(o.Pick.ToString(Inv)).Append(",\"choices\":[");
+                for (int j = 0; j < o.Choices.Count; j++) sb.Append(j > 0 ? "," : "").Append(Q(o.Choices[j] != null ? o.Choices[j].Name : ""));
+                sb.Append("]}");
+            }
+            sb.Append("],\"capabilities\":[");
             for (int i = 0; i < e.Capabilities.Count; i++)
                 sb.Append(i > 0 ? "," : "").Append("{\"name\":").Append(Q(e.Capabilities[i])).Append(",\"tested\":").Append(seen != null && seen.Contains(e.Capabilities[i]) ? "true" : "false").Append('}');
             sb.Append("],\"lastRun\":");
@@ -222,7 +279,7 @@ namespace MissionLab.Core
             if (r == null) sb.Append("null");
             else
                 sb.Append("{\"file\":").Append(Q(r.File)).Append(",\"started\":").Append(Q(r.Started)).Append(",\"session\":").Append(Q(r.Session))
-                  .Append(",\"outcome\":").Append(Q(r.Outcome)).Append(",\"reason\":").Append(Q(r.Reason)).Append(",\"revision\":").Append(r.Revision.ToString(Inv))
+                  .Append(",\"outcome\":").Append(Q(r.Outcome)).Append(",\"reason\":").Append(Q(e.Sealed ? Unplaced(r.Reason) : r.Reason)).Append(",\"revision\":").Append(r.Revision.ToString(Inv))
                   .Append(",\"ended\":").Append(Q(r.Ended)).Append(",\"result\":").Append(Q(r.Result))
                   .Append(",\"minutes\":").Append(r.Seconds >= 0 ? Math.Round(r.Seconds / 60.0, 1).ToString(Inv) : "null").Append('}');
             sb.Append(",\"hash\":").Append(Q(e.Hash)).Append('}');

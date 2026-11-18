@@ -43,6 +43,7 @@ namespace MissionLab
         internal static string Session = "";
         private static int _sessions;
         private static string _scenarioText = "";           // the text of the scenario file last read by name or picked
+        internal static string ScenarioText => _scenarioText;
         private static RunRecord.Entry _repeat;             // the earlier run the next mission is to repeat (null: a new roll)
         internal static string RepeatFile => _repeat == null ? "" : _repeat.File;
         internal static string SetRepeat(string file)
@@ -51,7 +52,8 @@ namespace MissionLab
             RunRecord.Entry e = RunRecord.Read(file);
             if (e == null) return "that run record could not be read";
             _repeat = e;
-            return "the next mission repeats the run of roll " + e.Roll + " (" + (e.Scenario == "" ? "a generated layout" : "scenario '" + e.Scenario + "'") + ", " + e.Players + " player(s))";
+            return "the next mission repeats the run of roll " + e.Roll + " (" + (e.Scenario == "" ? "a generated layout" : "scenario '" + e.Scenario + "'") + ", " + e.Players + " player(s)" +
+                   (e.Picks.Count > 0 ? ", options " + Picker.PicksText(e.Picks) : "") + ")";
         }
         private static string _refusedFile = "";            // set while a scenario asked for by name is read and found wrong
         internal static string Rejected = "";              // why the scenario was not used for this mission ("": it was, or there was none)
@@ -213,36 +215,79 @@ namespace MissionLab
             long seed; int enemies; string source;
             var later = new HashSet<SpawnPlan>();
             string scenarioScene = fromFile ? plan.Scene : "";
-            Variants.Out rolledOut = null; long rolledWith = 0; int squad = 0;
+            Variants.Out rolledOut = null; long rolledWith = 0; int squad = 0; bool rolled = false;
+            Dictionary<string, int> picks = null; var runNotes = new List<string>(); bool optionsTookTarget = false;
+            if (fromFile && (Variants.Any(plan) || MissionLab.Core.Scatter.Any(plan)))
+            {
+                // What the scenario leaves to chance (dice and scatter) is rolled now, anew for every mission unless a seed is set.
+                rolledWith = _repeat != null ? _repeat.Roll : DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                rolled = true;
+            }
             if (fromFile && Variants.Any(plan))
             {
-                // What the scenario leaves to chance is rolled now, anew for every mission unless a seed is set.
-                long roll = _repeat != null ? _repeat.Roll : DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                long roll = rolledWith;
                 var rolls = new List<string>();
                 int before = plan.Spawns.Count;
                 int players = 0;
                 try { var all = PlayerMaster.AllPlayerMasters; for (int i = 0; all != null && i < all.Count; i++) if (all[i] != null) players++; } catch { }
                 Variants.Out gone = Variants.Resolve(plan, new Rng(roll ^ 0x5EED), rolls, players);
-                rolledOut = gone; rolledWith = roll; squad = players;
+                rolledOut = gone; squad = players;
                 SatOut.AddRange(gone.Spawns); DoorsOut.AddRange(gone.Doors); ThingsOut.AddRange(gone.Things);
                 log.LogInfo("left to chance: " + string.Join("; ", rolls) + " | " + plan.Spawns.Count + " of " + before + " enemies are in this mission, " + players + " player(s)" +
                             (gone.Doors.Count + gone.Things.Count > 0 ? ", " + gone.Doors.Count + " door setting(s) and " + gone.Things.Count + " thing(s) left out" : "") + " (roll " + roll + ")");
+            }
+            if (fromFile && plan.Options.Count > 0)
+            {
+                // The host's options, after the dice: they draw nothing, so the same seed rolls the same dice whatever is picked.
+                // A repeat takes the picks of the run it repeats; the record keeps the choice made for every option.
+                Dictionary<string, int> asked = _repeat != null ? _repeat.Picks : Picker.Picks();
+                picks = new Dictionary<string, int>();
+                foreach (OptionPlan o in plan.Options) if (o.Choices.Count > 0) picks[o.Id] = MissionLab.Core.Options.Chosen(o, asked);
+                bool target = plan.Spawns.Exists(s => s.Hvt && s.Trigger == 0);
+                var had = new List<SpawnPlan>(plan.Spawns);
+                MissionLab.Core.Options.Apply(plan, picks);
+                var still = new HashSet<SpawnPlan>(plan.Spawns);
+                int dropped = 0;
+                foreach (SpawnPlan s in had) if (!still.Contains(s)) { SatOut.Add(s); dropped++; }          // left out this time; still part of the scenario
+                optionsTookTarget = target && !plan.Spawns.Exists(s => s.Hvt && s.Trigger == 0);
+                log.LogInfo("options: " + MissionLab.Core.Options.Describe(plan, picks) + " | " + dropped + " enemies left out by them");
+            }
+            if (fromFile && MissionLab.Core.Scatter.Any(plan))
+            {
+                if (nav == null)
+                {
+                    runNotes.Add("scatter: no map data for this map, so every enemy stands at its authored place");
+                    log.LogInfo("scenario '" + scenarioName + "': " + runNotes[runNotes.Count - 1]);
+                }
+                else
+                {
+                    // Scattered enemies are placed now, on the same floor and ground, clear of each other and the insertion points.
+                    var had = new List<SpawnPlan>(plan.Spawns);
+                    ScatterOut moved = MissionLab.Core.Scatter.Resolve(plan, new NavWalk(nav), new Rng(rolledWith ^ MissionLab.Core.Scatter.Salt), infils);
+                    var still = new HashSet<SpawnPlan>(plan.Spawns);
+                    foreach (SpawnPlan s in had) if (!still.Contains(s)) SatOut.Add(s);
+                    runNotes.AddRange(moved.Notes);
+                    foreach (string n in moved.Notes) log.LogInfo("scenario '" + scenarioName + "': " + n);
+                }
             }
             if (fromFile)
             {
                 // Can this mission still be finished, now that the dice have fallen? If its own rules make that impossible, the
                 // scenario is not used at all: nothing of the mission has been changed yet, and the game's own mission runs.
                 var broken = Completion.Check(plan, rolledOut, squad);
+                if (optionsTookTarget)
+                    broken.Add(new Finding { Code = MissionLab.Core.Options.Unfinishable, Path = "options", Text = "the target person is left out by the options picked (" + MissionLab.Core.Options.Describe(plan, picks) + ")" });
                 foreach (Finding f in broken) if (f.Level == Finding.Note) log.LogInfo("scenario '" + scenarioName + "': " + f);
                 if (Completion.Blocks(broken))
                 {
                     string why = string.Join("; ", broken.FindAll(f => f.Level == Finding.Error).ConvertAll(f => f.ToString()));
-                    string with = rolledOut != null ? " This was roll " + rolledWith + " with " + squad + " player(s); Seed = " + rolledWith + " in the settings gives the same result again." : "";
+                    string with = (rolled ? " This was roll " + rolledWith + " with " + squad + " player(s); Seed = " + rolledWith + " in the settings gives the same result again." : "") +
+                                  (picks != null ? " Options: " + MissionLab.Core.Options.Describe(plan, picks) + "." : "");
                     Rejected = "Scenario '" + scenarioName + "' was not used: " + why + "." + with + " The game's own mission runs.";
                     log.LogWarning(Rejected + " Nothing of the mission was changed.");
                     Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
                     SatOut.Clear(); DoorsOut.Clear(); ThingsOut.Clear();
-                    RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, rolledWith, squad, plan, rolledOut, null, false, Rejected);
+                    RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, rolledWith, squad, plan, rolledOut, runNotes, false, Rejected, picks);
                     _repeat = null;
                     return true;
                 }
@@ -366,8 +411,8 @@ namespace MissionLab
             try
             {
                 if (fromFile && string.IsNullOrEmpty(_scenarioText) && _lastScenarioPath != null) _scenarioText = File.ReadAllText(_lastScenarioPath);
-                long usedRoll = rolledOut != null ? rolledWith : seed;
-                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", fromFile ? scenarioName : "", fromFile ? _scenarioText : "", usedRoll, squad, plan, rolledOut, null, true, "");
+                long usedRoll = rolled ? rolledWith : seed;
+                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", fromFile ? scenarioName : "", fromFile ? _scenarioText : "", usedRoll, squad, plan, rolledOut, runNotes, true, "", picks);
                 if (_repeat != null)
                 {
                     // Was this the same setup as the run it repeats? The inputs are compared first, then the result.

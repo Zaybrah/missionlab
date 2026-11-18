@@ -163,6 +163,7 @@ namespace MissionLab
             try { Replay.Begin(sceneName, Director.CurrentNav != null ? Director.CurrentNav.SourceFile : "", plan != null ? plan.ToJson() : null); }
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
+            BeginBudget(plan);
             _weather = plan.Weather ?? new WeatherPlan();
             _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _needsGm = plan.GameMaster; Wave.After = plan.RespawnAfter; Wave.Times = plan.RespawnTimes;
             _things.Clear(); foreach (ThingPlan thing in plan.Things) _things.Add(new LiveThing { Plan = thing });
@@ -216,7 +217,7 @@ namespace MissionLab
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
             HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); Openings.Clear(); _title = ""; _briefing = new List<string>();
             _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
-            Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null; Firings.Clear();
+            Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null; Firings.Clear(); ResetBudget();
         }
 
         public static void Tick(float now)
@@ -233,6 +234,7 @@ namespace MissionLab
             RespawnRule(raid, now);
             SwingDoors(now);
             PumpSpawns(raid, gm, now);
+            BudgetTick(Time.unscaledTime);
             if (!_keysOk || !DirectorPlugin.GmEnabled.Value) return;
             try { Keys(raid, gm); }
             catch (InvalidOperationException e) { _keysOk = false; DirectorPlugin.L.LogWarning("Game Master keys disabled: " + e.Message); }
@@ -264,10 +266,13 @@ namespace MissionLab
             DirectorPlugin.L.LogInfo(Director.Banner);
         }
 
-        /// <summary>On screen only while someone is acting as Game Master; a player should not be told an ambush just appeared.</summary>
-        private static void Tell(string text)
+        /// <summary>
+        /// On screen only while someone is acting as Game Master; a player should not be told an ambush just appeared.
+        /// kind, at, id: how the timeline records it (a trigger firing is a "fire" event with the trigger's id).
+        /// </summary>
+        private static void Tell(string text, string kind = "note", Vector3? at = null, int id = 0)
         {
-            Replay.Event("note", text);
+            Replay.Event(kind, text, at, id);
             if (_active || Time.unscaledTime - LiveLink.LastRequestAt < 5f) Say(text);
             else DirectorPlugin.L.LogInfo("MissionLab: " + text);
         }
@@ -1165,10 +1170,13 @@ namespace MissionLab
                          t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
                          t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
                        : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
-            Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more);
+            Vector3? fireAt = stood ? who : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : (Vector3?)null;
+            Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more,
+                 Replay.KindFire, fireAt, t.Id);
             if (t.End == "success" || t.End == "failed")
                 try
                 {
+                    if (DirectorPlugin.DebriefMessage.Value) Debriefs.ShowAtEnd(raidNow);      // experimental: before the game's end screen, if it gets there in time
                     string said = TryOuts.End(t.End == "success"); Say(TriggerName(t) + " ends the mission: " + said);
                     if (said.Contains("was not found")) f.Fail(said); else f.Unsure.Add("ending the mission");
                 }
@@ -2095,6 +2103,277 @@ namespace MissionLab
             return (yaw % 360f + 360f) % 360f;
         }
 
+        // ------------------------------------------------------------------ director budget
+        // The scenario's Game Master budget (ML-025). Every way of asking for an action (page, cards, any later UI) comes through
+        // /api/command {"cmd":"action","id":"rear"} and so through ActionRequest: the budget says whether it may be used, pays
+        // for it, and only then is the placement checked and the trigger fired. Whatever is not fired in the end is refunded.
+        // Each request, spend, refund, wait, cancel and firing is a replay event of kind "budget", so a debrief can explain it.
+        private sealed class ActionWait { public ActionPlan Action; public string Key = "", Command = ""; public float Since, CheckAt; }
+        private sealed class ActionFired { public ActionPlan Action; public string Key = "", Command = ""; public float Since; }
+        private static Budget _budget;                                                   // null: the scenario has no director block
+        private static readonly List<ActionWait> ActionWaits = new List<ActionWait>();   // paid for, waiting for a safe moment
+        private static readonly List<ActionFired> ActionsFired = new List<ActionFired>(); // fired, waiting to hear what the trigger's actions came to
+        private static int _actionKeys;                                                  // ids for requests that came without a command id
+        private static bool _budgetWarned;                                               // said once: the state is asked for several times a second
+        private const float ActionWaitLimit = 30f, ActionAnswerLimit = 30f;
+        // The host's choice for this game session, kept from mission to mission: false (the default) = the budget rules apply
+        // whenever the plan has a director block; true = free directing, cards fire without paying and plain firing is allowed.
+        private static bool _budgetFree;
+
+        // Seconds since the mission was laid out: the budget's clock and the "at" of each spend.
+        private static float BudgetClock => Time.unscaledTime - Director.HandledAt;
+
+        private static void BeginBudget(MissionPlan plan)
+        {
+            _budget = plan != null && plan.Director != null ? new Budget(plan.Director, ActionTriggerWhy) : null;
+            if (_budget != null) DirectorPlugin.L.LogInfo("director budget: " + _budget.Initial + " points, " + _budget.Regen + " a minute, " + _budget.Actions.Count + " action(s)");
+            if (_budget != null && _budgetFree) BudgetEvent("budget mode off: the host chose free directing for this session; cards fire without spending");
+        }
+
+        private static void ResetBudget()
+        {
+            // Whatever still waits ends with the mission; the budget goes with it, so there is nothing to refund into.
+            foreach (ActionWait w in ActionWaits) SettleAction(w.Command, w.Action.Id, CommandLedger.Failed, "cancelled: the mission ended");
+            foreach (ActionFired f in ActionsFired) SettleAction(f.Command, f.Action.Id, CommandLedger.Failed, "the mission ended before the game answered");
+            ActionWaits.Clear(); ActionsFired.Clear();
+            if (_budget != null) _budget.Reset();
+            _budget = null;
+        }
+
+        /// <summary>For the budget: "" when the trigger can be fired by hand now, else why not.</summary>
+        private static string ActionTriggerWhy(int id)
+        {
+            if (!_zones.Exists(z => z.Id == id) || !Engine.Known(id)) return "its trigger " + id.ToString(Inv) + " does not exist";
+            TriggerState s = Engine.State(id);
+            if (s == null || !s.Latched) return "";
+            return s.RearmAt != null ? "its trigger " + id.ToString(Inv) + " fires again by itself in " + Math.Max(0, (int)Math.Ceiling(s.RearmAt.Value - Time.unscaledTime)).ToString(Inv) + " s"
+                                     : "its trigger " + id.ToString(Inv) + " has already fired";
+        }
+
+        private static void BudgetEvent(string text) { try { Replay.Event("budget", text); } catch { } DirectorPlugin.L.LogInfo("director budget: " + text); }
+
+        private static string PointsNow() => _budget == null ? "0" : ((float)Math.Round(_budget.Points, 2)).ToString(Inv);
+
+        private static void SettleAction(string command, string actionId, string status, string said)
+        {
+            if (string.IsNullOrEmpty(command)) return;
+            try { LiveLink.Ledger.Settle(command, actionId, status, said); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the result of an action could not be updated: " + e.Message); }
+        }
+
+        /// <summary>
+        /// "" when the Game Master may fire this trigger with the plain fire command; else why not. Under budget rules a trigger
+        /// that some action fires is fired only through its card, so the price, rest and safe-placement checks cannot be skipped.
+        /// </summary>
+        private static string CardGuard(int triggerId)
+        {
+            if (_budget == null || _budgetFree) return "";
+            return _budget.Actions.Exists(a => a.Fire == triggerId) ? "this trigger is an action card: use the card" : "";
+        }
+
+        /// <summary>{"cmd":"budgetMode","on":true|false}: the host turns the budget rules on or off for the rest of the session.</summary>
+        private static void BudgetModeRequest(string json, Outcome done)
+        {
+            bool? on = null;
+            try
+            {
+                using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
+                    if (doc.RootElement.TryGetProperty("on", out var ov) && (ov.ValueKind == System.Text.Json.JsonValueKind.True || ov.ValueKind == System.Text.Json.JsonValueKind.False))
+                        on = ov.GetBoolean();
+            }
+            catch { on = null; }
+            if (on == null) { done.Add(new CommandOp("budgetMode", "", -1, CommandLedger.Failed, "say \"on\": true or false")); return; }
+            bool changed = _budgetFree == on.Value;
+            _budgetFree = !on.Value;
+            if (changed) BudgetEvent(on.Value ? "budget mode on: cards cost points again and their triggers are fired only through the cards" : "budget mode off");
+            string said = on.Value ? "budget rules apply" : "free directing: cards fire without spending";
+            if (_budget == null) said += " (this mission has no Game Master budget; the choice holds for later missions)";
+            done.Add(new CommandOp("budgetMode", on.Value ? "on" : "off", -1, CommandLedger.Applied, said));
+        }
+
+        /// <summary>
+        /// One request for an action: Can, Spend, the placement check, then fire, wait or cancel. The op answers applied (fired
+        /// and its effect seen), pending (waiting for a safe moment or for the game's answer), failed (refused or refunded), or
+        /// failed with "cancelled: ..." when no safe moment came; the cards recognise that prefix. With the budget rules off
+        /// (budgetMode) nothing is paid and no rest applies; the trigger check and the placement rule still do.
+        /// </summary>
+        private static void ActionRequest(string json, string command, Outcome done)
+        {
+            string actionId = "";
+            try
+            {
+                using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
+                    if (doc.RootElement.TryGetProperty("id", out var iv))
+                        actionId = iv.ValueKind == System.Text.Json.JsonValueKind.String ? iv.GetString() ?? "" : iv.ValueKind == System.Text.Json.JsonValueKind.Number ? iv.GetRawText() : "";
+            }
+            catch { actionId = ""; }
+            BudgetEvent("request '" + actionId + "'" + (string.IsNullOrEmpty(command) ? "" : " (command " + command + ")"));
+            if (_budget == null) { done.Add(new CommandOp("action", actionId, -1, CommandLedger.Failed, "this mission has no Game Master budget")); return; }
+            // Without a command id from the page the spend gets one of its own, so a refund can still find it; only a retry with the page's id is recognised.
+            string key = string.IsNullOrEmpty(command) ? "local-" + (++_actionKeys).ToString(Inv) : command;
+            if (_budget.Has(key))
+            {
+                bool back = _budget.Refunded(key);
+                done.Add(new CommandOp("action", actionId, -1, back ? CommandLedger.Failed : CommandLedger.Applied, back ? "this command was refunded; a new request is needed" : "already paid for by this command; not paid or fired again"));
+                return;
+            }
+            if (_budgetFree)
+            {
+                // Free directing: nothing is paid and no rest applies, but the trigger and the safe-placement rule still do,
+                // because those protect the players rather than the budget. Refunds below find nothing to give back.
+                if (!_budget.CanFree(actionId, out string freeWhy))
+                {
+                    BudgetEvent("refused '" + actionId + "': " + freeWhy);
+                    done.Add(new CommandOp("action", actionId, -1, CommandLedger.Failed, freeWhy));
+                    return;
+                }
+                BudgetEvent("free '" + actionId + "': budget mode off, nothing paid");
+            }
+            else if (!_budget.Spend(actionId, key, BudgetClock, out string why))
+            {
+                BudgetEvent("refused '" + actionId + "': " + why);
+                done.Add(new CommandOp("action", actionId, -1, CommandLedger.Failed, why));
+                return;
+            }
+            ActionPlan a = _budget.Find(actionId);
+            if (!_budgetFree) BudgetEvent("spend '" + a.Id + "' (" + a.Name + "): " + a.Cost.ToString(Inv) + " point(s), " + PointsNow() + " left");
+            string risky = ActionUnsafe(a);
+            if (risky.Length == 0) { done.Add(FireAction(a, key, command)); return; }
+            if (a.Fallback == ActionPlan.Cancel)
+            {
+                done.Add(new CommandOp("action", a.Id, -1, CommandLedger.Failed, CancelAction(a, key, risky)));
+                return;
+            }
+            float now = Time.unscaledTime;
+            ActionWaits.Add(new ActionWait { Action = a, Key = key, Command = command ?? "", Since = now, CheckAt = now + 1f });
+            BudgetEvent("wait '" + a.Id + "': " + risky + "; checked again every second for up to " + ActionWaitLimit.ToString("0", Inv) + " s");
+            done.Add(new CommandOp("action", a.Id, -1, CommandLedger.Pending, "waiting: " + risky));
+        }
+
+        // Refunds and says so; the text is the op's "said".
+        private static string CancelAction(ActionPlan a, string key, string why)
+        {
+            bool back = _budget != null && _budget.Refund(key);
+            BudgetEvent("cancel '" + a.Id + "': " + why);
+            if (back) BudgetEvent("refund '" + a.Id + "': " + a.Cost.ToString(Inv) + " point(s), " + PointsNow() + " now");
+            return "cancelled: " + why + (back ? "; " + a.Cost.ToString(Inv) + " point(s) refunded" : "");
+        }
+
+        /// <summary>Fires the action's trigger. A firing the engine refuses is refunded at once; one that fired waits for what its actions came to.</summary>
+        private static CommandOp FireAction(ActionPlan a, string key, string command)
+        {
+            int before = Engine.Fires(a.Fire), saidBefore = SaidCount;
+            try { FireNow(a.Fire); }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the action '" + a.Id + "' could not fire its trigger: " + e.Message); }
+            if (Engine.Fires(a.Fire) <= before)
+            {
+                string why = SaidCount != saidBefore ? LastSaid : "its trigger " + a.Fire.ToString(Inv) + " did not fire";
+                bool back = _budget != null && _budget.Refund(key);
+                BudgetEvent("refund '" + a.Id + "': the trigger was not fired (" + why + ")");
+                return new CommandOp("action", a.Id, -1, CommandLedger.Failed, why + (back ? "; " + a.Cost.ToString(Inv) + " point(s) refunded" : ""));
+            }
+            BudgetEvent("fire '" + a.Id + "': trigger " + a.Fire.ToString(Inv));
+            var fired = new ActionFired { Action = a, Key = key, Command = command ?? "", Since = Time.unscaledTime };
+            if (ActionAnswered(fired, out string status, out string said)) return new CommandOp("action", a.Id, -1, status, said);
+            ActionsFired.Add(fired);
+            return new CommandOp("action", a.Id, -1, CommandLedger.Pending, "trigger " + a.Fire.ToString(Inv) + " fired; waiting to see what it brings");
+        }
+
+        /// <summary>
+        /// What the fired trigger's actions came to, once the engine has been told. Failed, or no answer within ActionAnswerLimit,
+        /// is refunded: the points pay for an effect, not for asking. Unconfirmed (the call went through, the effect cannot be
+        /// seen, such as a door or a message) stays paid, because otherwise an action made only of those would always be free.
+        /// </summary>
+        private static bool ActionAnswered(ActionFired f, out string status, out string said)
+        {
+            status = ""; said = "";
+            TriggerState s = Engine.State(f.Action.Fire);
+            string outcome = s != null ? s.Outcome ?? "" : "";
+            if (outcome == TriggerEngine.Applied) { status = CommandLedger.Applied; said = s.OutcomeWhy; }
+            else if (outcome == TriggerEngine.Unconfirmed) { status = CommandLedger.Unconfirmed; said = s.OutcomeWhy; }
+            else if (outcome == TriggerEngine.Failed || Time.unscaledTime - f.Since > ActionAnswerLimit)
+            {
+                string why = outcome == TriggerEngine.Failed ? s.OutcomeWhy : "the game did not answer within " + ActionAnswerLimit.ToString("0", Inv) + " s";
+                bool back = _budget != null && _budget.Refund(f.Key);
+                BudgetEvent("refund '" + f.Action.Id + "': " + why);
+                status = CommandLedger.Failed; said = why + (back ? "; " + f.Action.Cost.ToString(Inv) + " point(s) refunded" : "");
+            }
+            else return false;
+            if (status != CommandLedger.Failed) BudgetEvent("done '" + f.Action.Id + "': " + status + (said.Length > 0 ? " (" + said + ")" : ""));
+            return true;
+        }
+
+        /// <summary>Every frame: actions waiting for a safe moment are looked at once a second; fired ones until the game has answered.</summary>
+        private static void BudgetTick(float now)
+        {
+            for (int i = ActionsFired.Count - 1; i >= 0; i--)
+            {
+                ActionFired f = ActionsFired[i];
+                if (!ActionAnswered(f, out string status, out string said)) continue;
+                ActionsFired.RemoveAt(i);
+                SettleAction(f.Command, f.Action.Id, status, said);
+            }
+            for (int i = 0; i < ActionWaits.Count; i++)
+            {
+                ActionWait w = ActionWaits[i];
+                if (now < w.CheckAt) continue;
+                w.CheckAt = now + 1f;
+                string risky = ActionUnsafe(w.Action);
+                if (risky.Length > 0 && now - w.Since < ActionWaitLimit) continue;
+                ActionWaits.RemoveAt(i--);
+                if (risky.Length > 0) { SettleAction(w.Command, w.Action.Id, CommandLedger.Failed, CancelAction(w.Action, w.Key, "no safe moment within " + ActionWaitLimit.ToString("0", Inv) + " s (" + risky + ")")); continue; }
+                // Safe now: the budget is asked again about the trigger only (it was paid for already), then it fires like a direct request.
+                string blocked = ActionTriggerWhy(w.Action.Fire);
+                if (blocked.Length > 0) { SettleAction(w.Command, w.Action.Id, CommandLedger.Failed, CancelAction(w.Action, w.Key, blocked)); continue; }
+                CommandOp op = FireAction(w.Action, w.Key, w.Command);
+                if (op.Status != CommandLedger.Pending) SettleAction(w.Command, w.Action.Id, op.Status, op.Said);
+            }
+        }
+
+        /// <summary>
+        /// Whether firing the action now would be unsafe: "" when not. The points checked are the trigger's place (zone and hold
+        /// only) and where each of its waiting enemies would appear; see Budget.Placement. The sight test is a ray from each
+        /// player's eye height to 1 m above the point, started half a metre out so it does not hit the player's own body. It
+        /// is NOT a proven visibility test (the game's own sight checks were not found): anything in a player's view cone the
+        /// ray reaches counts as seen. If the players cannot be read at all, the action is treated as unsafe.
+        /// </summary>
+        private static string ActionUnsafe(ActionPlan a)
+        {
+            if (a.MinDistance <= 0f && !a.Unseen) return "";
+            try
+            {
+                TriggerPlan t = _zones.Find(z => z.Id == a.Fire);
+                var points = new List<V3>();
+                if (_markers != null)
+                    foreach (Marker m in _markers) if (m.Plan.Trigger == a.Fire && m.Waiting && !m.Queued && !Special(m.Plan)) points.Add(m.Plan.Pos);
+                var where = new List<V3>(); var yaws = new List<float>();
+                var players = PlayerMaster.AllPlayerMasters;
+                for (int i = 0; players != null && i < players.Count; i++)
+                {
+                    PlayerNetworking body = players[i] == null ? null : players[i].PlayerSpawnedObject;
+                    if (body == null) continue;
+                    Vector3 p = body.transform.position;
+                    where.Add(new V3(p.x, p.y, p.z));
+                    float yaw = float.NaN;
+                    try { yaw = PlayerYaw(players[i], body); } catch { }
+                    yaws.Add(yaw);
+                }
+                return Budget.Placement(a, t, points, where, yaws, ClearSight);
+            }
+            catch (Exception e) { return "the players could not be read (" + e.Message + ")"; }
+        }
+
+        private static bool ClearSight(V3 feet, V3 point)
+        {
+            var eye = new Vector3(feet.X, feet.Y + 1.6f, feet.Z);
+            var to = new Vector3(point.X, point.Y + 1f, point.Z);
+            Vector3 dir = to - eye; float dist = dir.magnitude;
+            if (dist < 1f) return true;
+            dir /= dist;
+            try { return !Physics.Raycast(eye + dir * 0.5f, dir, out RaycastHit _, dist - 1f, ~0, QueryTriggerInteraction.Ignore); }
+            catch { return true; }     // no answer: counts as seen
+        }
+
         // ------------------------------------------------------------------ browser editor (called by LiveLink on the game thread)
         private static bool MissionRunning(out RaidManager raid, out GameManager gm)
         {
@@ -2180,6 +2459,7 @@ namespace MissionLab
             var rev = new System.Text.StringBuilder(2048);
             sb.Append("{\"mission\":true").Append(page).Append(",\"scene\":").Append(Q(raid.gameObject.scene.name)).Append(",\"navFile\":").Append(Q(nav));
             { MissionPlan cp = Director.CurrentPlan; if (cp != null && !string.IsNullOrEmpty(cp.Id)) sb.Append(",\"scenarioId\":").Append(Q(cp.Id)).Append(",\"revision\":").Append(cp.Revision.ToString(Inv)); }   // the page files revisions under it (ML-014)
+            { MissionPlan cp = Director.CurrentPlan; if (cp != null && cp.Sealed) sb.Append(",\"sealed\":true"); }   // the page hides placements and outcomes until the host reveals them (ML-021)
             sb.Append(",\"hasGeo\":").Append(nav != null && File.Exists(GeoFile(nav)) ? "true" : "false");
             var hvtPoints = raid.hvtSpawnPoints;
             sb.Append(",\"targetMission\":").Append(hvtPoints != null && hvtPoints.Length > 0 && gm.botHVTAmount > 0 ? "true" : "false");
@@ -2264,6 +2544,9 @@ namespace MissionLab
             try { List<V3> pts = Director.CurrentInfils; for (int i = 0; pts != null && i < pts.Count; i++) sb.Append(i > 0 ? "," : "").Append('[').Append(F(pts[i].X)).Append(',').Append(F(pts[i].Y)).Append(',').Append(F(pts[i].Z)).Append(']'); } catch { }
             var marks = new List<ThingPlan>(); foreach (LiveThing lt in _things) { marks.Add(lt.Plan); rev.Append('T').Append(lt.Plan.Key); }
             sb.Append("],\"things\":").Append(TryOuts.ThingsJson()).Append(",\"thingMarks\":").Append(MissionPlan.ThingsJson(marks)).Append(",\"tried\":").Append(Q(TryOuts.Last));
+            if (_budget != null)
+                try { string budget = _budget.Json(BudgetClock, !_budgetFree); sb.Append(",\"budget\":").Append(budget); }
+                catch (Exception e) { if (!_budgetWarned) DirectorPlugin.L.LogWarning("the director budget could not be shown to the page: " + e.Message); _budgetWarned = true; }
             sb.Append(",\"vehicleTypes\":[");
             try { List<GameObject> trucks = Director.VehiclePrefabs(raid); for (int i = 0; i < trucks.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(trucks[i].name)); } catch { }
             // The page takes the marker list over only when this changes.
@@ -2328,6 +2611,7 @@ namespace MissionLab
                         string kind = m.Plan.Pos.X != s.Pos.X || m.Plan.Pos.Y != s.Pos.Y || m.Plan.Pos.Z != s.Pos.Z ? "move" : "change";
                         string reference = m.Id.ToString(Inv);
                         bool there = m.Plan.Vehicle ? !m.Waiting : m.Bot != IntPtr.Zero;
+                        if (kind == "change" && m.Plan.Authored.HasValue) s.Authored = m.Plan.Authored;   // not moved by hand: a scattered enemy keeps its authored place for saving
                         m.Plan = s;
                         if (target)
                             done.Add(there ? new CommandOp(kind, reference, i, CommandLedger.Unconfirmed, "kept for the next start; the target and gun trucks in the game stay as they are")
@@ -2496,6 +2780,8 @@ namespace MissionLab
                 DirectorPlugin.L.LogInfo("order: " + TryOuts.LastWalk.Words());
                 Say(sent == 0 ? "no live enemy among those selected could be sent" : sent + (sent == 1 ? " enemy is" : " enemies are") + " on the way to that spot");
             }
+            else if (cmd == "fire" && CardGuard(id).Length > 0)
+                done.Add(new CommandOp("fire", id.ToString(Inv), -1, CommandLedger.Failed, CardGuard(id)));   // under budget rules an action's trigger is fired through its card only (ML-025)
             else if (cmd == "fire")
             {
                 // Fired means the trigger engine counted the firing; the enemies it releases are spawned like any other.
@@ -2504,6 +2790,8 @@ namespace MissionLab
                 bool fired = Engine.Fires(id) > before;
                 done.Add(new CommandOp("fire", id.ToString(Inv), -1, fired ? CommandLedger.Applied : CommandLedger.Failed, SaidCount != saidBefore ? LastSaid : ""));
             }
+            else if (cmd == "action") ActionRequest(json, command, done);     // a director budget action (ML-025): paid, checked, then fired, waited or cancelled
+            else if (cmd == "budgetMode") BudgetModeRequest(json, done);      // the host turns the budget rules on or off for the session (ML-025)
             else if (cmd == "try")
             {
                 string said = TryOuts.Run(what, arg, hasPos, pos, raid, gm);
@@ -2567,6 +2855,13 @@ namespace MissionLab
             plan.Title = _title; plan.Briefing = new List<string>(_briefing);
             foreach (SpawnPlan s in Director.SatOut) { plan.Spawns.Add(s); plan.Groups = Math.Max(plan.Groups, s.Group + 1); }   // lost their roll this time; still part of the scenario
             plan.ExtractionAfter = _holdAfter; plan.Insertion = _insertion; plan.Weather = _weather; plan.Power = _power; plan.Skill = _skillAll; plan.Nvg = _nvgAll; plan.GameMaster = _needsGm; plan.RespawnAfter = Wave.After; plan.RespawnTimes = Wave.Times;
+            MissionPlan began = Director.CurrentPlan;
+            if (fromFile && began != null)
+            {
+                // What an option choice set for this run is saved as the author had it, unless the Game Master has changed it since.
+                if (began.SkillAuthored != null && _skillAll == (began.Skill ?? "")) plan.Skill = began.SkillAuthored;
+                if (began.RespawnTimesAuthored.HasValue && Wave.Times == began.RespawnTimes) plan.RespawnTimes = began.RespawnTimesAuthored.Value;
+            }
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
                 foreach (ObjectiveObject o in Objectives(raidNow))
@@ -2579,6 +2874,9 @@ namespace MissionLab
             plan.Notes.Add("Saved from Game Master mode");
             try
             {
+                // Everything of the scenario the Game Master cannot change live (id, options, places, director and the rest) is
+                // saved as the author wrote it, from the file this mission started with, and the revision goes up by one.
+                if (fromFile) MissionPlan.CarryAuthored(MissionPlan.FromJson(Director.ScenarioText), plan);
                 string dir = Path.Combine(DirectorPlugin.BaseDir, "scenarios");
                 if (_savePath == null)
                 {
@@ -2597,7 +2895,15 @@ namespace MissionLab
                     }
                 }
                 Directory.CreateDirectory(dir);
-                File.WriteAllText(_savePath, plan.ToJson());
+                // A scattered enemy the Game Master did not move is saved where the author put it, not where this roll placed it:
+                // its two positions are exchanged for the writing and exchanged back after it.
+                List<SpawnPlan> scattered = plan.Spawns.FindAll(s => s.Authored.HasValue);
+                void Exchange() { foreach (SpawnPlan s in scattered) { V3 here = s.Pos; s.Pos = s.Authored.Value; s.Authored = here; } }
+                string text;
+                Exchange();
+                try { text = plan.ToJson(); }
+                finally { Exchange(); }
+                File.WriteAllText(_savePath, text);
                 Say(plan.Spawns.Count + " enemies saved to scenarios/" + Path.GetFileName(_savePath) + (string.IsNullOrEmpty(mapFile) && plan.Scene.Length == 0 ? " (map unknown: it will only load when named in the settings)" : ""));
             }
             catch (Exception e) { Say("could not save: " + e.Message); }

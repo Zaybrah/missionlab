@@ -58,6 +58,8 @@ function syncSide() {
     if (was && +was < sq.length) pick.value = was;
   }
   $('sqForget').hidden = !(sq[+pick.value] && !sq[+pick.value].fixed);
+  syncCardsAuthor();     // the Game Master budget in the Mission tab (ML-025, 29h-cards.js)
+  syncOptionsAuthor(); syncQuick();     // host options in the Mission tab, the quick mission in the Map tab (ML-022, 29f-options.js)
 
   const e = state.enemies[state.selected];
   $('panel').hidden = !e;
@@ -241,6 +243,7 @@ function syncSide() {
   // Positions only match the map they were placed on; a changed map file is worth a look before the mission is run.
   $('mapPrintNote').hidden = !(state.mapPrint && state.map && !state.map.isExample && state.map.print && state.map.print !== state.mapPrint);
   syncPlaces();     // 29b-places.js: the places list and, on another map file, the review of every place
+  syncScatter();    // 29g-scatter.js: placement areas, and the selected enemy's scatter with its preview and seed sweep
   const wn = state.weatherNow;
   $('missionHint').textContent = 'Extraction: the mission\'s own rule still applies; this only holds it back until a trigger has fired. Lights work on maps with a breaker box; Clean House has one. '
     + (wn ? (wn.has ? 'This map has weather' + (wn.fixedTime ? ', but its time of day is fixed.' : ' and a time of day.') : 'This map has no weather or time of day, so rain, sandstorm and hour do nothing here.')
@@ -294,7 +297,7 @@ function syncSide() {
   if (!usable) $('saveMsg').textContent = state.example ? 'Open a real map file first: the example cannot be saved.' : 'Place at least one enemy to save.';
   else if (held) $('saveMsg').textContent = held;
   else if (/first|least/.test($('saveMsg').textContent)) $('saveMsg').textContent = '';
-  syncModules();
+  syncModules(); syncPacks();
 
   const c = $('ceiling');
   if (m) { c.min = Math.floor(m.bounds.minY * 2) / 2; c.max = Math.ceil(m.bounds.maxY * 2) / 2; c.disabled = false; if (!isFinite(state.ceiling)) c.value = c.max; }

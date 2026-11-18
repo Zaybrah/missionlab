@@ -167,6 +167,12 @@ namespace MissionLab.Core
         /// <summary>Stays exactly here with navigation off (a fixed sentry, e.g. on a roof or balcony).</summary>
         public bool Fixed;
         public List<V3> Patrol = new List<V3>();
+        public const string Stay = "stay", Skip = "skip";
+        public const float ScatterLimit = 30f;
+        public float Scatter;             // metres: the enemy is placed at random within this distance of Pos when the mission starts (0: exactly at Pos)
+        public int Within;                // the "allow" placement the scattered position must lie in (0: anywhere the other rules allow)
+        public string Fallback = Stay;    // when no scattered position passes: stay at Pos, or skip the enemy (never for an hvt or a vehicle)
+        public V3? Authored;              // where the author put it, kept when scatter moved it (Scatter.Resolve); never written to the file
     }
 
     /// <summary>
@@ -192,6 +198,68 @@ namespace MissionLab.Core
         }
     }
 
+    /// <summary>One choice of an option: what it takes out of the mission, and what it changes.</summary>
+    public sealed class ChoicePlan
+    {
+        public const int RespawnLimit = 50;
+        public string Name = "";
+        public List<int> DropLots = new List<int>();        // enemies with these lots are left out
+        public List<int> DropTriggers = new List<int>();    // these triggers are switched off
+        public int RespawnTimes = -1;                       // -1: unchanged
+        public string Skill = "";                           // "": unchanged
+    }
+
+    /// <summary>
+    /// A choice the host makes before the mission ("Garrison size: Light or Full"). Options consume no randomness, so the same
+    /// seed rolls the same dice whatever is picked.
+    /// </summary>
+    public sealed class OptionPlan
+    {
+        public const int IdLength = 32, FewestChoices = 2, MostChoices = 6;
+        public string Id = "";
+        public string Name = "";
+        public int Pick;                  // the choice used when the host picks none
+        public List<ChoicePlan> Choices = new List<ChoicePlan>();
+
+        /// <summary>Whether a text can be an option or action id: 1 to 32 letters, digits, '_' or '-'.</summary>
+        public static bool IdOk(string id) => MissionPlan.IdOk(id) && id.Length <= IdLength;
+    }
+
+    /// <summary>An area scattered enemies may be placed in ("allow"), or must keep out of ("empty").</summary>
+    public sealed class PlacementPlan
+    {
+        public const string Allow = "allow", Empty = "empty";
+        public int Id;
+        public string Name = "";
+        public string Mode = Allow;
+        public AreaPlan Area;
+    }
+
+    /// <summary>Something the Game Master may do during the mission, at a cost from the budget.</summary>
+    public sealed class ActionPlan
+    {
+        public const string Wait = "wait", Cancel = "cancel";
+        public const int CostLimit = 1000;
+        public const float CooldownLimit = 3600f, DistanceLimit = 500f;
+        public string Id = "";
+        public string Name = "";
+        public int Cost;
+        public float Cooldown;            // seconds before the action can be used again
+        public int Fire;                  // the trigger it fires
+        public float MinDistance;         // metres every player must be from the trigger's enemies
+        public bool Unseen;               // only while no player can see the place
+        public string Fallback = Wait;    // when it cannot be done safely now: wait for a safe moment, or cancel
+    }
+
+    /// <summary>The Game Master's budget: points to start with, points regained per minute, and what they buy.</summary>
+    public sealed class DirectorPlan
+    {
+        public const int BudgetLimit = 1000, RegenLimit = 100;
+        public int Budget;
+        public int Regen;                 // points per minute
+        public List<ActionPlan> Actions = new List<ActionPlan>();
+    }
+
     /// <summary>A complete enemy layout for one mission, reproducible from Seed.</summary>
     public sealed class MissionPlan
     {
@@ -203,6 +271,10 @@ namespace MissionLab.Core
         public float Minutes;             // the author's estimate of its length (0: not said); measured times come from run records, never from here
         public string MapPrint = "";      // ScenarioFile.MapPrint of the navmesh file the coordinates were authored on
         public List<PlacePlan> Places = new List<PlacePlan>();
+        public bool Sealed;               // the Play view hides placements, rolls and future trigger outcomes from players
+        public List<OptionPlan> Options = new List<OptionPlan>();
+        public List<PlacementPlan> Placement = new List<PlacementPlan>();
+        public DirectorPlan Director;     // null: no Game Master budget
         public const int IdLength = 64, SquadLimit = 16;
         public const float MinutesLimit = 600f;
 
@@ -228,6 +300,35 @@ namespace MissionLab.Core
             foreach (PlacePlan place in Places) if (place.Contains(p)) return place.Name;
             return "";
         }
+
+        /// <summary>
+        /// Copies onto a plan the Game Master is about to save everything of the authored scenario it cannot change during a
+        /// mission, so the saved file keeps the author's alternatives and metadata. Kept as the author wrote them: id, scene,
+        /// navFile (when the author named one), seed, squad, minutes, mapPrint, places, sealed, options, placement and director;
+        /// the author's notes come first, then the saved plan's own. The revision is the authored one plus one.
+        /// Left as the Game Master has them, because it edits them live: name, briefing, enemies (and groups and
+        /// requestedEnemies), triggers with their areas, doors, things, objectives, extraction, insertion, weather, power,
+        /// skill, nvg, gameMaster and respawn.
+        /// </summary>
+        public static void CarryAuthored(MissionPlan authored, MissionPlan saved)
+        {
+            saved.Id = authored.Id;
+            saved.Revision = authored.Revision + 1;
+            saved.Scene = authored.Scene ?? "";
+            if (!string.IsNullOrWhiteSpace(authored.NavFile)) saved.NavFile = authored.NavFile;
+            saved.Seed = authored.Seed;
+            saved.SquadMin = authored.SquadMin; saved.SquadMax = authored.SquadMax;
+            saved.Minutes = authored.Minutes;
+            saved.MapPrint = authored.MapPrint;
+            saved.Places = authored.Places;
+            saved.Sealed = authored.Sealed;
+            saved.Options = authored.Options;
+            saved.Placement = authored.Placement;
+            saved.Director = authored.Director;
+            var notes = new List<string>(authored.Notes);
+            foreach (string n in saved.Notes) if (!notes.Contains(n)) notes.Add(n);
+            saved.Notes = notes;
+        }
         public long Seed;
         public string Scene;
         public string NavFile;
@@ -246,6 +347,10 @@ namespace MissionLab.Core
         public bool Nvg;                  // every enemy of the scenario sees in the dark
         public float RespawnAfter;        // seconds a player stays dead before the scenario brings them back (0: the game's own rule)
         public int RespawnTimes;          // how often the scenario does that in one mission (0: no limit)
+        // What an option choice replaced (Options.Apply), so a Game Master save writes the author's values back, not this
+        // run's choice. null: no choice changed it. Never written to the file.
+        public string SkillAuthored;
+        public int? RespawnTimesAuthored;
         private static float RespawnOf(JsonElement root, string key, float max)
         {
             if (!root.TryGetProperty("respawn", out JsonElement r) || r.ValueKind != JsonValueKind.Object) return 0f;
@@ -385,6 +490,9 @@ namespace MissionLab.Core
             if (s.Skill == "recruit" || s.Skill == "veteran") sb.Append(",\"skill\":\"").Append(s.Skill).Append('"');
             if (s.Nvg) sb.Append(",\"nvg\":true");
             if (!string.IsNullOrEmpty(s.Tag)) sb.Append(",\"tag\":\"").Append(s.Tag).Append('"');
+            if (s.Scatter > 0f) sb.Append(",\"scatter\":").Append(F(s.Scatter));
+            if (s.Within > 0) sb.Append(",\"within\":").Append(s.Within);
+            if (s.Fallback == SpawnPlan.Skip) sb.Append(",\"fallback\":\"").Append(SpawnPlan.Skip).Append('"');
             sb.Append(",\"patrol\":[");
             for (int k = 0; k < s.Patrol.Count; k++) { if (k > 0) sb.Append(','); sb.Append(P(s.Patrol[k])); }
             sb.Append("]}");
@@ -432,6 +540,77 @@ namespace MissionLab.Core
             return sb.Append(']').ToString();
         }
 
+        /// <summary>The placement areas; one without a shape places nothing and is left out.</summary>
+        public static string PlacementJson(List<PlacementPlan> placement)
+        {
+            var sb = new StringBuilder(128);
+            sb.Append('[');
+            bool first = true;
+            foreach (PlacementPlan p in placement)
+            {
+                if (p.Area == null || p.Area.Parts.Count == 0) continue;
+                sb.Append(first ? "" : ",").Append("{\"id\":").Append(p.Id).Append(",\"name\":\"").Append(Guard.Esc(p.Name)).Append('"');
+                if (p.Mode == PlacementPlan.Empty) sb.Append(",\"mode\":\"").Append(PlacementPlan.Empty).Append('"');
+                sb.Append(",\"area\":");
+                p.Area.Write(sb);
+                sb.Append('}');
+                first = false;
+            }
+            return sb.Append(']').ToString();
+        }
+
+        public static string OptionsJson(List<OptionPlan> options)
+        {
+            var sb = new StringBuilder(128);
+            sb.Append('[');
+            for (int i = 0; i < options.Count; i++)
+            {
+                OptionPlan o = options[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":\"").Append(Guard.Esc(o.Id)).Append("\",\"name\":\"").Append(Guard.Esc(o.Name)).Append('"');
+                if (o.Pick != 0) sb.Append(",\"pick\":").Append(o.Pick);
+                sb.Append(",\"choices\":[");
+                for (int j = 0; j < o.Choices.Count; j++)
+                {
+                    ChoicePlan c = o.Choices[j];
+                    sb.Append(j > 0 ? "," : "").Append("{\"name\":\"").Append(Guard.Esc(c.Name)).Append('"');
+                    if (c.DropLots.Count > 0 || c.DropTriggers.Count > 0)
+                    {
+                        sb.Append(",\"drop\":{");
+                        if (c.DropLots.Count > 0) sb.Append("\"lots\":[").Append(string.Join(",", c.DropLots)).Append(']');
+                        if (c.DropTriggers.Count > 0) sb.Append(c.DropLots.Count > 0 ? "," : "").Append("\"triggers\":[").Append(string.Join(",", c.DropTriggers)).Append(']');
+                        sb.Append('}');
+                    }
+                    if (c.RespawnTimes >= 0) sb.Append(",\"respawnTimes\":").Append(c.RespawnTimes);
+                    if (c.Skill == "recruit" || c.Skill == "veteran") sb.Append(",\"skill\":\"").Append(c.Skill).Append('"');
+                    sb.Append('}');
+                }
+                sb.Append("]}");
+            }
+            return sb.Append(']').ToString();
+        }
+
+        public static string DirectorJson(DirectorPlan d)
+        {
+            var sb = new StringBuilder(128);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            sb.Append("{\"budget\":").Append(d.Budget);
+            if (d.Regen != 0) sb.Append(",\"regen\":").Append(d.Regen);
+            sb.Append(",\"actions\":[");
+            for (int i = 0; i < d.Actions.Count; i++)
+            {
+                ActionPlan a = d.Actions[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":\"").Append(Guard.Esc(a.Id)).Append("\",\"name\":\"").Append(Guard.Esc(a.Name)).Append("\",\"cost\":").Append(a.Cost);
+                if (a.Cooldown > 0f) sb.Append(",\"cooldown\":").Append(F(a.Cooldown));
+                sb.Append(",\"fire\":").Append(a.Fire);
+                if (a.MinDistance > 0f) sb.Append(",\"minDistance\":").Append(F(a.MinDistance));
+                if (a.Unseen) sb.Append(",\"unseen\":true");
+                if (a.Fallback == ActionPlan.Cancel) sb.Append(",\"fallback\":\"").Append(ActionPlan.Cancel).Append('"');
+                sb.Append('}');
+            }
+            return sb.Append("]}").ToString();
+        }
+
         public string ToJson()
         {
             var sb = new StringBuilder(4096);
@@ -444,6 +623,7 @@ namespace MissionLab.Core
             if (Briefing.Count > 0) { sb.Append(",\"briefing\":["); for (int i = 0; i < Briefing.Count; i++) sb.Append(i > 0 ? "," : "").Append(S(Briefing[i])); sb.Append(']'); }
             if (SquadMin > 0 && SquadMax > 0) sb.Append(",\"squad\":[").Append(SquadMin).Append(',').Append(SquadMax).Append(']');
             if (Minutes > 0f) sb.Append(",\"minutes\":").Append(System.Math.Round(Minutes, 2).ToString(inv));
+            if (Sealed) sb.Append(",\"sealed\":true");
             sb.Append(",\"seed\":").Append(Seed.ToString(inv));
             sb.Append(",\"scene\":").Append(S(Scene));
             sb.Append(",\"navFile\":").Append(S(NavFile));
@@ -457,6 +637,9 @@ namespace MissionLab.Core
             sb.Append(",\"doors\":").Append(DoorsJson(Doors));
             if (Things.Count > 0) sb.Append(",\"things\":").Append(ThingsJson(Things));
             if (Places.Count > 0) sb.Append(",\"places\":").Append(PlacesJson(Places));
+            if (Placement.Exists(p => p.Area != null && p.Area.Parts.Count > 0)) sb.Append(",\"placement\":").Append(PlacementJson(Placement));
+            if (Options.Count > 0) sb.Append(",\"options\":").Append(OptionsJson(Options));
+            if (Director != null) sb.Append(",\"director\":").Append(DirectorJson(Director));
             sb.Append(SettingsJson(this));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
@@ -534,6 +717,10 @@ namespace MissionLab.Core
                         if (pl.TryGetProperty("area", out JsonElement pa) && pa.ValueKind == JsonValueKind.Object) place.Area = AreaPlan.Read(pa);
                         plan.Places.Add(place);
                     }
+                plan.Sealed = Bool(root, "sealed");
+                if (root.TryGetProperty("placement", out JsonElement placement) && placement.ValueKind == JsonValueKind.Array) ReadPlacement(placement, plan.Placement);
+                if (root.TryGetProperty("options", out JsonElement options) && options.ValueKind == JsonValueKind.Array) ReadOptions(options, plan.Options);
+                if (root.TryGetProperty("director", out JsonElement director) && director.ValueKind == JsonValueKind.Object) plan.Director = ReadDirector(director);
                 if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0));
                 if (root.TryGetProperty("weather", out JsonElement we) && we.ValueKind == JsonValueKind.Object)
                 {
@@ -572,6 +759,9 @@ namespace MissionLab.Core
                         Team = System.Math.Max(0, System.Math.Min(8, (int)Num(e, "team", 0))),
                         MinPlayers = System.Math.Max(0, System.Math.Min(16, (int)Num(e, "minPlayers", 0))),
                         Skill = Str(e, "skill") == "recruit" ? "recruit" : Str(e, "skill") == "veteran" ? "veteran" : "", Nvg = Bool(e, "nvg"), Tag = SpawnPlan.CleanTag(Str(e, "tag")),
+                        Scatter = System.Math.Max(0f, System.Math.Min(SpawnPlan.ScatterLimit, Num(e, "scatter", 0))),
+                        Within = System.Math.Max(0, (int)Num(e, "within", 0)),
+                        Fallback = Str(e, "fallback") == SpawnPlan.Skip && !Bool(e, "hvt") && !Bool(e, "vehicle") ? SpawnPlan.Skip : SpawnPlan.Stay,
                     };
                     if (s.Either > 0 && s.Option < 1) s.Option = 1;
                     string role = Str(e, "role") ?? "Guard";
@@ -628,6 +818,11 @@ namespace MissionLab.Core
                     }
                 // An enemy that names a zone that does not exist is simply there from the start.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0 && !plan.Triggers.Exists(t => t.Id == s.Trigger)) s.Trigger = 0;
+                // Links to things that are not there are dropped: such an enemy scatters anywhere the other rules allow, a choice
+                // switches off only triggers that exist, and an action with nothing to fire is no action.
+                foreach (SpawnPlan s in plan.Spawns) if (s.Within != 0 && !plan.Placement.Exists(p => p.Id == s.Within && p.Mode == PlacementPlan.Allow)) s.Within = 0;
+                foreach (OptionPlan o in plan.Options) foreach (ChoicePlan c in o.Choices) c.DropTriggers.RemoveAll(id => !plan.Triggers.Exists(t => t.Id == id));
+                if (plan.Director != null) plan.Director.Actions.RemoveAll(a => !plan.Triggers.Exists(t => t.Id == a.Fire));
                 plan.RequestedEnemies = plan.Spawns.Count;
                 return plan;
             }
@@ -638,6 +833,78 @@ namespace MissionLab.Core
 
         private static float Num(JsonElement o, string name, float fallback) =>
             o.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number ? v.GetSingle() : fallback;
+
+        private static int Clamp(float v, int lo, int hi) => (int)System.Math.Max(lo, System.Math.Min(hi, v));
+        private static float Clamp(float v, float lo, float hi) => System.Math.Max(lo, System.Math.Min(hi, v));
+
+        private static void Wholes(JsonElement o, string name, int least, List<int> into)
+        {
+            if (!o.TryGetProperty(name, out JsonElement list) || list.ValueKind != JsonValueKind.Array) return;
+            foreach (JsonElement n in list.EnumerateArray())
+                if (n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out int v) && v >= least && !into.Contains(v)) into.Add(v);
+        }
+
+        private static void ReadPlacement(JsonElement list, List<PlacementPlan> into)
+        {
+            foreach (JsonElement pl in list.EnumerateArray())
+            {
+                if (pl.ValueKind != JsonValueKind.Object) continue;
+                int id = (int)Num(pl, "id", 0);
+                if (id < 1 || into.Exists(q => q.Id == id)) continue;
+                AreaPlan area = pl.TryGetProperty("area", out JsonElement pa) && pa.ValueKind == JsonValueKind.Object ? AreaPlan.Read(pa) : null;
+                if (area == null) continue;                                    // a placement is its area
+                into.Add(new PlacementPlan { Id = id, Name = (Str(pl, "name") ?? "").Trim(), Mode = Str(pl, "mode") == PlacementPlan.Empty ? PlacementPlan.Empty : PlacementPlan.Allow, Area = area });
+            }
+        }
+
+        private static void ReadOptions(JsonElement list, List<OptionPlan> into)
+        {
+            foreach (JsonElement op in list.EnumerateArray())
+            {
+                if (op.ValueKind != JsonValueKind.Object) continue;
+                string id = (Str(op, "id") ?? "").Trim();
+                if (!OptionPlan.IdOk(id) || into.Exists(q => q.Id == id)) continue;
+                var option = new OptionPlan { Id = id, Name = (Str(op, "name") ?? "").Trim() };
+                if (op.TryGetProperty("choices", out JsonElement choices) && choices.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement ch in choices.EnumerateArray())
+                    {
+                        if (ch.ValueKind != JsonValueKind.Object || option.Choices.Count == OptionPlan.MostChoices) continue;
+                        var choice = new ChoicePlan { Name = (Str(ch, "name") ?? "").Trim() };
+                        if (ch.TryGetProperty("drop", out JsonElement drop) && drop.ValueKind == JsonValueKind.Object)
+                        {
+                            Wholes(drop, "lots", 1, choice.DropLots);
+                            Wholes(drop, "triggers", 1, choice.DropTriggers);
+                        }
+                        if (ch.TryGetProperty("respawnTimes", out JsonElement rt) && rt.ValueKind == JsonValueKind.Number) choice.RespawnTimes = Clamp(rt.GetSingle(), 0, ChoicePlan.RespawnLimit);
+                        string skill = Str(ch, "skill");
+                        choice.Skill = skill == "recruit" || skill == "veteran" ? skill : "";
+                        option.Choices.Add(choice);
+                    }
+                if (option.Choices.Count < OptionPlan.FewestChoices) continue;      // one way only is no option
+                option.Pick = Clamp(Num(op, "pick", 0), 0, option.Choices.Count - 1);
+                into.Add(option);
+            }
+        }
+
+        private static DirectorPlan ReadDirector(JsonElement d)
+        {
+            var director = new DirectorPlan { Budget = Clamp(Num(d, "budget", 0), 0, DirectorPlan.BudgetLimit), Regen = Clamp(Num(d, "regen", 0), 0, DirectorPlan.RegenLimit) };
+            if (d.TryGetProperty("actions", out JsonElement actions) && actions.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement a in actions.EnumerateArray())
+                {
+                    if (a.ValueKind != JsonValueKind.Object) continue;
+                    string id = (Str(a, "id") ?? "").Trim();
+                    if (!OptionPlan.IdOk(id) || director.Actions.Exists(q => q.Id == id)) continue;
+                    director.Actions.Add(new ActionPlan
+                    {
+                        Id = id, Name = (Str(a, "name") ?? "").Trim(), Cost = Clamp(Num(a, "cost", 0), 0, ActionPlan.CostLimit),
+                        Cooldown = Clamp(Num(a, "cooldown", 0), 0f, ActionPlan.CooldownLimit), Fire = System.Math.Max(0, (int)Num(a, "fire", 0)),
+                        MinDistance = Clamp(Num(a, "minDistance", 0), 0f, ActionPlan.DistanceLimit), Unseen = Bool(a, "unseen"),
+                        Fallback = Str(a, "fallback") == ActionPlan.Cancel ? ActionPlan.Cancel : ActionPlan.Wait,
+                    });
+                }
+            return director;
+        }
 
         private static void ReadDoors(JsonElement list, List<DoorPlan> into)
         {

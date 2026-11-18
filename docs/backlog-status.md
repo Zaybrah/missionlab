@@ -42,7 +42,18 @@ Built in 0.25.0; nothing of it has run in the game yet.
 
 ## v0.26
 
-Not started.
+Built in 0.26.0; nothing of it has run in the game yet.
+
+| Ticket | State | Tested | Still open |
+|---|---|---|---|
+| ML-021 sealed missions | Built | Catalogue leaves out positions, counts and coordinates in findings; Play, maps, inspector, replay stay sealed; reveal only in memory (a reload or tab is sealed again); Create and after-run reveal | In the game: host `clean_house_sealed`, live map and Direct while sealed |
+| ML-022 host options and quick mission | Built | Apply drops lots/triggers/overrides; same dice whatever the picks; every combination × squad size × rolls checked, counterexamples named, sampled coverage said; picks in the run record and reproduced; generator unchanged for default input (pinned) | In the game: picks at mission start; generating on a real map |
+| ML-023 scatter and placement areas | Built | Same inputs and seed give the same spots; never leaves its area or floor; spacing and insertion clearance; declared fallback, never a target; skip that breaks the mission caught; seed sweep lists counterexamples; editor preview; Game Master save keeps authored spots | In the game: scattered enemies on a real map; the sweep through the plugin |
+| ML-024 debrief | Built | Every number names its event source; health/shots/doors never invented; runs grouped by scenario and resolved hash; edits apart from deaths; unused content as suggestions; C# and editor give the same text | In the game: whether the `DebriefMessage` lines show before the end screen for an unmodded client; whether `down` is seen before a body is removed |
+| ML-025 budget and cards | Built | Spend, rest, refill on a simulated clock; a retry never pays twice; refunds; cards and reasons; budget mode off/on; plain fire refused for a card's trigger | In the game: the distance/view-cone rule against what players see; where manual reinforcements appear |
+| ML-026 scenario packs | Built | Manifest lists every file and requirement; game data refused by kind, name and content; hash and id checks; previews findings, missing features, map differences and clashes; never overwrites; C# and editor agree on the fixtures | Installing through the running game |
+
+A Game Master save now carries every authored field it does not edit (ML-008 follow-up; `tests/Pure/SaveTests.cs`).
 
 ## Decisions taken while building
 

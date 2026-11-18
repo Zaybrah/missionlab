@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using MissionLab.Core;
@@ -95,6 +96,47 @@ static class CatalogueTests
             check("another scenario under the same file name does not inherit runs", other.Runs == 0 && other.Measured == null, other.Runs.ToString());
             var older = CatalogueInfo.Build("clean_house.json", Scenario, new List<RunSummary> { Run("1.run.json", Record("Clean_House", "", 0, "used", Ended(600, "over"))) });
             check("a record without an id is linked by file name, ignoring case", older.Runs == 1, older.Runs.ToString());
+        }
+
+        {   // A sealed mission (ML-021): the entry keeps the briefing, requirements and the author's numbers, and leaves out
+            // the enemy count; the catalogue never carries positions, rolls or trigger outcomes. The shipped example is used.
+            string root = AppContext.BaseDirectory;
+            while (root != null && !File.Exists(Path.Combine(root, "examples", "clean_house_sealed.json"))) root = Path.GetDirectoryName(root);
+            check("the sealed example is found", root != null, "");
+            if (root != null)
+            {
+                string text = File.ReadAllText(Path.Combine(root, "examples", "clean_house_sealed.json"));
+                var e = CatalogueInfo.Build("clean_house_sealed.json", text, new List<RunSummary>());
+                check("the sealed example is readable, usable and sealed", e.Readable && e.Usable && e.Sealed && e.Why == "", e.Why);
+                JsonElement j = Json(e, "tested", null);
+                check("a sealed entry says so", j.GetProperty("sealed").ValueKind == JsonValueKind.True, j.GetRawText());
+                check("a sealed entry leaves the enemy count out", j.GetProperty("enemies").ValueKind == JsonValueKind.Null, j.GetRawText());
+                check("a sealed entry keeps the briefing and the author's squad and minutes", j.GetProperty("briefing").GetArrayLength() == 3
+                      && j.GetProperty("author").GetProperty("squad")[1].GetInt32() == 4 && j.GetProperty("author").GetProperty("minutes").GetDouble() == 15, j.GetRawText());
+                bool sealedCap = false;
+                foreach (JsonElement c in j.GetProperty("capabilities").EnumerateArray()) if (c.GetProperty("name").GetString() == "sealed") sealedCap = true;
+                check("a sealed entry keeps its requirements: map, mode and capabilities", sealedCap && j.GetProperty("navFile").GetString() == "suburbv2.bytes" && j.GetProperty("mode").GetString() == "pve", j.GetRawText());
+                string raw = j.GetRawText();
+                check("no position or route of the sealed example is in its entry", !raw.Contains("-15") && !raw.Contains("\"pos\"") && !raw.Contains("patrol"), raw);
+            }
+            JsonElement open = Json(CatalogueInfo.Build("clean_house.json", Scenario, null), "", null);
+            check("an unsealed entry says so and keeps its enemy count", open.GetProperty("sealed").ValueKind == JsonValueKind.False && open.GetProperty("enemies").GetInt32() == 2, open.GetRawText());
+            check("an entry without options writes an empty list", open.GetProperty("options").GetArrayLength() == 0, open.GetRawText());
+        }
+
+        {   // Errors of a sealed mission stay visible: what is wrong and where in the file, not where on the map.
+            check("a place in brackets is left out", CatalogueInfo.Unplaced("the target person at (12.5, -4) is not in this mission: lost its roll") == "the target person is not in this mission: lost its roll",
+                  CatalogueInfo.Unplaced("the target person at (12.5, -4) is not in this mission: lost its roll"));
+            check("a place after 'from' is left out", CatalogueInfo.Unplaced("it can be seen from 12, -34 in the painted area") == "it can be seen in the painted area", CatalogueInfo.Unplaced("it can be seen from 12, -34 in the painted area"));
+            check("lists of trigger ids are kept", CatalogueInfo.Unplaced("needs triggers 3, 4 and 5") == "needs triggers 3, 4 and 5", CatalogueInfo.Unplaced("needs triggers 3, 4 and 5"));
+            string broken = "{\"schema\":\"missionlab-plan/1\",\"id\":\"sc-sealed-broken\",\"sealed\":true,\"spawns\":[{\"pos\":[0,0,0],\"trigger\":7}]}";
+            string refused = "{\"schema\":\"missionlab-run/1\",\"startedUtc\":\"2026-11-17T10:00:00Z\",\"session\":\"m1-1\",\"scenario\":\"broken\",\"authoredHash\":\"\",\"scenarioId\":\"sc-sealed-broken\","
+                           + "\"revision\":1,\"outcome\":\"refused\",\"reason\":\"the target person at (3, 4) is not in this mission\",\"end\":null,\"resolved\":null}";
+            var e = CatalogueInfo.Build("broken.json", broken, new List<RunSummary> { Run("1.run.json", refused) });
+            check("a refused file that says sealed is treated as sealed", !e.Readable && e.Sealed && e.Findings.Exists(f => f.Level == Finding.Error), e.Why);
+            JsonElement j = Json(e, "", null);
+            check("a sealed entry's refused run keeps its reason without the place", j.GetProperty("lastRun").GetProperty("reason").GetString() == "the target person is not in this mission", j.GetRawText());
+            check("sealed is read under mission in plan/2", CatalogueInfo.SealedIn("{\"schema\":\"missionlab-plan/2\",\"mission\":{\"sealed\":true}}") && !CatalogueInfo.SealedIn("{\"sealed\":1}") && !CatalogueInfo.SealedIn("not json"), "");
         }
 
         {   // A file the strict reader refuses is listed with its findings and is not usable; its id still links refused runs.

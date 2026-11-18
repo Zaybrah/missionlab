@@ -19,9 +19,9 @@ namespace MissionLab.Core
         public static readonly string[] Kinds = { "zone", "hold", "alert", "intel", "time", "after", "down", "all", "any", "door" };
 
         // Field tables: n number, i whole number, b yes/no, s text. The editor has the same tables.
-        private static readonly string[] SpawnFields = { "n:yaw", "n:detectionRange", "n:hearingRange", "n:fov", "n:wanderDistance", "n:patrolWaitSeconds", "n:chance",
-            "i:group", "i:trigger", "i:lot", "i:either", "i:option", "i:team", "i:minPlayers", "b:indoor", "b:defensive", "b:fixed", "b:prone", "b:hvt", "b:vehicle", "b:nvg",
-            "s:role", "s:type", "s:skill", "s:tag" };
+        private static readonly string[] SpawnFields = { "n:yaw", "n:detectionRange", "n:hearingRange", "n:fov", "n:wanderDistance", "n:patrolWaitSeconds", "n:chance", "n:scatter",
+            "i:group", "i:trigger", "i:lot", "i:either", "i:option", "i:team", "i:minPlayers", "i:within", "b:indoor", "b:defensive", "b:fixed", "b:prone", "b:hvt", "b:vehicle", "b:nvg",
+            "s:role", "s:type", "s:skill", "s:tag", "s:fallback" };
         private static readonly string[] TriggerFields = { "n:radius", "n:delay", "n:hold", "n:chance", "n:repeat", "n:rally", "i:count", "i:times", "i:after",
             "b:facePlayer", "b:warn", "b:everyone", "b:red", "b:hunt", "b:respawn", "s:name", "s:when", "s:item", "s:message", "s:power", "s:end", "s:extraction", "s:tag" };
         private static readonly string[] ThingFields = { "s:name", "n:yaw", "n:chance", "i:trigger" };
@@ -132,6 +132,11 @@ namespace MissionLab.Core
                     }
                 }
 
+                // Placements an enemy may scatter into, collected first like the trigger numbers.
+                var allow = new HashSet<long>();
+                if (Has(root, "placement", out JsonElement allowList) && allowList.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement pl in allowList.EnumerateArray())
+                        if (pl.ValueKind == JsonValueKind.Object && Has(pl, "id", out JsonElement pid) && Whole(pid) && pid.GetInt64() >= 1 && (!Has(pl, "mode", out JsonElement pm) || (pm.ValueKind == JsonValueKind.String && pm.GetString() == PlacementPlan.Allow))) allow.Add(pid.GetInt64());
                 if (!Has(root, "spawns", out JsonElement spawns) || spawns.ValueKind != JsonValueKind.Array) Bad("wrong-type", "spawns", "a scenario needs \"spawns\": a list of enemies");
                 else
                 {
@@ -144,6 +149,10 @@ namespace MissionLab.Core
                         Types(s, at, SpawnFields, Bad);
                         Value(s, at, "skill", new[] { "", "recruit", "veteran" }, Bad);
                         Link(s, at, ids, Bad);
+                        if (Has(s, "scatter", out JsonElement scatter) && scatter.ValueKind == JsonValueKind.Number && (scatter.GetDouble() <= 0 || scatter.GetDouble() > SpawnPlan.ScatterLimit)) Bad("out-of-range", at + ".scatter", "\"scatter\" is more than 0 and at most " + SpawnPlan.ScatterLimit.ToString(System.Globalization.CultureInfo.InvariantCulture) + " metres");
+                        if (Has(s, "within", out JsonElement within) && Whole(within) && within.GetInt64() != 0 && !allow.Contains(within.GetInt64())) Bad("missing-ref", at + ".within", "there is no placement " + within.GetInt64() + " that allows enemies");
+                        Value(s, at, "fallback", new[] { SpawnPlan.Stay, SpawnPlan.Skip }, Bad);
+                        if (Text(s, "fallback") == SpawnPlan.Skip && (Is(s, "hvt") || Is(s, "vehicle"))) Bad("unknown-value", at + ".fallback", "a required target cannot be skipped: an hvt or a vehicle stays where it was put");
                     }
                 }
 
@@ -202,7 +211,103 @@ namespace MissionLab.Core
                         }
                     }
                 }
-                Types(root, "", new[] { "s:name", "s:scene", "s:navFile", "s:insertion", "s:power", "s:skill", "b:nvg", "b:gameMaster", "i:seed", "s:id", "i:revision", "n:minutes", "s:mapPrint" }, Bad);
+                if (Has(root, "placement", out JsonElement placement))
+                {
+                    if (placement.ValueKind != JsonValueKind.Array) Bad("wrong-type", "placement", "\"placement\" is a list");
+                    else
+                    {
+                        var seen = new HashSet<long>(); int i = 0;
+                        foreach (JsonElement pl in placement.EnumerateArray())
+                        {
+                            string at = "placement[" + i++ + "]";
+                            if (pl.ValueKind != JsonValueKind.Object) { Bad("wrong-type", at, "a placement is an object"); continue; }
+                            if (!Has(pl, "id", out JsonElement id) || !Whole(id) || id.GetInt64() < 1) Bad("bad-id", at + ".id", "a placement needs a whole number from 1 as its \"id\"");
+                            else if (!seen.Add(id.GetInt64())) Bad("duplicate-id", at + ".id", "placement number " + id.GetInt64() + " is used twice");
+                            Named(pl, at, "a placement", Bad);
+                            Choice(pl, at, "mode", new[] { PlacementPlan.Allow, PlacementPlan.Empty }, Bad);
+                            if (!Has(pl, "area", out JsonElement area)) Bad("missing-field", at + ".area", "a placement needs an \"area\": it is the area");
+                            else AreaPlan.Check(area, at, Bad);
+                        }
+                    }
+                }
+                if (Has(root, "options", out JsonElement options))
+                {
+                    if (options.ValueKind != JsonValueKind.Array) Bad("wrong-type", "options", "\"options\" is a list");
+                    else
+                    {
+                        var seen = new HashSet<string>(StringComparer.Ordinal); int i = 0;
+                        foreach (JsonElement op in options.EnumerateArray())
+                        {
+                            string at = "options[" + i++ + "]";
+                            if (op.ValueKind != JsonValueKind.Object) { Bad("wrong-type", at, "an option is an object"); continue; }
+                            Label(op, at, seen, "option", Bad);
+                            Named(op, at, "an option", Bad);
+                            int count = -1;
+                            if (!Has(op, "choices", out JsonElement choices) || choices.ValueKind != JsonValueKind.Array) Bad("wrong-type", at + ".choices", "\"choices\" is a list of " + OptionPlan.FewestChoices + " to " + OptionPlan.MostChoices + " choices");
+                            else
+                            {
+                                count = choices.GetArrayLength();
+                                if (count < OptionPlan.FewestChoices || count > OptionPlan.MostChoices) Bad("out-of-range", at + ".choices", "an option has " + OptionPlan.FewestChoices + " to " + OptionPlan.MostChoices + " choices");
+                                int j = 0;
+                                foreach (JsonElement ch in choices.EnumerateArray())
+                                {
+                                    string cat = at + ".choices[" + j++ + "]";
+                                    if (ch.ValueKind != JsonValueKind.Object) { Bad("wrong-type", cat, "a choice is an object"); continue; }
+                                    Named(ch, cat, "a choice", Bad);
+                                    if (Has(ch, "drop", out JsonElement drop))
+                                    {
+                                        if (drop.ValueKind != JsonValueKind.Object) Bad("wrong-type", cat + ".drop", "\"drop\" is an object: {\"lots\": [...], \"triggers\": [...]}");
+                                        else
+                                        {
+                                            Numbers(drop, cat + ".drop", "lots", null, Bad);
+                                            Numbers(drop, cat + ".drop", "triggers", ids, Bad);
+                                        }
+                                    }
+                                    Range(ch, cat, "respawnTimes", true, 0, ChoicePlan.RespawnLimit, Bad);
+                                    Choice(ch, cat, "skill", new[] { "", "recruit", "veteran" }, Bad);
+                                }
+                            }
+                            if (Has(op, "pick", out JsonElement pick))
+                            {
+                                if (!Whole(pick)) Bad("wrong-type", at + ".pick", "\"pick\" must be a whole number");
+                                else if (count >= 0 && (pick.GetInt64() < 0 || pick.GetInt64() >= count)) Bad("out-of-range", at + ".pick", "\"pick\" counts the choices from 0 and must name one of them");
+                            }
+                        }
+                    }
+                }
+                if (Has(root, "director", out JsonElement director))
+                {
+                    if (director.ValueKind != JsonValueKind.Object) Bad("wrong-type", "director", "\"director\" is an object: {\"budget\": points, \"regen\": points a minute, \"actions\": [...]}");
+                    else
+                    {
+                        Range(director, "director", "budget", true, 0, DirectorPlan.BudgetLimit, Bad);
+                        Range(director, "director", "regen", true, 0, DirectorPlan.RegenLimit, Bad);
+                        if (Has(director, "actions", out JsonElement actions))
+                        {
+                            if (actions.ValueKind != JsonValueKind.Array) Bad("wrong-type", "director.actions", "\"actions\" is a list");
+                            else
+                            {
+                                var seen = new HashSet<string>(StringComparer.Ordinal); int i = 0;
+                                foreach (JsonElement a in actions.EnumerateArray())
+                                {
+                                    string at = "director.actions[" + i++ + "]";
+                                    if (a.ValueKind != JsonValueKind.Object) { Bad("wrong-type", at, "an action is an object"); continue; }
+                                    Label(a, at, seen, "action", Bad);
+                                    Named(a, at, "an action", Bad);
+                                    Range(a, at, "cost", true, 0, ActionPlan.CostLimit, Bad);
+                                    Range(a, at, "cooldown", false, 0, ActionPlan.CooldownLimit, Bad);
+                                    if (!Has(a, "fire", out JsonElement fire)) Bad("missing-field", at + ".fire", "an action needs \"fire\": the trigger it fires");
+                                    else if (!Whole(fire)) Bad("wrong-type", at + ".fire", "\"fire\" must be a whole number");
+                                    else if (!ids.Contains(fire.GetInt64())) Bad("missing-ref", at + ".fire", "there is no trigger " + fire.GetInt64());
+                                    Range(a, at, "minDistance", false, 0, ActionPlan.DistanceLimit, Bad);
+                                    Types(a, at, new[] { "b:unseen" }, Bad);
+                                    Choice(a, at, "fallback", new[] { ActionPlan.Wait, ActionPlan.Cancel }, Bad);
+                                }
+                            }
+                        }
+                    }
+                }
+                Types(root, "", new[] { "s:name", "s:scene", "s:navFile", "s:insertion", "s:power", "s:skill", "b:nvg", "b:gameMaster", "i:seed", "s:id", "i:revision", "n:minutes", "s:mapPrint", "b:sealed" }, Bad);
                 Value(root, "", "power", new[] { "", "on", "off" }, Bad);
                 Value(root, "", "skill", new[] { "", "recruit", "veteran" }, Bad);
                 // Metadata the author keeps: only checked for sense, never needed to run the mission.
@@ -245,6 +350,55 @@ namespace MissionLab.Core
                 if (!ok) bad("wrong-type", Join(at, key), "\"" + key + "\" must be " + (f[0] == 'n' ? "a number" : f[0] == 'i' ? "a whole number" : f[0] == 'b' ? "true or false" : "text"));
             }
         }
+        private static bool Is(JsonElement o, string key) => Has(o, key, out JsonElement v) && v.ValueKind == JsonValueKind.True;
+
+        /// <summary>A name for people to read: required, and text.</summary>
+        private static void Named(JsonElement o, string at, string what, Action<string, string, string> bad)
+        {
+            if (!Has(o, "name", out JsonElement name) || (name.ValueKind == JsonValueKind.String && name.GetString().Trim() == "")) bad("missing-field", at + ".name", what + " needs a \"name\" for people to read");
+            else if (name.ValueKind != JsonValueKind.String) bad("wrong-type", at + ".name", "\"name\" must be text");
+        }
+
+        /// <summary>A text id of an option or an action: 1 to 32 letters, digits, '_' or '-', each once.</summary>
+        private static void Label(JsonElement o, string at, HashSet<string> seen, string what, Action<string, string, string> bad)
+        {
+            string id = Text(o, "id");
+            if (id == null || !OptionPlan.IdOk(id)) bad("bad-id", at + ".id", "an " + what + " id is 1 to " + OptionPlan.IdLength + " letters, digits, '_' or '-'");
+            else if (!seen.Add(id)) bad("duplicate-id", at + ".id", "the " + what + " id \"" + id + "\" is used twice");
+        }
+
+        /// <summary>A text key with fixed values: first its type, then its value.</summary>
+        private static void Choice(JsonElement o, string at, string key, string[] allowed, Action<string, string, string> bad)
+        {
+            if (!Has(o, key, out JsonElement v)) return;
+            if (v.ValueKind != JsonValueKind.String) bad("wrong-type", Join(at, key), "\"" + key + "\" must be text");
+            else Value(o, at, key, allowed, bad);
+        }
+
+        /// <summary>A number with bounds, inclusive: first its type, then its range.</summary>
+        private static void Range(JsonElement o, string at, string key, bool whole, double lo, double hi, Action<string, string, string> bad)
+        {
+            if (!Has(o, key, out JsonElement v)) return;
+            if (whole ? !Whole(v) : v.ValueKind != JsonValueKind.Number) { bad("wrong-type", Join(at, key), "\"" + key + "\" must be " + (whole ? "a whole number" : "a number")); return; }
+            double d = v.GetDouble();
+            if (d < lo || d > hi) bad("out-of-range", Join(at, key), "\"" + key + "\" is from " + lo.ToString(System.Globalization.CultureInfo.InvariantCulture) + " to " + hi.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>A list of whole numbers: lot numbers from 1, or (with ids) trigger numbers that exist.</summary>
+        private static void Numbers(JsonElement o, string at, string key, HashSet<long> ids, Action<string, string, string> bad)
+        {
+            if (!Has(o, key, out JsonElement list)) return;
+            if (list.ValueKind != JsonValueKind.Array) { bad("wrong-type", at + "." + key, "\"" + key + "\" is a list of whole numbers"); return; }
+            int k = 0;
+            foreach (JsonElement n in list.EnumerateArray())
+            {
+                string one = at + "." + key + "[" + k++ + "]";
+                if (!Whole(n)) bad("wrong-type", one, "a " + (ids == null ? "lot" : "trigger") + " number is a whole number");
+                else if (ids != null && !ids.Contains(n.GetInt64())) bad("missing-ref", one, "there is no trigger " + n.GetInt64());
+                else if (ids == null && n.GetInt64() < 1) bad("out-of-range", one, "lot numbers start at 1");
+            }
+        }
+
         private static void Value(JsonElement o, string at, string key, string[] allowed, Action<string, string, string> bad)
         {
             string v = Text(o, key);

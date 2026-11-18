@@ -31,6 +31,11 @@ namespace MissionLab.Core
         public float EdgeMargin = 15f;
         /// <summary>Radius of the play area around the map's own enemy positions; 0 = choose automatically.</summary>
         public float PlayRadius = 0f;
+        /// <summary>
+        /// Shares of guards, wanderers and patrols, in that order and on any scale (40, 40, 20 or 2, 2, 1); null or all zero:
+        /// the generator's own mix, more guards indoors and more movement in the open. A patrol that finds no route walks instead.
+        /// </summary>
+        public float[] RoleMix;
     }
 
     /// <summary>
@@ -60,6 +65,7 @@ namespace MissionLab.Core
         {
             var nav = input.Nav;
             var rng = new Rng(input.Seed);
+            double[] mix = Shares(input.RoleMix);
             var plan = new MissionPlan { Seed = input.Seed, Scene = input.Scene, NavFile = nav.SourceFile, RequestedEnemies = input.Enemies };
 
             // 1. Which part of the mesh can players actually get to?
@@ -229,14 +235,14 @@ namespace MissionLab.Core
                 }
 
                 var list = new List<SpawnPlan>();
-                foreach (var c in chosen) list.Add(MakeSpawn(nav, mask, c, g, rng, PatrolBlocked));
+                foreach (var c in chosen) list.Add(MakeSpawn(nav, mask, c, g, rng, PatrolBlocked, mix));
                 perGroup.Add(list);
             }
 
-            // Make sure the mission has at least one patrol if any position allows it.
+            // Make sure the mission has at least one patrol if any position allows it (unless the mix asks for none).
             bool anyPatrol = false;
             foreach (var l in perGroup) foreach (var s in l) if (s.Role == SpawnRole.Patrol) anyPatrol = true;
-            if (!anyPatrol)
+            if (!anyPatrol && (mix == null || mix[2] > 0))
             {
                 SpawnPlan best = null; float bestLen = 8f;
                 foreach (var l in perGroup)
@@ -311,7 +317,7 @@ namespace MissionLab.Core
             return res;
         }
 
-        private static SpawnPlan MakeSpawn(NavMesh nav, bool[] mask, Cand c, int group, Rng rng, Func<V3, bool> patrolBlocked)
+        private static SpawnPlan MakeSpawn(NavMesh nav, bool[] mask, Cand c, int group, Rng rng, Func<V3, bool> patrolBlocked, double[] mix)
         {
             var s = new SpawnPlan { Group = group, Pos = c.P, Indoor = c.Indoor };
             // Face the longest open line: usually the approach an enemy would watch.
@@ -320,7 +326,8 @@ namespace MissionLab.Core
             if (s.Yaw < 0) s.Yaw += 360f;
 
             double roll = rng.NextDouble();
-            if (c.Indoor) s.Role = roll < 0.65 ? SpawnRole.Guard : SpawnRole.Wander;
+            if (mix != null) s.Role = roll < mix[0] ? SpawnRole.Guard : roll < mix[0] + mix[1] ? SpawnRole.Wander : SpawnRole.Patrol;
+            else if (c.Indoor) s.Role = roll < 0.65 ? SpawnRole.Guard : SpawnRole.Wander;
             else s.Role = roll < 0.15 ? SpawnRole.Guard : roll < 0.70 ? SpawnRole.Wander : SpawnRole.Patrol;   // in the open, keep moving
 
             s.Defensive = rng.Chance(c.Indoor && s.Role == SpawnRole.Guard ? 0.6 : 0.3);
@@ -397,6 +404,16 @@ namespace MissionLab.Core
             var mask = new bool[nav.Count];
             for (int i = 0; i < nav.Count; i++) mask[i] = comp[i] == bestId;
             return mask;
+        }
+
+        /// <summary>The role mix as fractions that add up to 1, or null for the generator's own mix.</summary>
+        public static double[] Shares(float[] mix)
+        {
+            if (mix == null || mix.Length != 3) return null;
+            double total = 0;
+            foreach (float m in mix) { if (!(m >= 0) || float.IsInfinity(m)) return null; total += m; }
+            if (total <= 0) return null;
+            return new[] { mix[0] / total, mix[1] / total, mix[2] / total };
         }
     }
 }

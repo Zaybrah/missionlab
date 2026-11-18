@@ -2,7 +2,7 @@
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/Zaybrah/missionlab/blob/main/docs/scenario.schema.json",
  "title": "MissionLab scenario, missionlab-plan/1 and missionlab-plan/2",
- "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1 holds the scenario at the root. missionlab-plan/2 holds the same body under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger and place numbers are unique, every link points at a trigger that exists, and every area is a sound shape. Keys that are not listed are ignored.",
+ "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1 holds the scenario at the root. missionlab-plan/2 holds the same body under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. The v0.26 keys (sealed, placement, options, director, and scatter, within and fallback on enemies) never force missionlab-plan/2: an older version that ignores them plays the authored content. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger, place, placement, option and action ids are unique, every link points at a trigger or placement that exists, an hvt or a vehicle is never skipped, and every area is a sound shape. Keys that are not listed are ignored.",
  "type": "object",
  "if": {
   "required": [
@@ -104,6 +104,48 @@
     "$ref": "#/$defs/place"
    },
    "description": "Named places, so that logs and explanations can say where in words; labels only"
+  },
+  "sealed": {
+   "type": "boolean",
+   "description": "The Play view hides placements, rolls and future trigger outcomes, so players are not told the mission's secrets"
+  },
+  "placement": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/placement"
+   },
+   "description": "Areas scattered enemies may be put in (allow) or must keep out of (empty)"
+  },
+  "options": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/option"
+   },
+   "description": "Choices the host makes before the mission; they use no randomness, so a seed rolls the same dice whatever is picked"
+  },
+  "director": {
+   "type": "object",
+   "properties": {
+    "budget": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 1000,
+     "description": "Points the Game Master starts with"
+    },
+    "regen": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 100,
+     "description": "Points regained per minute"
+    },
+    "actions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/action"
+     }
+    }
+   },
+   "description": "The Game Master's budget and what it buys; the plugin enforces it for every way of asking"
   },
   "scene": {
    "type": "string",
@@ -334,6 +376,167 @@
     },
     "area": {
      "$ref": "#/$defs/area"
+    }
+   }
+  },
+  "placement": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "area"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "A whole number from 1, unique among the placements; enemies name it in \"within\""
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "allow",
+      "empty"
+     ],
+     "description": "allow (absent): scattered enemies may be put here; empty: none may be"
+    },
+    "area": {
+     "$ref": "#/$defs/area"
+    }
+   }
+  },
+  "option": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "choices"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9_-]{1,32}$",
+     "description": "Unique among the options; picks are stored by it"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "pick": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The choice used when the host picks none, counted from 0"
+    },
+    "choices": {
+     "type": "array",
+     "minItems": 2,
+     "maxItems": 6,
+     "items": {
+      "$ref": "#/$defs/choice"
+     }
+    }
+   }
+  },
+  "choice": {
+   "type": "object",
+   "required": [
+    "name"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "drop": {
+     "type": "object",
+     "properties": {
+      "lots": {
+       "type": "array",
+       "items": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "description": "Enemies with these lots are left out"
+      },
+      "triggers": {
+       "type": "array",
+       "items": {
+        "type": "integer"
+       },
+       "description": "These triggers are switched off"
+      }
+     }
+    },
+    "respawnTimes": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 50,
+     "description": "Replaces the number of respawn waves; absent: unchanged"
+    },
+    "skill": {
+     "type": "string",
+     "enum": [
+      "",
+      "recruit",
+      "veteran"
+     ],
+     "description": "Replaces the scenario's enemy skill; absent: unchanged"
+    }
+   }
+  },
+  "action": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "fire"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9_-]{1,32}$",
+     "description": "Unique among the actions"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "cost": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 1000
+    },
+    "cooldown": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 3600,
+     "description": "Seconds before it can be used again"
+    },
+    "fire": {
+     "type": "integer",
+     "description": "The trigger it fires"
+    },
+    "minDistance": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 500,
+     "description": "Metres every player must be away when it fires"
+    },
+    "unseen": {
+     "type": "boolean",
+     "description": "Only fires where no player can see"
+    },
+    "fallback": {
+     "type": "string",
+     "enum": [
+      "wait",
+      "cancel"
+     ],
+     "description": "When it cannot fire safely now: wait (absent) and try again for up to 30 s, or cancel"
     }
    }
   },
@@ -606,6 +809,24 @@
     "tag": {
      "type": "string",
      "description": "A name of your choosing, for 'tagged enemies down' triggers"
+    },
+    "scatter": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "maximum": 30,
+     "description": "Metres: placed at random this far from pos at most when the mission starts, on the same floor"
+    },
+    "within": {
+     "type": "integer",
+     "description": "The allow placement the scattered position must lie in"
+    },
+    "fallback": {
+     "type": "string",
+     "enum": [
+      "stay",
+      "skip"
+     ],
+     "description": "When no scattered position passes: stay at pos (absent), or leave the enemy out; never skip for an hvt or a vehicle"
     }
    }
   },

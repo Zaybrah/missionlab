@@ -306,6 +306,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 #liveBox { display: none; flex-direction: column; gap: 8px; }
 body.live #liveBox { display: flex; }
 body.live .offline { display: none !important; }
+/* ---------- debrief and unused content (ML-024): plain text, as it is copied */
+body:not(.live) #unusedRuns { display: none; }
+pre.debrief { margin: 6px 0; padding: 8px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 var(--mono); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
 #liveStatus { font-weight: 500; }
 #tools .mode[aria-pressed="true"] { background: var(--friend); color: #fff; border-color: var(--friend); }
 .float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
@@ -337,6 +340,68 @@ body.dragging #drop { display: flex; }
 #mdlBindings select { flex: 1; min-width: 0; width: auto; padding: 3px 6px; }
 #mdlReport li { color: var(--warn); }
 #mdlReport li.sum { color: var(--ink-2); }
+/* Packs (ML-026): export, and the import preview. Problems and map lines say so in words; the colour only repeats it. */
+#packBox { display: flex; flex-direction: column; gap: 8px; }
+#packBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
+#packModules, #packPreview ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+#packPreview { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+#packPreview p { margin: 0; }
+#packPreview li { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+#packPreview select { width: auto; padding: 3px 6px; }
+#packPreview .packBad { color: var(--enemy); }
+#packPreview .packWarn { color: var(--warn); }
+/* Game Master budget and action cards (ML-025, 29h-cards.js). An unavailable card and a cancelled or failed press say so in
+   words; the colour only repeats it. */
+#cardsBox, #cardsAuthor, #gbBody { display: flex; flex-direction: column; gap: 8px; }
+#cardsBox[hidden], #cardsAuthor[hidden], #gbBody[hidden] { display: none; }
+#cardsBox h3 { font: 600 12.5px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; margin: 6px 0 0; color: var(--ink-2); }
+#cardsMeter { flex: 1; min-width: 0; height: 12px; }
+#cardsPoints { font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+#cardsList, #gbActions, #gbProblems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+#cardsList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; box-shadow: inset 3px 0 0 var(--friend); }
+#cardsList li.cannot { box-shadow: inset 3px 0 0 var(--line); }
+#cardsList .name { font-weight: 600; overflow-wrap: anywhere; }
+#cardsList .cost { justify-self: end; font: 500 11.5px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+#cardsList .effect, #cardsList .rest, #cardsList .rule, #cardsList .why, #cardsList .op { grid-column: 1 / -1; }
+#cardsList .rest { font: 11.5px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#cardsList .why { color: var(--warn); }
+#cardsList .op { font-weight: 600; }
+#cardsList li.o-cancelled .op, #cardsList li.o-failed .op, #cardsList li.o-lost .op { color: var(--enemy); }
+#cardsList li.o-pending .op, #cardsList li.o-sending .op { color: var(--friend); }
+#cardsList .play { grid-column: 1 / -1; justify-self: start; padding: 4px 12px; }
+#cardsList [hidden] { display: none; }
+#cardsSpent { margin: 0; padding-left: 18px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+#cardsSpent li.refunded { color: var(--ink-2); text-decoration: line-through; text-decoration-thickness: 1px; }
+#gbActions li { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+#gbActions .title { font-weight: 600; overflow-wrap: anywhere; }
+#gbProblems li.error { color: var(--enemy); }
+#gbProblems li.note { color: var(--warn); }
+/* constrained scatter and placement areas (ML-023, 29g-scatter.js) */
+#plList { list-style: none; margin: 8px 0 0; padding: 0; }
+#plList li button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 4px; cursor: pointer; }
+#plList li button span:first-child { color: var(--warn); font-weight: 600; overflow-wrap: anywhere; }
+#plList li button[aria-current="true"] { background: var(--ink); color: var(--panel); }
+#plList li button[aria-current="true"] span:first-child { color: inherit; }
+#plList li button span:last-child { font-family: var(--mono); font-size: 11.5px; opacity: .8; }
+#plUses { color: var(--enemy); }
+#scRemoved, #scCounter { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+#scCounter li { margin: 3px 0; overflow-wrap: anywhere; }
+#scCounter li .btn { margin-left: 6px; }
+#scEnemy .row input[type="number"] { width: 64px; }
+/* Host options and the quick mission (ML-022) */
+#optList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+#optList > li { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+#optList .row input[type="text"] { flex: 1; min-width: 0; width: auto; }
+#optList .row input[type="number"] { width: 96px; }
+#optList .optChoice { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 2px solid var(--line); }
+#optList .optDrops { gap: 4px 10px; font-size: 12.5px; }
+.optWarn, #qmLeft { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn); }
+#optCheckList { list-style: none; margin: 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+#optCheckList li.error { color: var(--enemy); font-weight: 600; }
+#optCheckList li.warning { color: var(--warn); }
+#optCheckList li.note, #optCheckList li.ok { color: var(--ink-2); }
+#optPlayList { display: flex; flex-direction: column; gap: 6px; }
+#optPlayList select { min-width: 0; }
 
 @media (max-width: 760px) {
   body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 44%) minmax(0, 56%); }

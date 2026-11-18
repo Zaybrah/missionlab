@@ -13,7 +13,7 @@ Only the host runs it. If anything fails before the swap, the mission is left
 exactly as shipped.
 
 - Config: `BepInEx/config/missionlab.director.cfg`. `[General]`: Enabled, Seed, EnemyCount, Scenes, MoveTarget,
-  RandomExtras, RandomIntel, FairPlay, TellPlayers, Scenario. `[Replay]`: Enabled, Keep. `[GameMaster]`: Enabled, BlockGameKeys
+  RandomExtras, RandomIntel, FairPlay, TellPlayers, Scenario. `[Replay]`: Enabled, Keep, DebriefMessage. `[GameMaster]`: Enabled, BlockGameKeys
   and every key. `[LiveLink]`: Enabled, Port. `[Advanced]`: UseHook. Each setting is explained in the file itself.
 - Record of each mission (seed + every position): `BepInEx/MissionLab/missions/`
 - Replay a mission: put its seed in the config.
@@ -157,6 +157,19 @@ second, and what happened). In the browser page pick one under "Open replay"; in
 editor open the file. It plays on the 2D map with a timeline and a list of events.
 `[Replay] Enabled = false` turns recording off; `Keep` says how many files to keep.
 
+**Debrief** (0.26, replay `semantics` 4: an `alert` event when an enemy first leaves its idle state, a `fire` event
+with the trigger's id). Under the replay, the Debrief block lists the recording's facts as copyable text: length,
+setup-to-end time and result (from the run record), first recorded contact, each trigger firing with its place,
+enemies down by the game's word kept apart from editor removals and unexplained disappearances, intel, Game Master
+requests and action cards, players. Every number names its source event; older recordings mark their guesses, and
+health, shots fired and door use are never given because they are not recorded. `GET /api/debrief/<replay file>`.
+**Unused content** (Mission tab) lists triggers that never fired and enemies that never left their idle state in any
+comparable run (same scenario fingerprint and same setup after the dice), as suggestions for review with the number of
+runs looked at; offline it looks at one replay file. `GET /api/debrief/unused/<scenario id>`.
+`[Replay] DebriefMessage = true` (experimental, off by default) shows every player three lines of debrief when a
+trigger ends the mission. Whether they appear before the game's end screen has not been checked with an unmodded
+client, and a mission the game ends by itself gets none: the browser page's debrief is the full one.
+
 All of the above is built from the game's class listing and has not run in the game yet.
 
 ### Danger check
@@ -258,6 +271,40 @@ in the enemy panel, for everything selected.
 - **Ready-made sets** on the Triggers tab: a countdown after the intel, an alarm that calls help,
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
+
+### New in 0.26.0 (not run in the game yet)
+The growth candidates of `docs/backlog.md` (ML-021 to ML-026). Everything here is covered by `./test.sh`; what it
+does in a running mission, and for a friend without the mod, still has to be seen (`docs/backlog-status.md`).
+- **Sealed missions** (ML-021). `"sealed": true` keeps enemy positions, counts, rolls and coming trigger outcomes off
+  the Play view, the maps, the inspector and the catalogue, so the host can discover the mission with the squad.
+  Opening it in Create, or after the run, asks first. A reload or another tab is sealed again. This is spoiler
+  avoidance only: the files stay readable. Example: `examples/clean_house_sealed.json`.
+- **Host options** (ML-022). An author offers a few named choices (garrison size, reinforcement waves, skill); each
+  drops enemy lots or triggers or changes a mission rule. The same seed rolls the same dice whatever is picked; the
+  picks are in the run record and are used again by "Reproduce this setup". "Check every combination" tries each
+  choice, squad size and a number of rolls and names any combination that cannot be finished (sampled, never a
+  proof of every roll). A **quick mission** form generates a layout on the game's own map with a chosen size, mix
+  and extras, to preview, reroll and keep.
+- **Scatter** (ML-023). `"scatter": 6` lets an enemy stand somewhere within 6 m of its spot, on the same floor, on the
+  same connected ground, inside an "allow" placement area and outside "empty" ones, away from other enemies and
+  insertions; otherwise it stays (or, if the author says so, sits the mission out; never a target or a gun truck).
+  The editor previews the eligible ground; "Try seeds" resolves many rolls through the plugin and lists every
+  counterexample. A Game Master save keeps the authored spots, options and areas, not this run's roll.
+- **Debrief** (ML-024) of a recording: time, first contact, trigger milestones, deaths the game confirmed apart from
+  edits and unknown disappearances, Game Master interventions, each with where the number came from. "Unused
+  content" lists triggers that never fired and enemies that never moved across comparable runs, as suggestions.
+  `[Replay] DebriefMessage` (experimental, off) shows three lines in the game when a trigger ends the mission.
+  Recordings are now `semantics` 4 (an `alert` event per enemy, a `fire` event per trigger).
+- **Game Master budget and action cards** (ML-025). `"director"` gives the Game Master points, a refill rate and
+  actions (fire a trigger, at a cost, with a rest time, only when no player is close or looking). The Direct pane
+  shows them as cards with the reason one cannot be played; a retry never pays twice and a cancelled or failed action
+  is refunded. The host can switch the budget rules off for the session; every spend and refund is recorded.
+  The "looking" test is a view cone and a ray, not a proven visibility check.
+- **Scenario packs** (ML-026). Export the scenario and chosen modules as one `.mlpack.json` with a manifest of files,
+  map, mode, version and features; import shows every file's findings, missing features, map differences and name or
+  id clashes before installing a copy or a new revision. Nothing is ever overwritten, and no game data can be in a pack.
+- **Saving in the game keeps the author's work.** A Game Master save of a scenario keeps its id (revision + 1),
+  places, sealed flag, options, placement areas, director block, squad, minutes and map print.
 
 ### New in 0.25.0 (not run in the game yet)
 The authoring milestone of `docs/backlog.md` (ML-027, ML-013 to ML-020). Everything here is covered by `./test.sh`;

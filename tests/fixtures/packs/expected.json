@@ -1,0 +1,63 @@
+{
+ "capability_missing.mlpack.json": [
+  "missing-ref manifest.requires.capabilities"
+ ],
+ "capability_unsupported.mlpack.json": [
+  "unsupported manifest.requires.capabilities[7]"
+ ],
+ "duplicate_id.mlpack.json": [
+  "duplicate-id files.quiet_raid_again.json.id"
+ ],
+ "folder_name.mlpack.json": [
+  "bad-name manifest.files[0].name",
+  "unlisted files.sub/clean_house_quiet_raid.json"
+ ],
+ "folder_name_module.mlpack.json": [
+  "bad-name manifest.files[1].name",
+  "unlisted files.two_guard_alarm.module.json"
+ ],
+ "future_version.mlpack.json": [
+  "future-version schema"
+ ],
+ "geometry_file.mlpack.json": [
+  "not-allowed files.suburbv2.mlgeo",
+  "not-allowed manifest.files[2].name"
+ ],
+ "hash_mismatch.mlpack.json": [
+  "hash-mismatch manifest.files[0].hash"
+ ],
+ "id_mismatch.mlpack.json": [
+  "id-mismatch manifest.files[0].id"
+ ],
+ "map_missing.mlpack.json": [
+  "missing-ref manifest.requires.maps"
+ ],
+ "mode_pvp.mlpack.json": [
+  "unknown-value manifest.requires.modes[0]"
+ ],
+ "module_refused.mlpack.json": [
+  "bad-module files.two_guard_alarm.module.json"
+ ],
+ "navmesh_file.mlpack.json": [
+  "not-allowed files.suburbv2.bytes",
+  "not-allowed manifest.files[2].kind"
+ ],
+ "replay_file.mlpack.json": [
+  "not-allowed files.last_run.json"
+ ],
+ "replay_kind.mlpack.json": [
+  "not-allowed manifest.files[1].kind",
+  "unlisted files.two_guard_alarm.module.json"
+ ],
+ "scenario_refused.mlpack.json": [
+  "wrong-type files.clean_house_quiet_raid.json.spawns[0].yaw"
+ ],
+ "size_mismatch.mlpack.json": [
+  "hash-mismatch manifest.files[0].bytes",
+  "hash-mismatch manifest.files[0].hash"
+ ],
+ "unlisted_file.mlpack.json": [
+  "unlisted files.notes.json"
+ ],
+ "valid.mlpack.json": []
+}

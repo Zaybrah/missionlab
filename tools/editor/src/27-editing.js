@@ -1,9 +1,11 @@
 // ------------------------------------------------------------------ editing
-function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut(), t: thingsOut(), p: state.places })); if (undoStack.length > 80) undoStack.shift(); }
+function pushUndo() { undoStack.push(JSON.stringify({ e: state.enemies, s: state.selected, z: state.zones, o: state.objectives, d: doorsOut(), x: settingsOut(), t: thingsOut(), p: state.places,
+  k: state.sealed, op: state.options, pl: state.placement, gm: state.director })); if (undoStack.length > 80) undoStack.shift(); }
 function undo() {
   const snap = undoStack.pop(); if (!snap) return say('Nothing to undo.');
   const o = JSON.parse(snap); state.enemies = o.e; state.zones = o.z || []; state.objectives = o.o || state.objectives; setDoorWishes(o.d || []); settingsIn(o.x || {}); state.things = thingsIn(o.t); state.thing = -1; state.squad = []; state.selected = Math.min(o.s, o.e.length - 1);
   if (Array.isArray(o.p)) state.places = o.p;
+  state.sealed = o.k === true; state.options = Array.isArray(o.op) ? o.op : []; state.placement = Array.isArray(o.pl) ? o.pl : []; state.director = o.gm || null;
   changed();
 }
 // Brings a thing into view. In 3D the floors above it are hidden, or the roof would be all there is to see.
@@ -44,9 +46,10 @@ function hit(sx, sy) {
   const sel = state.enemies[state.selected];
   if (sel && sel.role === 'Patrol') for (let n = 0; n < sel.patrol.length; n++) { const [x, y] = toScreen(sel.patrol[n][0], sel.patrol[n][2]); if (Math.hypot(x - sx, y - sy) <= 10) return { stop: n }; }
   for (let n = 0; n < state.objectives.length; n++) { const [x, y] = toScreen(state.objectives[n].pos[0], state.objectives[n].pos[2]); if (Math.hypot(x - sx, y - sy) <= 10) return { objective: n }; }
-  for (let n = 0; n < state.things.length; n++) { const [x, y] = toScreen(state.things[n].pos[0], state.things[n].pos[2]); if (Math.hypot(x - sx, y - sy) <= 9) return { thing: n }; }
+  const sealed = sealedHides();            // hidden markers cannot be clicked either (20b-sealed.js)
+  for (let n = 0; n < (sealed ? 0 : state.things.length); n++) { const [x, y] = toScreen(state.things[n].pos[0], state.things[n].pos[2]); if (Math.hypot(x - sx, y - sy) <= 9) return { thing: n }; }
   let best = -1, bestD = 13;
-  state.enemies.forEach((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]), d = Math.hypot(x - sx, y - sy); if (d < bestD) { bestD = d; best = i; } });
+  if (!sealed) state.enemies.forEach((e, i) => { const [x, y] = toScreen(e.pos[0], e.pos[2]), d = Math.hypot(x - sx, y - sy); if (d < bestD) { bestD = d; best = i; } });
   if (best >= 0) return { enemy: best };
   const door = state.tool === 'select' ? doorAtScreen(sx, sy) : -1;
   return door >= 0 ? { door } : null;

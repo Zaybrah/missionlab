@@ -13,15 +13,18 @@ namespace MissionLab
     /// Every enemy row says who the enemy is, so a reader links rows by that and not by where they stood: "s4" is the
     /// scenario's spawns[4] (its place in the file, before the dice; for a generated layout, in the header's plan), "m12"
     /// a marker the Game Master placed, and a "v1" after either marks the gunner of gun truck 1. Nothing is written when
-    /// it is not known. Enemy events carry the row id as their fifth value.
+    /// it is not known. Enemy events carry the row id as their fifth value; a "fire" event carries the trigger's id there.
     /// </summary>
     internal static class Replay
     {
         // What an enemy event can say. "down" is written only when the game itself says the enemy is dead; one that leaves
         // the game's list for a reason the mod does not know is "gone", so a cleanup or a despawn never counts as a kill.
         internal const string KindDown = "down", KindGone = "gone", KindRemoved = "removed", KindRemade = "remade", KindAppears = "appears", KindEnd = "end";
-        // 1: rows without identity, removals counted as down; 2: "removed" apart; 3: identity in every enemy row and enemy event, "gone" and "remade", session in the header.
-        private const int Semantics = 3;
+        // An enemy's first moment out of its idle state ("alert"), and a trigger firing ("fire"), so a debrief need not read them from the wording.
+        internal const string KindAlert = "alert", KindFire = "fire";
+        // 1: rows without identity, removals counted as down; 2: "removed" apart; 3: identity in every enemy row and enemy event, "gone" and "remade", session in the header;
+        // 4: "alert" when an enemy first leaves its idle state and "fire" with the trigger's id (Core Debrief reads all four).
+        private const int Semantics = 4;
         private const float Step = 0.5f, MaxSeconds = 3600f, WhoWindow = 6f;
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         private static StringBuilder _frames, _events;
@@ -38,6 +41,7 @@ namespace MissionLab
             public float Since;
             public string Who = "", Name = "";
             public bool Dead;           // the game said so while the enemy was still listed
+            public bool Alerted;        // its "alert" event is written
         }
         private static readonly Dictionary<IntPtr, int> Ids = new Dictionary<IntPtr, int>();
         private static readonly Dictionary<int, Tracked> Live = new Dictionary<int, Tracked>();
@@ -176,14 +180,17 @@ namespace MissionLab
             catch { return false; }
         }
 
-        /// <summary>Something worth a line on the timeline. enemy: the row id it is about (0: none), so a reader can tell who it was.</summary>
-        public static void Event(string kind, string text, Vector3? at = null, int enemy = 0)
+        /// <summary>
+        /// Something worth a line on the timeline. id: what it is about, written as the fifth value (0: none): the enemy's row
+        /// id for an enemy event, the trigger's id for a "fire" event.
+        /// </summary>
+        public static void Event(string kind, string text, Vector3? at = null, int id = 0)
         {
             if (!_on) return;
             _events.Append(_eventCount++ > 0 ? "," : "").Append('[').Append(F(Time.unscaledTime - _startedAt)).Append(',').Append(Q(kind)).Append(',').Append(Q(text));
             if (at.HasValue) _events.Append(",[").Append(F(at.Value.x)).Append(',').Append(F(at.Value.y)).Append(',').Append(F(at.Value.z)).Append(']');
-            else if (enemy > 0) _events.Append(",null");
-            if (enemy > 0) _events.Append(',').Append(enemy);
+            else if (id > 0) _events.Append(",null");
+            if (id > 0) _events.Append(',').Append(id);
             _events.Append(']');
         }
 
@@ -247,9 +254,14 @@ namespace MissionLab
                 else if (t.Who == "" && now - t.Since < WhoWindow) t.Who = WhoIs(b, out t.Name);
                 if (!t.Dead) t.Dead = IsDead(b);
                 GameMaster.EnemyPose(b, out Vector3 pos, out float yaw);
-                char state = 'I';
+                char state = 'I'; string said = "";
                 // An enemy's state as it is born is not a real one (see GameMaster.StateCounts).
-                try { if (GameMaster.StateCounts(b, now, out BrainAI.States real)) state = real.ToString()[0]; } catch { }
+                try { if (GameMaster.StateCounts(b, now, out BrainAI.States real)) { said = real.ToString(); state = said[0]; } } catch { }
+                if (state != 'I' && !t.Alerted)
+                {
+                    t.Alerted = true;
+                    Event(KindAlert, "enemy " + id + t.Name + " leaves its idle state (" + said + ")", pos, id);
+                }
                 sb.Append(first ? "" : ",").Append('[').Append(id).Append(',').Append(F(pos.x)).Append(',').Append(F(pos.y)).Append(',').Append(F(pos.z)).Append(',').Append(Mathf.RoundToInt(yaw)).Append(",\"").Append(state).Append('"');
                 if (t.Who != "") sb.Append(",\"").Append(t.Who).Append('"');      // letters and digits only: nothing to escape
                 sb.Append(']');
@@ -283,16 +295,24 @@ namespace MissionLab
         private static void Flush()
         {
             if (_frameCount < 20) return;                      // not worth a file yet
-            try
-            {
-                var sb = new StringBuilder(_head.Length + _frames.Length + _events.Length + 256);
-                sb.Append(_head).Append(",\"players\":[");
-                for (int i = 0; i < Names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(Names[i]));
-                sb.Append("],\"events\":[").Append(_events).Append("],\"frames\":[\n").Append(_frames).Append("\n]}");
-                File.WriteAllText(_path, sb.ToString());
-            }
+            try { File.WriteAllText(_path, Whole()); }
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be written: " + e.Message); }
         }
+
+        private static string Whole()
+        {
+            var sb = new StringBuilder(_head.Length + _frames.Length + _events.Length + 256);
+            sb.Append(_head).Append(",\"players\":[");
+            for (int i = 0; i < Names.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(Names[i]));
+            sb.Append("],\"events\":[").Append(_events).Append("],\"frames\":[\n").Append(_frames).Append("\n]}");
+            return sb.ToString();
+        }
+
+        /// <summary>The recording so far, as its file would hold it ("" when nothing is being recorded or no moment is in yet), for the debrief at the mission's end.</summary>
+        internal static string Snapshot() => _on && _frames != null && _frameCount > 0 ? Whole() : "";
+
+        /// <summary>The file name this mission's recording is written to ("" when none).</summary>
+        internal static string FileName => string.IsNullOrEmpty(_path) ? "" : Path.GetFileName(_path);
 
         /// <summary>Stops the recording and writes it. why: the reason, put on the timeline (null: none worth saying).</summary>
         public static void End(string why = null)

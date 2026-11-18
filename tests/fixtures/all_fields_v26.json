@@ -1,0 +1,38 @@
+{
+ "schema": "missionlab-plan/1",
+ "name": "Fixture: every field of v0.26",
+ "id": "sc-fixture26",
+ "sealed": true,
+ "scene": "Fixture",
+ "seed": 26,
+ "triggers": [
+  { "id": 1, "name": "Gate", "when": "zone", "pos": [10, 0, 10], "radius": 5 },
+  { "id": 2, "name": "Rear reinforcements", "when": "alert" },
+  { "id": 3, "name": "Late wave", "when": "time", "delay": 300 }
+ ],
+ "placement": [
+  { "id": 1, "name": "Courtyard", "mode": "allow", "area": { "parts": [ { "floor": [-1, 3], "outline": [[0, 0], [40, 0], [40, 40], [0, 40]] } ] } },
+  { "id": 2, "name": "Street", "mode": "empty", "area": { "parts": [ { "floor": [-1, 3], "outline": [[18, 18], [22, 18], [22, 22], [18, 22]] } ] } }
+ ],
+ "options": [
+  { "id": "garrison", "name": "Garrison size", "pick": 1,
+    "choices": [
+     { "name": "Light", "drop": { "lots": [3, 4], "triggers": [3] }, "respawnTimes": 1, "skill": "recruit" },
+     { "name": "Full" }
+    ] },
+  { "id": "wave-only", "name": "Reinforcements",
+    "choices": [ { "name": "None", "drop": { "triggers": [2] } }, { "name": "Some", "drop": { "lots": [5] } }, { "name": "Hard", "skill": "veteran", "respawnTimes": 0 } ] }
+ ],
+ "director": { "budget": 10, "regen": 1, "actions": [
+  { "id": "rear", "name": "Rear reinforcements", "cost": 3, "cooldown": 60, "fire": 2, "minDistance": 30, "unseen": true, "fallback": "cancel" },
+  { "id": "late_wave", "name": "Late wave now", "cost": 5, "fire": 3 }
+ ] },
+ "respawn": { "after": 30, "times": 2 },
+ "spawns": [
+  { "pos": [5, 0, 5], "role": "Guard", "hvt": true, "scatter": 4.5, "within": 1 },
+  { "pos": [30, 0, 30], "role": "Guard", "lot": 3, "scatter": 6, "within": 1, "fallback": "skip" },
+  { "pos": [35, 0, 5], "role": "Guard", "lot": 4, "scatter": 2, "fallback": "stay" },
+  { "pos": [12, 0, 12], "role": "Guard", "lot": 5, "trigger": 2 },
+  { "pos": [14, 0, 12], "role": "Guard", "trigger": 3 }
+ ]
+}

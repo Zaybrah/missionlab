@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const ROLES = ['Guard', 'Wander', 'Patrol'];
 const DRAFT_KEY = 'missionlab-editor-draft-1';
-const EDITOR_VERSION = '0.25.0';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
+const EDITOR_VERSION = '0.26.0';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
 
 const state = {
   map: null,            // walkable surface, see makeMap()
@@ -54,6 +54,10 @@ const state = {
   squadRange: null,          // the author's recommended squad [min, max], or null ("squad" already names the selected enemies)
   minutes: 0,                // the author's estimate of the mission's length (0: none given)
   mapPrint: '',              // fingerprint of the map file the scenario's positions were made on
+  sealed: false,             // the Play view hides placements, rolls and future trigger outcomes
+  options: [],               // the host's choices before the mission: {id, name, pick, choices: [{name, drop: {lots, triggers}, respawnTimes (-1: unchanged), skill}]}
+  placement: [],             // areas enemies may scatter into ('allow') or must keep out of ('empty'): {id, name, mode, area}
+  director: null,            // the Game Master's budget: {budget, regen, actions: [{id, name, cost, cooldown, fire, minDistance, unseen, fallback}]}, or null
   mode: '2d',
 };
 const undoStack = [];

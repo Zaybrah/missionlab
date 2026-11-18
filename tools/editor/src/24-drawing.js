@@ -58,7 +58,10 @@ function draw() {
   // Zones: walk in here and the enemies bound to it appear. A painted area (27a-paint.js) replaces the circle; the anchor
   // keeps a small cross, since labels and rally points still use it.
   const shownFloor = paintShownFloor();
+  // A sealed mission that is not revealed (20b-sealed.js) leaves out enemies, routes, sight lines, trigger zones and placed things.
+  const sealed = sealedHides();
   state.zones.forEach((z, zi) => {
+    if (sealed) return;
     if (z.when !== 'zone' || !isVec(z.pos)) return;
     const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id), painted = !!(z.area && z.area.parts && z.area.parts.length), editing = paintIs('trigger', zi);
     let top = y - z.radius * v.scale - 3;
@@ -79,9 +82,12 @@ function draw() {
 
   // Named places (29b-places.js): a pin or a painted outline, with the name.
   drawPlaces();
+  // Placement areas, and the selected enemy's scatter circle with the points its rules leave (29g-scatter.js).
+  if (!sealed) drawScatter();
 
   // The mission's intel items.
   state.things.forEach((t, n) => {
+    if (sealed) return;
     const [x, y] = toScreen(t.pos[0], t.pos[2]), on = n === state.thing;
     ctx.fillStyle = css.ink; ctx.strokeStyle = css.panel; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
@@ -102,6 +108,7 @@ function draw() {
 
   // Danger check: a dashed line from an enemy to the insertion spot it can see.
   dangers().forEach((d, i) => {
+    if (sealed) return;
     if (!d) return;
     const e = state.enemies[i], [x0, y0] = toScreen(e.pos[0], e.pos[2]), [x1, y1] = toScreen(d.at[0], d.at[2]);
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.setLineDash([6, 5]);
@@ -132,6 +139,7 @@ function draw() {
 
   // Patrol routes.
   state.enemies.forEach((e, i) => {
+    if (sealed) return;
     if (e.role !== 'Patrol' || !e.patrol.length) return;
     const pts = e.patrol.map(p => toScreen(p[0], p[2])), start = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected;
     ctx.strokeStyle = css.enemy; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.setLineDash([6, 4]);
@@ -154,6 +162,7 @@ function draw() {
   // Enemies.
   const mono = getComputedStyle(document.body).getPropertyValue('--mono');
   state.enemies.forEach((e, i) => {
+    if (sealed) return;
     const [x, y] = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected, r = 6.5, bad = warningFor(e);
     const yaw = e.yaw * Math.PI / 180;
     if (state.squad.includes(i)) { ctx.beginPath(); ctx.arc(x, y, 13, 0, 6.2832); ctx.lineWidth = 2; ctx.strokeStyle = css.friend; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]); }
@@ -184,7 +193,7 @@ function draw() {
   // Live: every enemy where it really is, and the players.
   if (live.on) {
     const byId = new Map(state.enemies.map(e => [e.id, e]));
-    for (const b of live.enemies) {
+    for (const b of sealed ? [] : live.enemies) {
       const [x, y] = toScreen(b.pos[0], b.pos[2]), home = byId.get(b.marker);
       if (home && Math.hypot(home.pos[0] - b.pos[0], home.pos[2] - b.pos[2]) < 1.2) continue;       // still standing on its marker
       if (home) { const [hx, hy] = toScreen(home.pos[0], home.pos[2]); ctx.strokeStyle = css.enemy; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(x, y); ctx.stroke(); ctx.globalAlpha = 1; }
@@ -238,6 +247,7 @@ function draw() {
   }
 
   if (state.repair) drawRepair();          // a previewed repair: the searched area, before and after (34a-repairs.js)
+  if (quick.result) drawQuick();           // a quick mission layout being previewed, not part of the scenario yet (29f-options.js)
   if (state.inspectSel) drawInspect();     // the inspected trigger: what it needs and what it brings (29c-inspect.js)
   if (state.rehearse && (state.rehearse.picking || state.rehearse.focus)) drawRehearsal();   // the players of the rehearsal row being edited (29d-rehearse.js)
 

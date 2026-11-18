@@ -35,5 +35,36 @@
   "bad-area places[5].floor", "wrong-type places[6].floor"
  ],
  "bad_metadata.json": ["bad-id id", "out-of-range revision", "out-of-range squad", "out-of-range minutes", "unknown-value mapPrint"],
- "bad_metadata_types.json": ["wrong-type id", "wrong-type revision", "wrong-type minutes", "wrong-type squad"]
+ "bad_metadata_types.json": ["wrong-type id", "wrong-type revision", "wrong-type minutes", "wrong-type squad"],
+ "bad_options.json": [
+  "bad-id options[0].id", "duplicate-id options[2].id", "missing-field options[2].name",
+  "out-of-range options[3].choices", "out-of-range options[3].pick",
+  "out-of-range options[4].choices[0].drop.lots[0]", "wrong-type options[4].choices[0].drop.lots[1]", "missing-ref options[4].choices[0].drop.triggers[1]",
+  "out-of-range options[4].choices[0].respawnTimes", "unknown-value options[4].choices[0].skill", "missing-field options[4].choices[1].name",
+  "wrong-type options[5].choices",
+  "wrong-type options[6]"
+ ],
+ "bad_placement.json": [
+  "bad-id placement[0].id", "duplicate-id placement[2].id", "missing-field placement[2].name", "unknown-value placement[2].mode",
+  "missing-field placement[3].area", "bad-area placement[4].area.parts[0].outline"
+ ],
+ "bad_scatter.json": [
+  "out-of-range spawns[0].scatter",
+  "out-of-range spawns[1].scatter", "missing-ref spawns[1].within",
+  "missing-ref spawns[2].within", "unknown-value spawns[2].fallback",
+  "unknown-value spawns[3].fallback",
+  "unknown-value spawns[4].fallback",
+  "wrong-type spawns[5].scatter", "wrong-type spawns[5].within", "wrong-type spawns[5].fallback"
+ ],
+ "bad_director.json": [
+  "out-of-range director.budget", "out-of-range director.regen",
+  "bad-id director.actions[0].id",
+  "out-of-range director.actions[1].cost", "out-of-range director.actions[1].cooldown", "missing-ref director.actions[1].fire",
+  "out-of-range director.actions[1].minDistance", "wrong-type director.actions[1].unseen", "unknown-value director.actions[1].fallback",
+  "duplicate-id director.actions[2].id", "missing-field director.actions[2].name", "wrong-type director.actions[2].cost",
+  "missing-field director.actions[3].fire",
+  "missing-ref director.actions[4].fire",
+  "wrong-type director.actions[5]",
+  "wrong-type sealed"
+ ]
 }

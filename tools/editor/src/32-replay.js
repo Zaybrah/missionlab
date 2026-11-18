@@ -15,6 +15,7 @@ function whoName(who) {
 }
 function loadReplay(obj, name) {
   if (!obj || obj.schema !== 'missionlab-replay/1' || !Array.isArray(obj.frames) || !obj.frames.length) throw new Error('It is a replay without any recorded moments.');
+  replay.debrief = debriefOrNull(obj, name);      // the debrief (32a-debrief.js), read before the rows below are tidied for playback
   // Only moments that are whole are kept: a time, players and enemies, each with a place. A damaged file is read as far as it goes.
   const row = q => Array.isArray(q) && q.length >= 4 && [1, 2, 3].every(k => typeof q[k] === 'number' && isFinite(q[k]));
   // An identity that cannot be read is dropped, so that enemy is simply not known.
@@ -42,7 +43,7 @@ function loadReplay(obj, name) {
   replay.t = replay.data.start; replay.playing = false; replay.name = name;
   if (state.mode === '3d') setMode('2d');
   $('tabReplay').hidden = false; showTab('replay');
-  syncReplay(); invalidate();
+  syncReplay(); syncDebrief(); invalidate();
   return 'Replay of ' + (replay.data.scene || 'a mission') + ': ' + mmss(replay.data.end - replay.data.start) + ' long, ' + replay.data.events.length + ' events.' +
     (linked ? '' : ' An older recording: it links enemies by a guess.') + ' Press Play.';
 }
@@ -100,7 +101,7 @@ function replayStats(d) {
   });
   return rows;
 }
-function closeReplay() { replay.data = null; replay.playing = false; $('tabReplay').hidden = true; if ($('side').dataset.show === 'replay') showTab('map'); syncReplay(); invalidate(); }
+function closeReplay() { replay.data = null; replay.debrief = null; replay.playing = false; $('tabReplay').hidden = true; if ($('side').dataset.show === 'replay') showTab('map'); syncReplay(); syncDebrief(); invalidate(); }
 // The recorded moment at or before a time, the one after it, and how far along we are between them.
 function replayFrame(t) {
   const fr = replay.data.frames; let lo = 0, hi = fr.length - 1;
@@ -259,7 +260,9 @@ async function applyLive(s) {
     live.applying = true; changed(); live.applying = false;
   }
   const waiting = mine.filter(m => m.waiting).length;
-  $('liveStatus').textContent = (s.scene || 'Mission') + ': ' + live.players.length + (live.players.length === 1 ? ' player, ' : ' players, ') + live.enemies.length + ' enemies alive' + (waiting ? ', ' + waiting + ' waiting' : '') + (s.busy ? ' (spawning...)' : '');
+  // A sealed mission, not revealed (20b-sealed.js), names no enemy count: knowing how many are left is a tactical spoiler.
+  const enemyWords = sealedHides() ? 'enemies sealed' : live.enemies.length + ' enemies alive' + (waiting ? ', ' + waiting + ' waiting' : '');
+  $('liveStatus').textContent = (s.scene || 'Mission') + ': ' + live.players.length + (live.players.length === 1 ? ' player, ' : ' players, ') + enemyWords + (s.busy ? ' (spawning...)' : '');
   $('liveSpawn').disabled = !waiting; $('liveExport').hidden = false; $('liveExport').textContent = s.hasGeo ? 'Make the 3D map again' : 'Make the 3D map';
   if (s.message && s.message !== live.lastMessage) { live.lastMessage = s.message; say(s.message.replace(/^MissionLab( GM)?: /, '')); }
   view3d.syncLive(); invalidate();

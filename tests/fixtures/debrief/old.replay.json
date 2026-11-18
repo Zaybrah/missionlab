@@ -1,0 +1,5 @@
+{"schema":"missionlab-replay/1","semantics":2,"run":"","plugin":"0.20.0","scene":"Suburb","navFile":"suburb.bytes","startedUtc":"2026-01-02T10:00:00.0000000Z","step":0.5,"plan":{"schema":"missionlab-plan/1","seed":7,"scene":"Suburb","triggers":[{"id":1,"when":"zone","pos":[10,0,10],"radius":5,"name":"Gate"},{"id":3,"when":"alert"}],"spawns":[{"group":0,"role":"Guard","pos":[0,0,0]},{"group":0,"role":"Guard","pos":[10,0,10]}]},"players":["Alice"],"events":[[40,"note","zone 'Gate' reached: 2 enemies appear"],[52,"note","trigger 3 (the enemy is alerted): 0 enemies appear"],[61,"down","enemy 2 is down",[10,0,10],2],[75,"removed","enemy 1 is taken out: removed by the Game Master",[0,0,0],1],[80,"note","door 'Front' stands open (by the trigger)"]],"frames":[
+[4,[[0,0,0,0,0]],[[1,0,0,0,0,"I"],[2,10,0,10,0,"I"]]],
+[50,[[0,8,0,8,0]],[[1,0,0,0,0,"I"],[2,10,0,10,0,"S"]]],
+[90,[[0,8,0,8,0]],[]]
+]}

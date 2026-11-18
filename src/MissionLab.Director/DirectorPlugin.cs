@@ -21,7 +21,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.25.0";
+        public const string Version = "0.26.0";
 
         internal static ManualLogSource L;
 
@@ -71,6 +71,7 @@ namespace MissionLab
         internal static ConfigEntry<bool> GmEnabled;
         internal static ConfigEntry<bool> GmBlockKeys, LiveEnabled, MoveTarget, RandomExtras, RandomIntel, ReplayEnabled;
         internal static ConfigEntry<int> ReplayKeep;
+        internal static ConfigEntry<bool> DebriefMessage;
         internal static ConfigEntry<int> LivePort;
         internal static ConfigEntry<KeyCode> KeyGm, KeyCam, KeySave, KeyStance, KeyType, KeyStay, KeyWhen, KeyPlaceHere, KeyStop, KeySpawn, KeyRemove, KeyRemoveAll, KeyExport;
         internal static bool InputHooked;
@@ -139,6 +140,10 @@ namespace MissionLab
             ReplayEnabled = Config.Bind("Replay", "Enabled", true,
                 "Record where everybody was during each mission you host, for playing back on the map in the browser page. Files go to BepInEx/MissionLab/replays and stay on this computer.");
             ReplayKeep = Config.Bind("Replay", "Keep", 20, "How many recordings to keep; the oldest are removed.");
+            DebriefMessage = Config.Bind("Replay", "DebriefMessage", false,
+                "When a scenario's trigger ends the mission, show every player a three-line debrief from the recording (time, enemies down, triggers fired). " +
+                "Experimental: whether it shows before the game's end screen has not been checked with an unmodded client, and a mission the game ends by itself gets none. " +
+                "The full debrief is always on the browser page's Replay tab. false = no message.");
             GmEnabled = Config.Bind("GameMaster", "Enabled", true,
                 "Game Master mode while you host a mission: place, spawn and remove enemies in the running mission and save the result as a scenario.");
             KeyGm = Config.Bind("GameMaster", "KeyOpen", KeyCode.F8, "Opens and closes Game Master mode.");

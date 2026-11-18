@@ -1,0 +1,16 @@
+{
+ "schema": "missionlab-plan/1",
+ "placement": [
+  { "id": 1, "name": "Yard", "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+  { "id": 2, "name": "Street", "mode": "empty", "area": { "parts": [ { "floor": [0, 3], "outline": [[20, 0], [30, 0], [30, 10], [20, 10]] } ] } }
+ ],
+ "spawns": [
+  { "pos": [1, 0, 1], "scatter": 0 },
+  { "pos": [2, 0, 1], "scatter": 31, "within": 2 },
+  { "pos": [3, 0, 1], "scatter": 5, "within": 7, "fallback": "vanish" },
+  { "pos": [4, 0, 1], "scatter": 5, "within": 1, "hvt": true, "fallback": "skip" },
+  { "pos": [5, 0, 1], "scatter": 5, "vehicle": true, "fallback": "skip" },
+  { "pos": [6, 0, 1], "scatter": "far", "within": 1.5, "fallback": 1 },
+  { "pos": [7, 0, 1], "scatter": 30, "within": 1, "fallback": "skip" }
+ ]
+}

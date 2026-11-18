@@ -393,7 +393,7 @@ Console.WriteLine("files");
             Check("invalid/" + name + " is refused with the listed places", got == want && notRead == null, "got  " + got + "\n        want " + want);
             Check("invalid/" + name + " is left as it was", File.ReadAllText(file) == before);
         }
-        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "extraction_chance_defect.json" })
+        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "extraction_chance_defect.json" })
             Check(good + " passes the strict reader", !ScenarioFile.Blocks(ScenarioFile.Read(Fixture(good), out MissionPlan ok)) && ok != null, string.Join(" | ", ScenarioFile.Read(Fixture(good), out _).Select(f => f.ToString())));
         var legacy = ScenarioFile.Read(Fixture("legacy_minimal.json"), out MissionPlan oldPlan);
         Check("a file without a format line is read, with a note", oldPlan != null && legacy.Count == 1 && legacy[0].Level == Finding.Note && legacy[0].Code == "no-version");
@@ -420,10 +420,17 @@ Console.WriteLine("files");
             {
                 Keys(one, schema.GetProperty("$defs").GetProperty(def).GetProperty("properties"), def);
                 if (def == "trigger" && one.TryGetProperty("doors", out var td)) foreach (var door in td.EnumerateArray()) Keys(door, schema.GetProperty("$defs").GetProperty("door").GetProperty("properties"), "door");
-                if (def == "trigger" || def == "place") Area(one);
+                if (def == "trigger" || def == "place" || def == "placement") Area(one);
+                if (def == "option")
+                    foreach (var choice in one.GetProperty("choices").EnumerateArray())
+                    {
+                        var choiceProps = schema.GetProperty("$defs").GetProperty("choice").GetProperty("properties");
+                        Keys(choice, choiceProps, "choice");
+                        if (choice.TryGetProperty("drop", out var drop)) Keys(drop, choiceProps.GetProperty("drop").GetProperty("properties"), "drop");
+                    }
             }
         }
-        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson() };
+        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson(), Plan(Fixture("all_fields_v26.json")).ToJson() };
         foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json")) written.Add(Plan(File.ReadAllText(file)).ToJson());
         foreach (string text in written)
         {
@@ -432,6 +439,8 @@ Console.WriteLine("files");
             // missionlab-plan/2: the body under "mission" has the same keys as a plan/1 file.
             if (w.TryGetProperty("mission", out var body)) { w = body; Keys(w, schema.GetProperty("properties"), "mission"); }
             Listed(w, "triggers", "trigger"); Listed(w, "spawns", "spawn"); Listed(w, "doors", "door"); Listed(w, "things", "thing"); Listed(w, "places", "place");
+            Listed(w, "placement", "placement"); Listed(w, "options", "option");
+            if (w.TryGetProperty("director", out var director)) { Keys(director, schema.GetProperty("properties").GetProperty("director").GetProperty("properties"), "director"); Listed(director, "actions", "action"); }
         }
         Check("the schema names every key the plugin writes", missing.Count == 0, string.Join(", ", missing));
 
@@ -500,6 +509,38 @@ RehearsalsTests.Run(Check);
 // ---------------------------------------------------------------- the trigger diagnostic example: every inspector state, with its sentences (ML-015)
 Console.WriteLine("trigger diagnostic example");
 DiagnosticTests.Run(Check);
+
+// ---------------------------------------------------------------- format v0.26: sealed, options, placement, scatter, director (ML-021, ML-022, ML-023, ML-025)
+Console.WriteLine("format v0.26");
+FormatV26Tests.Run(Check);
+
+// ---------------------------------------------------------------- the Game Master budget: spend, rest, regen, refunds, retries, safe placement (ML-025)
+Console.WriteLine("director budget");
+BudgetTests.Run(Check);
+
+// ---------------------------------------------------------------- host options: apply, fallback picks, untouched dice, validation (ML-022)
+Console.WriteLine("host options");
+OptionsTests.Run(Check);
+
+// ---------------------------------------------------------------- constrained scatter: determinism, areas, floors, spacing, insertion, fallback (ML-023)
+Console.WriteLine("scatter");
+ScatterTests.Run(Check);
+
+// ---------------------------------------------------------------- quick mission: request, same seed same layout, role mix, extras named when left out (ML-022)
+Console.WriteLine("quick mission");
+GenerateTests.Run(Check);
+
+// ---------------------------------------------------------------- scenario packs: fixtures as the editor judges them, the writer, refused files, never over a local file (ML-026)
+Console.WriteLine("scenario packs");
+PackTests.Run(Check);
+
+// ---------------------------------------------------------------- debrief and unused content: sources, guesses, edits apart, comparable runs only (ML-024)
+Console.WriteLine("debrief");
+DebriefTests.Run(Check);
+
+// ---------------------------------------------------------------- Game Master save: authored fields carried, revision plus one (ML-008)
+Console.WriteLine("game master save");
+SaveTests.Run(Check);
 
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;

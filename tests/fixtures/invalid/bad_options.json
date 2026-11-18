@@ -1,0 +1,16 @@
+{
+ "schema": "missionlab-plan/1",
+ "triggers": [ { "id": 1, "when": "alert" } ],
+ "options": [
+  { "id": "bad id!", "name": "A", "choices": [ { "name": "x" }, { "name": "y" } ] },
+  { "id": "ok", "name": "B", "choices": [ { "name": "x" }, { "name": "y" } ] },
+  { "id": "ok", "name": " ", "choices": [ { "name": "x" }, { "name": "y" } ] },
+  { "id": "one", "name": "One", "pick": 1, "choices": [ { "name": "x" } ] },
+  { "id": "drops", "name": "Drops", "choices": [
+    { "name": "x", "drop": { "lots": [0, "a"], "triggers": [1, 9] }, "respawnTimes": 51, "skill": "elite" },
+    { "drop": {} } ] },
+  { "id": "nochoices", "name": "N" },
+  "not an option"
+ ],
+ "spawns": [ { "pos": [0, 0, 0] } ]
+}

@@ -1,0 +1,9 @@
+Unused content in raid-1: suggestions for review, from 1 run looked at
+Setup 1: 1 run
+- Trigger 2 'Backup' did not fire in the one run looked at. Worth a look, not a fault: it may be a backup, or out of the way.
+- Trigger 3 'Alarm' did not fire in the one run looked at. Worth a look, not a fault: it may be a backup, or out of the way.
+- Spawn #1 never left its idle state in the one run looked at. Worth a look, not a fault: a guard can add tension without ever engaging.
+- Spawn #4, tagged 'officer' never left its idle state in the one run looked at. Worth a look, not a fault: a guard can add tension without ever engaging.
+- Spawn #5, brought in by trigger 1 never left its idle state in the one run looked at. Worth a look, not a fault: a guard can add tension without ever engaging.
+  Note: Without the run record, a trigger that lost its roll in this run is listed too, and the setup cannot be compared with other runs.
+  Note: One run says little: look again after a few more runs of the same setup.

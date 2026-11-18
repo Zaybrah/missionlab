@@ -145,6 +145,13 @@ function inspectSelect(id) {
 // countdown ticking does not take the focus off a button.
 function syncInspect(force) {
   const list = $('inspectList'); if (!list) return;
+  // A sealed mission, not revealed (20b-sealed.js): what triggers wait for, what was rolled and what they will do stay out.
+  if (sealedHides()) {
+    $('inspectNote').textContent = 'This mission is sealed, so the inspector does not say what triggers wait for, what was rolled or what they will do. Reveal the mission to see it (spoiler avoidance: the file stays readable).';
+    $('inspectEmpty').hidden = true; list.hidden = true; list.textContent = ''; list.dataset.shape = ''; state.inspectSel = 0;
+    return;
+  }
+  list.hidden = false;
   const running = inspectRunning();
   const rows = inspectRows(running ? { triggerState: [...live.trig.values()] } : null);
   $('inspectNote').textContent = running ? 'Live from the game. Every value is the game\'s own, so a reloaded page shows the same.'
@@ -190,7 +197,7 @@ setInterval(() => { const shown = inspectShown(); $('inspectBox').hidden = !show
 
 // The map: the selected trigger's place, what it needs (zones and doors with a place) and what it brings. Called from draw().
 function drawInspect() {
-  if (!state.inspectSel || !inspectShown()) return;
+  if (!state.inspectSel || !inspectShown() || sealedHides()) return;
   const z = state.zones.find(q => q.id === state.inspectSel); if (!z) return;
   const l = inspectLinks(z.id), v = state.view, mono = getComputedStyle(document.body).getPropertyValue('--mono');
   const ring = (p, r, colour, dash) => { const [x, y] = toScreen(p[0], p[2]); ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.lineWidth = 3; ctx.strokeStyle = colour; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]); };
