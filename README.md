@@ -498,11 +498,11 @@ record to fill in for the next co-op run.
 | Messages on screen, taking turns; briefing | tested | 0.24.0, Clean House, solo | Findings: messages took turns. Never confirmed on a client's screen |
 | Shared respawn wave | tested | 0.24.0 and 0.26.0, Clean House, solo | 18 November: two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later. Two players dead at once: untested |
 | Respawn by trigger (`"respawn": true`) | tested | 0.22.0, Clean House, solo | The dead host was back within a second |
-| Failed ending (red message, back to the lobby without a result screen) | tested | 0.22.0 and 0.24.0, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used |
-| Success ending | tested | 0.17.0 and 0.26.0, Clean House, solo | The mission ended 2.5 to 2.7 s after the call. In 0.26.0 the messages fired with the ending were lost; 0.26.1 waits for them (not run yet) |
+| Failed ending (red message, back to the lobby without a result screen) | tested | 0.22.0, 0.24.0 and 0.26.1, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used. 0.26.1: the trigger's red message and "Mission failed." go out together |
+| Success ending | tested | 0.17.0, 0.26.0 and 0.26.1, Clean House, solo | The mission ends 2.5 to 2.7 s after the call. 0.26.1: the ending waited 11 s for the two messages fired with it |
 | Door locked or unlocked at the start and by a trigger | tested | 0.15.0 to 0.24.0, Clean House, solo | Findings: our doors hold after the game's own roll |
 | Door that stands open | tested, solo | 0.26.0, Clean House by night, solo | 18 November: opened by the third way (turning it by hand) 5 s after the trigger, seen by the plugin; a client's view: untested |
-| Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | experimental | 0.24.1 and later, untried | 0.24.0: a call moved nobody; 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
+| Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | experimental, failing | 0.26.1, Clean House, solo | 18 November: two hunters had no path and moved 3.9 m in 90 s after all three ways. 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
 | Moved intel (`objectives` in a scenario) | tested, solo | 0.26.0, Clean House by night, solo | 18 November: the phone was moved upstairs at the start, picked up there, and fired its trigger. How an unmodded client sees it: untested |
 | Random layouts laying the intel elsewhere (`RandomIntel`) | experimental, off by default | 0.24.3 | Off until moved intel is seen on an unmodded client. The rest of `RandomExtras` (waves, ambush, locked doors) stays on |
 | Target person placement (`hvt`, `MoveTarget`) | untested | any | Only the game's own target was seen, on Georgia |
@@ -517,7 +517,9 @@ record to fill in for the next co-op run.
 | Notice to other players that the host runs MissionLab (`TellPlayers`) | untested | co-op | Uses the message call that works solo; never seen by a client |
 | PvP, wave survival and other modes left alone | untested | any | Not tried in the game |
 | Scenario contract, run records, recording identities, readiness check, release ZIP | tested, solo | 0.26.0, Clean House, solo | 18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game |
-| Painted trigger areas, Play/Create/Direct, inspector, sealed, options, scatter, cards, packs (0.25 and 0.26) | inspector tested, the rest untested | 0.26.0, Clean House, solo | 18 November: the inspector followed every trigger of the diagnostic. No walk through a painted area was recorded; the rest was not played |
+| Painted trigger areas | tested offline on recorded movement | 0.26.1, Clean House by night, solo recordings | 18 November: the house painted on the real map and all 8,564 recorded player positions (15–18 November) played through the plugin's own rules: entered and left only at the doors, floors and stairs right, hold not reset by the stairs, basement left out. A shape sent live in a mission, and a client: untested |
+| Sealed missions | tested, solo | 0.26.1, Clean House by night, solo | 18 November: played to its failed ending; the host reported the page view as expected (the logs cannot show what the page drew) |
+| Play/Create/Direct, inspector, options, scatter, cards, packs (0.25 and 0.26) | inspector tested, the rest untested | 0.26.0, Clean House, solo | 18 November: the inspector followed every trigger of the diagnostic; the rest was not played |
 
 See `docs/findings.md` for what is known about the game's internals.
 

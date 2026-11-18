@@ -281,6 +281,43 @@ trigger diagnostic (18:36, ended by the try-out "complete" after 599 s). No Miss
 - **Not seen this time:** extraction refused before the phone, the 3-minute countdown, the sealed mission, options,
   scatter, action cards, a Game Master save, a repeated run, another map.
 
+## Second session of 18 November 2026 (0.26.1, Clean House by night, solo host)
+
+- **An ending waits for its messages (the 0.26.1 fix, in the game).** Phone, extraction and "Job done" fired together at
+  126.6 s; the log says "success in 11 s, once the 2 waiting messages have been shown", the game was told at 137.6 s and
+  the mission was over at 140.2 s. That the two messages were on screen is the plugin's call, not yet a host's word.
+- **Sealed mission, played to its failed ending.** The alarm at 53 s brought two hunters from the north (86 and 91 m
+  away); the countdown was told at 4 minutes, 1 minute and 10 seconds; "Too late" ended the mission as failed at 293 s and
+  the game's own end operation followed 5 s later. Taking the phone (174.7 s) opened the extraction but did not stop the
+  countdown, as the mission is written. Both red messages ("Too late…", then "Mission failed.") went out at once, so the
+  second probably replaced the first straight away (not yet confirmed on screen).
+- **Hunters stood still again.** Both fresh enemies sent at the nearest player: "has a path no, Infinity m to go",
+  3.9 m in 90 s, 80 and 85 m short after all three ways (route, the agent's destination, the game's backup call). Orders
+  to enemies that have just appeared still do not move them (ML-003).
+
+## Painted trigger areas against recorded movement (18 November, offline)
+
+No walk through a painted area was recorded in the game, so the house was painted in the editor (headless, on the real
+`suburbv2.bytes`) and every recording of Clean House from 15 to 18 November (17 recordings, 8,564 player positions) was
+played through the plugin's own `Membership` and `TriggerEngine`. The recordings store the same position the zone check
+reads (`body.transform.position`), and it is at the feet: 0.68–0.70 on the ground floor, 3.68 upstairs, -2.32 below.
+- **The house, from its walls.** A slice of the exported geometry at waist height gives the outer walls: west x -26,
+  north z 10, back wall z -19.6 (back door), front wall x -18.2 (front door), north rooms to x -14, south-east rooms to
+  x -15.5. The railed strip in front of the front wall (x -18 to -14.5) and the patio behind the back door are outside,
+  although they are at ground-floor height. The stairs are at x -25.3, z -7 to -10; a second flight goes down to the
+  basement at x -24.5, z -0.6 to -3. Eight polygon corners on the band [0.2, 3.3]; "Add floor" found upstairs at 3.68
+  and made the band [3.18, 6.28]. Both readers accept the file (missionlab-plan/2).
+- **Entered and left only through the doors.** Every entry into the house zone is 0.0 to 1.4 m from the front or back
+  door; every exit too, apart from deaths and six on the basement stairs (below the painted floor). None at a wall.
+- **Floors.** The ground-floor zone ends on the stairs at 3.33–3.68 m and starts again on the way down at 2.5–3.16 m;
+  the whole-house zone stays on over all 105 stair positions. The basement (28 positions) is outside until it is painted.
+- **Hold.** "Hold the house 10 s" fired 10.0–10.1 s after entering in all 14 runs that went in, also when those ten
+  seconds included climbing the stairs: moving between the two floors does not restart it.
+- **The old circle would have been wrong.** A 10 m circle at the same anchor fired 53 s early on 18 November (in the
+  front garden at 57.7 s; the house was entered at 111.2 s), counted 259 positions outside the house (doorstep,
+  veranda, garden) and flickered on and off in the north rooms at its edge.
+- **Still for the game:** a shape sent live from the page during a mission, and a client inside the area.
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.
