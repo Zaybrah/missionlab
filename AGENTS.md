@@ -187,7 +187,7 @@ Other rules for the format:
 - **Python 3:** `package.py` uses only the standard library. The preview scripts need numpy and matplotlib (there is no requirements file).
 - **Git:**
   - Commit subjects look like `0.24.1: <summary>; ML-007, ML-008` or `ML-008 and ML-009: <summary>`.
-  - There is one branch per minor version (`v0.24` is current). `main` is stale.
+  - There is one branch per minor version (`v0.26` is current). `main` is fast-forwarded to the newest release; releases are annotated tags `vX.Y.Z` on the minor branch.
 - **Release:**
   1. Bump `DirectorPlugin.Version`, and Recon's `Plugin.Version` if Recon changed. Update `LiveLink.TestedGame` when testing against a new game build.
   2. Add a README `### New in X.Y.Z` section; this is the changelog.
