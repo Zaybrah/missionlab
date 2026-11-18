@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const ROLES = ['Guard', 'Wander', 'Patrol'];
 const DRAFT_KEY = 'missionlab-editor-draft-1';
-const EDITOR_VERSION = '0.26.0';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
+const EDITOR_VERSION = '0.26.1';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
 
 const state = {
   map: null,            // walkable surface, see makeMap()

@@ -272,6 +272,13 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
+### New in 0.26.1 (fix after the run of 18 November; the fix itself has not run in the game yet)
+0.26.0 ran once in the game, solo on Clean House by night: what was seen is in `docs/findings.md` and the Status table.
+- **A mission ending waits for its messages.** When a trigger ended the mission, messages fired with it (and the
+  ending's own message) were still waiting their turn when the end screen came, and were lost. The ending now waits
+  until the last waiting message has been on screen for 2 s, at most 12 s; with nothing waiting it comes at once as
+  before. Once an ending is decided no other trigger fires, so a countdown can no longer end a won mission as failed.
+
 ### New in 0.26.0 (not run in the game yet)
 The growth candidates of `docs/backlog.md` (ML-021 to ML-026). Everything here is covered by `./test.sh`; what it
 does in a running mission, and for a friend without the mod, still has to be seen (`docs/backlog-status.md`).
@@ -471,9 +478,10 @@ Every result below is from OPERATOR 0.09.5 with BepInEx 6.0.0-be.785 (IL2CPP), t
 **tested** = seen to work in the game on the named build, map and mode; **experimental** = built and switched on, but
 the last run failed or the fix has not run in the game yet; **unavailable** = tried and the game does not do it, so the
 mod does not use it; **untested** = never run in that combination. "Solo" means a modded host alone; "co-op" means a
-modded host with a friend who has no mod. Build 0.24.1 and later (this release, 0.24.3) have not run in the game yet;
-their additions are covered only by `./test.sh` and the editor tests. Sources: `docs/findings.md` (what was seen, run by
-run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the record to fill in for the next co-op run.
+modded host with a friend who has no mod. 0.24.1 to 0.26.0 have run once in the game (18 November, 0.26.0, solo; the rows
+below name what was seen); everything else they add is covered only by `./test.sh` and the editor tests. Sources:
+`docs/findings.md` (what was seen, run by run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the
+record to fill in for the next co-op run.
 
 | Capability | Status | Build, map, mode | Evidence and what is still open |
 |---|---|---|---|
@@ -486,16 +494,16 @@ run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the re
 | Scenario files and patrol routes | tested | 0.15 to 0.24.0, Clean House, solo | Findings, runs 0.15.0 to 0.24.0; patrols walked their routes |
 | The scenario picker in the lobby, the empty map | tested | build not recorded, Clean House, solo | An earlier status note only; no run in the findings records them |
 | A scenario that cannot be finished is refused, the game's own mission runs | tested | 0.24.0, Clean House, solo | Two refused missions with the refusal test (ML-001) |
-| Trigger engine: time with repeat and cap, zone, hold, alarm, door, enemies down, tagged down, intel, all-of, countdown | tested | 0.24.0, Clean House by night, solo | Findings, 17 November; repeat fired at 60, 150 and 240 s and stopped |
+| Trigger engine: time with repeat and cap, zone, hold, hold by everyone, alarm, door, enemies down, tagged down, intel, all-of, after, chance, fire by hand, countdown | tested | 0.24.0 and 0.26.0, Clean House by night, solo | Findings, 17 and 18 November; repeat fired at 60, 150 and 240 s and stopped |
 | Messages on screen, taking turns; briefing | tested | 0.24.0, Clean House, solo | Findings: messages took turns. Never confirmed on a client's screen |
-| Shared respawn wave | tested | 0.24.0, Clean House, solo | One death, one player back (ML-002). The whole squad dead at once: untested |
+| Shared respawn wave | tested | 0.24.0 and 0.26.0, Clean House, solo | 18 November: two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later. Two players dead at once: untested |
 | Respawn by trigger (`"respawn": true`) | tested | 0.22.0, Clean House, solo | The dead host was back within a second |
 | Failed ending (red message, back to the lobby without a result screen) | tested | 0.22.0 and 0.24.0, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used |
-| Success ending | tested | 0.17.0, Clean House, solo | The mission ended 2.5 s after the call; the end screen said cheating was detected |
+| Success ending | tested | 0.17.0 and 0.26.0, Clean House, solo | The mission ended 2.5 to 2.7 s after the call. In 0.26.0 the messages fired with the ending were lost; 0.26.1 waits for them (not run yet) |
 | Door locked or unlocked at the start and by a trigger | tested | 0.15.0 to 0.24.0, Clean House, solo | Findings: our doors hold after the game's own roll |
-| Door that stands open | experimental | 0.24.1 and later, untried | 0.24.0: the call unlatched doors but did not swing them; 0.24.1 tries four ways |
+| Door that stands open | tested, solo | 0.26.0, Clean House by night, solo | 18 November: opened by the third way (turning it by hand) 5 s after the trigger, seen by the plugin; a client's view: untested |
 | Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | experimental | 0.24.1 and later, untried | 0.24.0: a call moved nobody; 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
-| Moved intel (`objectives` in a scenario) | untested | Clean House, solo and co-op | No run in the findings records it as seen; how an unmodded client sees it is an open question there |
+| Moved intel (`objectives` in a scenario) | tested, solo | 0.26.0, Clean House by night, solo | 18 November: the phone was moved upstairs at the start, picked up there, and fired its trigger. How an unmodded client sees it: untested |
 | Random layouts laying the intel elsewhere (`RandomIntel`) | experimental, off by default | 0.24.3 | Off until moved intel is seen on an unmodded client. The rest of `RandomExtras` (waves, ambush, locked doors) stays on |
 | Target person placement (`hvt`, `MoveTarget`) | untested | any | Only the game's own target was seen, on Georgia |
 | Insertion chosen by the scenario | tested | 0.15.2, Clean House, solo | The host started on Alpha 2. A client's insertion: untested |
@@ -508,7 +516,8 @@ run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the re
 | Game Master mode in the game and in the browser, recordings | tested | 0.15 to 0.24.0, Clean House, solo | Findings, every run |
 | Notice to other players that the host runs MissionLab (`TellPlayers`) | untested | co-op | Uses the message call that works solo; never seen by a client |
 | PvP, wave survival and other modes left alone | untested | any | Not tried in the game |
-| Scenario contract, run records, recording identities, readiness check, release ZIP | untested in the game | 0.24.1 to 0.24.3 | Covered by `./test.sh` and the editor tests only (ML-006 to ML-009, ML-012) |
+| Scenario contract, run records, recording identities, readiness check, release ZIP | tested, solo | 0.26.0, Clean House, solo | 18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game |
+| Painted trigger areas, Play/Create/Direct, inspector, sealed, options, scatter, cards, packs (0.25 and 0.26) | inspector tested, the rest untested | 0.26.0, Clean House, solo | 18 November: the inspector followed every trigger of the diagnostic. No walk through a painted area was recorded; the rest was not played |
 
 See `docs/findings.md` for what is known about the game's internals.
 

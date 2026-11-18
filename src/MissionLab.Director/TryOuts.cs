@@ -23,10 +23,16 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; Orders.Clear(); Messages.Reset(); _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
+        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; _finishAt = -1f; _ended = false; Orders.Clear(); Messages.Reset(); _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
+
+        // A mission ending waits for the messages fired with it (MessageQueue.EndAt); the first ending decided wins, and
+        // the mission's triggers stop while it is pending or carried out, so a countdown cannot end a won mission as failed.
+        private static float _finishAt = -1f;
+        private static bool _finishSuccess, _ended;
+        internal static bool Ending => _finishAt >= 0f || _ended;
         private static readonly List<GameObject> Orders = new List<GameObject>();
 
         // The game marks a run as cheated by itself after some calls. Which ones is found out by watching the flag.
@@ -60,6 +66,17 @@ namespace MissionLab
                 _endAt = -1f;
                 try { GameManagerNetwork g = GameManagerNetwork.instance; if (g != null) g.EndOperation(); DirectorPlugin.L.LogInfo("end: the operation was ended after the failed message"); }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the operation could not be ended: " + e.Message); }
+            }
+            if (_finishAt >= 0f && now >= _finishAt)
+            {
+                _finishAt = -1f;
+                try
+                {
+                    GameManagerNetwork g = GameManagerNetwork.instance;
+                    string said = g == null ? "end: the game's mission keeper was not found, so the mission was not ended" : Finish(g, _finishSuccess);
+                    DirectorPlugin.L.LogInfo("MissionLab GM: " + said); Replay.Event("note", said);
+                }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the mission could not be ended: " + e.Message); }
             }
             for (int i = Watch.Count - 1; i >= 0; i--)
             {
@@ -609,7 +626,19 @@ namespace MissionLab
         {
             GameManagerNetwork g = GameManagerNetwork.instance;
             if (g == null) return "end: the game's mission keeper was not found";
+            if (Ending) return "end: the mission is already ending (" + (_finishSuccess ? "success" : "failed") + "); this ending is left out";
+            _finishSuccess = success;
             try { RunRecord.Ending(success ? "success" : "failed"); } catch { }      // the run record names how this mission ended once the end is seen
+            float now = Time.unscaledTime, at = Messages.EndAt(now);
+            if (at <= now) return Finish(g, success);
+            _finishAt = at;
+            return "end: " + (success ? "success" : "failed") + " in " + ((int)Math.Ceiling(at - now)).ToString(CultureInfo.InvariantCulture) + " s, once the " +
+                   Messages.Waiting + (Messages.Waiting == 1 ? " waiting message has" : " waiting messages have") + " been shown";
+        }
+
+        private static string Finish(GameManagerNetwork g, bool success)
+        {
+            _ended = true;
             if (!success)
             {
                 // The game's failed screen closes again at once while a player is alive (seen in a run), so the players are told in words too.

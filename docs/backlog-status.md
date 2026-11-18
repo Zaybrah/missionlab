@@ -8,6 +8,11 @@ needs a run in OPERATOR; "co-op" means a run with a friend who has no mod. 0.24.
 ## v0.24
 
 In the game so far (17 November, 0.24.0, one player): the trigger engine, a shared wave, two refused missions.
+On 18 November (0.26.0, one player, Clean House by night; `docs/findings.md`): readiness all OK and the catalogue right;
+the acceptance mission to a success (door stood open, timer repeat and cap, moved phone, extraction held and opened,
+tagged enemy down, all-of ending); two shared waves and the game's own ending after the third death; the diagnostic
+mission with the inspector following every trigger. Found: messages fired with a success ending were lost (fixed in
+0.26.1, not run yet). Not played: painted-area walk, sealed, options, scatter, cards, Game Master save, repeat, other map.
 
 | Ticket | State | Tested | Still open |
 |---|---|---|---|

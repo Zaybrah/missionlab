@@ -47,5 +47,19 @@ static class Messages
             check("nothing waits after a reset", q.Waiting == 0 && q.Due(100f) == null, q.Waiting.ToString());
             check("the first message of the new mission goes at once", q.Offer("hello", false, 0.5f) == MessageTurn.Now, "");
         }
+        {   // A mission ending waits until the messages fired with it have been on screen (the acceptance run, 18 November).
+            var q = new MessageQueue();
+            check("with nothing waiting the mission ends at once", q.EndAt(5f) == 5f, q.EndAt(5f).ToString());
+            q.Offer("phone secured", false, 237.9f); q.Shown(237.9f);
+            q.Offer("the extraction is open", false, 237.9f); q.Offer("mission accomplished", false, 237.9f);
+            float end = q.EndAt(237.9f), lastShown = -1f;
+            for (float t = 237.9f; t < end; t += 0.1f) { if (q.Due(t) != null) { lastShown = t; q.Shown(t); } }
+            check("both waiting messages are shown before the ending", q.Waiting == 0 && lastShown > 0f, q.Waiting + " still waiting");
+            check("the last one stays on screen for the linger time first", end - lastShown >= MessageQueue.Linger - 0.11f, end + " vs " + lastShown);
+            var full = new MessageQueue();
+            full.Offer("first", false, 0f); full.Shown(0f);
+            for (int i = 0; i < 8; i++) full.Offer("m" + i, false, 0f);
+            check("an ending never waits longer than the cap", full.EndAt(0f) == MessageQueue.MostWait, full.EndAt(0f).ToString());
+        }
     }
 }

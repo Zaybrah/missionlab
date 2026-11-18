@@ -57,6 +57,24 @@ namespace MissionLab.Core
             _nextAt = now + Gap;
         }
 
+        /// <summary>Seconds the last waiting message stays on screen before a mission ending is carried out.</summary>
+        public const float Linger = 2f;
+
+        /// <summary>The longest a mission ending waits for messages; past that the players lose the rest.</summary>
+        public const float MostWait = 12f;
+
+        /// <summary>
+        /// When a mission ending decided now should be carried out. The game's end screen takes over at once, so messages
+        /// still waiting would never be seen (18 November 2026: a success ending swallowed the two messages fired with it).
+        /// Nothing waiting: now. Otherwise the last one's turn plus <see cref="Linger"/>, at most <see cref="MostWait"/> away.
+        /// </summary>
+        public float EndAt(float now)
+        {
+            if (_waiting.Count == 0) return now;
+            float last = System.Math.Max(now, _nextAt) + Gap * (_waiting.Count - 1);
+            return System.Math.Min(now + MostWait, last + Linger);
+        }
+
         /// <summary>A new mission starts with nothing waiting and no gap to keep.</summary>
         public void Reset()
         {

@@ -258,6 +258,29 @@ BepInEx 6.0.0-be.785. Everything here came from running the plugins in this repo
   `ExecuteBackupResponse` and `CalledBackup`, logging which step gets an enemy moving.
 - BepInEx keeps one log: starting the game again erased the log of the feature-test run. The recording kept its events.
 
+## Run of 18 November 2026 (0.26.0, Clean House by night, solo host)
+
+Three missions: the acceptance mission twice (18:03, success in 241 s; 18:27, ended by the game after 130 s) and the
+trigger diagnostic (18:36, ended by the try-out "complete" after 599 s). No MissionLab warning or error in the log.
+- **A door stands open.** Trigger 1 asked `Door Interior Paneled_3` to stand open at 55.2 s; the first two ways (a
+  push, a push the other way) left it shut, the third, turning it by hand, had it open enough for enemies at 60.2 s.
+  Seen by the plugin (`IsOpenEnoughForAI`); the host's eye and a client's view were not recorded.
+- **Timer repeat again 60, 150, 240 s and then stopped.** A repeat brings back only enemies of the trigger that are
+  down: the third wave brought nobody because the second wanderer still lived.
+- **The cell phone, not the sim cards.** Sim cards picked up at 231.9 s did not fire the "Cell Phone" trigger; the
+  phone at 237.9 s did, in the same moment.
+- **Shared waves, the whole way.** Deaths at 27.3 and 62.6 s, both back after 20.2 s; the game's respawn setting was put
+  back each time. After the third death (103.0 s, no wave left) the game itself ended the mission at 130 s, 27 s later.
+- **Messages lost at a success ending.** Triggers 3, 4 and 7 fired together at 237.9 s; the first message showed, the
+  other two waited their 4.5 s turn, and trigger 7 ended the mission at once: the mission was gone at 240.6 s, so
+  "Second message…" and "…mission accomplished" were most likely never shown (from the timings, not from the screen).
+  A timer also fired 2.3 s after the win. 0.26.1 lets an ending wait for its messages and stops triggers once decided.
+- **Diagnostic:** clock at 30 s; waves 60, 105, 150 s; the 50% trigger sat out (roll 198937); "everyone" held 20 s;
+  phone; two triggers fired by hand; "two down" opened the extraction. Five test zones made on the page fired while the
+  host stood still upstairs (-15.2, 3.7, 4.5); they had no message, and no walk through a painted area is recorded.
+- **Not seen this time:** extraction refused before the phone, the 3-minute countdown, the sealed mission, options,
+  scatter, action cards, a Game Master save, a repeated run, another map.
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.

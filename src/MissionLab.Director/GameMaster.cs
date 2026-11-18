@@ -768,6 +768,8 @@ namespace MissionLab
         /// <summary>Asks the engine which triggers fire now and which countdown lines are due, and does what they say.</summary>
         private static void CheckTriggers(RaidManager raid, GameManager gm, float now)
         {
+            // An ending is decided: nothing more fires (18 November: a timer fired 2 s after the mission was won).
+            if (TryOuts.Ending) return;
             Engine.Start = Director.HandledAt;                 // timers count from the start of the mission
             Asks.Raid = raid; Asks.Gm = gm; Asks.Now = now;
             foreach (TriggerEvent ev in Engine.Step(now, Asks))
