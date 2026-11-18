@@ -38,6 +38,7 @@ What is in here
   BepInEx/plugins/MissionLab/MissionLab.Recon.dll      read-only helper that writes down what each map contains
   BepInEx/MissionLab/web/                              the editor page and its 3D library (three.js, MIT licence)
   BepInEx/MissionLab/scenarios/examples/               example scenarios; move one up a folder to use it
+  BepInEx/MissionLab/modules/                          example encounter modules (Create > Modules > Insert)
 
 Remove
   Delete BepInEx/plugins/MissionLab and BepInEx/MissionLab. Your own scenarios are in BepInEx/MissionLab/scenarios.
@@ -54,6 +55,8 @@ FILES = [
 ]
 for name in sorted(os.listdir(os.path.join(HERE, 'examples'))):
     if name.endswith('.json'): FILES.append(('BepInEx/MissionLab/scenarios/examples/' + name, 'examples/' + name))
+for name in sorted(os.listdir(os.path.join(HERE, 'examples', 'modules'))):
+    if name.endswith('.module.json'): FILES.append(('BepInEx/MissionLab/modules/' + name, 'examples/modules/' + name))
 out = os.path.join(HERE, 'dist', f'MissionLab-{version}.zip')
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     for arc, src in FILES:

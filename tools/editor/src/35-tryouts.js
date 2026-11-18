@@ -50,4 +50,6 @@ Object.assign(window.missionlabEditor, { setView, viewIs, syncStrip, catalogueFa
 Object.assign(window.missionlabEditor, { inspectRows, inspectLinks, inspectLinkText, inspectStatic, inspectClock, inspectSelect, syncInspect });   // the trigger inspector (ML-015), for automated tests
 Object.assign(window.missionlabEditor, { moduleProblems, moduleOfSelection, moduleText, moduleInsert, moduleOpen, moduleBlock, moduleBind, modulePlacement, moduleTurn });   // encounter modules (ML-019), for automated tests
 Object.assign(window.missionlabEditor, { rehearseScript, rehearseText, rehearseRows, rehearseProblems, rehearseMatch, rehearseReport, rehearseRerunReport, rhLoad, rhInside });   // rehearsal (ML-016), for automated tests
+Object.assign(window.missionlabEditor, { areaEditStart, areaEditStop, floorBand, setPaintBand, paintStroke, paintRect, paintPoly, areaVertex, areaInsertVertex, areaMove, areaTurn, paintDeletePart, paintAddFloor, areaInteriorPoint, areaAnchorInside, paintLimits, areaFindings, areaVolumes });   // painting areas (ML-027), for automated tests
+Object.assign(window.missionlabEditor, { saveFile, copyFile, saveToCatalogue });   // the save paths a pending module binding holds back (ML-019), for automated tests
 })();

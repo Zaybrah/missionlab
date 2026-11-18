@@ -1246,6 +1246,8 @@ $('cdEdit').addEventListener('click', async () => {
 // ------------------------------------------------------------------ saving into the scenarios folder (between missions)
 async function saveToCatalogue(replace) {
   if (!live.on) return;
+  const held = moduleBlock();     // an inserted module with an outside reference still to bind (ML-019)
+  if (held) { $('saveMsg').textContent = held; return; }
   if (!state.enemies.length) { $('saveMsg').textContent = 'Place at least one enemy first: MissionLab does not use a scenario without enemies.'; return; }
   state.revision++;
   const name = fileName(), text = scenarioText();
@@ -5965,14 +5967,19 @@ if (location.protocol === 'file:') saver = async (name, text) => {
 };
 else if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { if (d) { saver = (name, text) => d.save({ filename: name, data: text }); $('save').hidden = false; } }).catch(() => {});
 $('save').hidden = !saver;
-$('save').addEventListener('click', async () => {
+// An inserted module with an outside reference still to bind is not a valid scenario yet (ML-019): nothing leaves the page.
+const exportHeld = () => { const held = moduleBlock(); if (held) $('saveMsg').textContent = held; return held !== ''; };
+async function saveFile() {
+  if (exportHeld()) return;
   if (live.on) { await liveCommand('save'); $('saveMsg').textContent = 'Saved in BepInEx/MissionLab/scenarios. It loads the next time you host this map.'; return; }
   // Each save counts one revision; the id is made on the first save (scenarioObject) and kept from then on.
   state.revision++;
   try { await saver(fileName(), scenarioText()); $('saveMsg').textContent = 'Saved as ' + fileName() + ' (revision ' + state.revision + ').'; markSaved(fileName()); changed(); }
   catch (err) { state.revision--; $('saveMsg').textContent = err && err.code === 'declined' ? 'Not saved.' : 'Saving is not possible here. Use Copy file text and paste it into a new file named ' + fileName() + '.'; }
-});
-$('copy').addEventListener('click', async () => {
+}
+$('save').addEventListener('click', saveFile);
+async function copyFile() {
+  if (exportHeld()) return;
   const text = scenarioText();
   try { await navigator.clipboard.writeText(text); $('saveMsg').textContent = 'Copied. Paste it into a new text file named ' + fileName() + '.'; }
   catch (err) {
@@ -5980,7 +5987,8 @@ $('copy').addEventListener('click', async () => {
     let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* not allowed here */ }
     $('saveMsg').textContent = ok ? 'Copied. Paste it into a new text file named ' + fileName() + '.' : 'The text is selected below. Press Ctrl+C, then paste it into a new file named ' + fileName() + '.';
   }
-});
+}
+$('copy').addEventListener('click', copyFile);
 
 // ------------------------------------------------------------------ live link to the running game
 // When this page is served by the mod (http://localhost:8765), it shows the mission you are hosting:
@@ -7469,6 +7477,8 @@ Object.assign(window.missionlabEditor, { setView, viewIs, syncStrip, catalogueFa
 Object.assign(window.missionlabEditor, { inspectRows, inspectLinks, inspectLinkText, inspectStatic, inspectClock, inspectSelect, syncInspect });   // the trigger inspector (ML-015), for automated tests
 Object.assign(window.missionlabEditor, { moduleProblems, moduleOfSelection, moduleText, moduleInsert, moduleOpen, moduleBlock, moduleBind, modulePlacement, moduleTurn });   // encounter modules (ML-019), for automated tests
 Object.assign(window.missionlabEditor, { rehearseScript, rehearseText, rehearseRows, rehearseProblems, rehearseMatch, rehearseReport, rehearseRerunReport, rhLoad, rhInside });   // rehearsal (ML-016), for automated tests
+Object.assign(window.missionlabEditor, { areaEditStart, areaEditStop, floorBand, setPaintBand, paintStroke, paintRect, paintPoly, areaVertex, areaInsertVertex, areaMove, areaTurn, paintDeletePart, paintAddFloor, areaInteriorPoint, areaAnchorInside, paintLimits, areaFindings, areaVolumes });   // painting areas (ML-027), for automated tests
+Object.assign(window.missionlabEditor, { saveFile, copyFile, saveToCatalogue });   // the save paths a pending module binding holds back (ML-019), for automated tests
 })();
 </script>
 </body>

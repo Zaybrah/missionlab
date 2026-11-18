@@ -767,6 +767,333 @@ console.log('rehearsal (ML-016)');
   }
 }
 
+console.log('painting areas (ML-027)');
+{
+  // A small invented map: ground at 0 m and an upper floor at 3 m over 60 x 60 m, and a zone trigger whose area is painted.
+  const plate = (x0, z0, x1, z1, y) => [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1];
+  const GROUND = [-0.5, 2.6], text = JSON.stringify;
+  const fresh = () => {
+    const page = openEditor(script), api = page.api, s = api.state;
+    s.map = api.makeMap(new Float32Array([...plate(-20, -20, 40, 40, 0), ...plate(-20, -20, 40, 40, 3)]), 'paint test');
+    Object.assign(s, { infils: [], authored: [], things: [], objectives: [], doors: [], extractionAfter: 0, selected: -1, squad: [] });
+    s.enemies = [api.newEnemy([5, 0, 5], 'Guard', 0)];
+    s.zones = [api.newTrigger(1, 'zone', { pos: [5, 0, 5], radius: 12, message: 'Inside the house' })];
+    api.areaEditStart({ kind: 'trigger', index: 0 }, GROUND);
+    s.paint.tip = 'round'; s.paint.size = 1.5;
+    return { api, s, page, area: () => s.zones[0].area, sig: () => api.areaSignature(s.zones[0].area), at: p => api.areaContains(s.zones[0].area, p) };
+  };
+  // The courtyard: a 20 x 20 m square with a round 4 m eraser drawn through its middle, from (6, 10) to (14, 10).
+  const courtyard = t => { t.api.paintRect([0, 0], [20, 20]); t.s.paint.size = 4; t.api.paintStroke([[6, 10], [14, 10]], true); };
+  {   // An L-shaped house from two rectangles: both wings are inside, the yard in the L's corner is not.
+    const t = fresh();
+    check('painting starts on the trigger with the chosen floor band', text(t.s.paint.target && [t.s.paint.target.kind, t.s.paint.target.index]) === '["trigger",0]' && text([t.s.paint.bottom, t.s.paint.top]) === text(GROUND));
+    check('two rectangles are accepted', t.api.paintRect([0, 0], [20, 10]) === true && t.api.paintRect([10, 0], [0, 20]) === true);
+    check('the L is two parts on the ground floor band', t.area().parts.length === 2 && t.area().parts.every(p => text(p.floor) === text(GROUND)), t.sig());
+    check('a point in each wing is inside', t.at([15, 1, 5]) && t.at([5, 1, 15]));
+    check('the seam where the wings overlap is inside', t.at([5, 1, 5]) && t.at([10, 1, 10]));
+    check('the outdoor corner of the L\'s box is outside', !t.at([15, 1, 15]) && !t.at([19, 1, 19]));
+    check('the trigger itself now goes by the area, not its 12 m circle', !t.api.membershipInside(t.s.zones[0], [15, 1, 15]) && t.api.membershipInside(t.s.zones[0], [15, 1, 5]));
+  }
+  {   // A courtyard: erasing through the middle of a rectangle leaves a hole, and saving and loading keeps it.
+    const t = fresh();
+    courtyard(t);
+    const parts = t.area().parts;
+    check('the eraser leaves one part with one hole', parts.length === 1 && parts[0].holes.length === 1, t.sig());
+    check('the outline is still the 20 x 20 square', text(parts[0].outline) === '[[0,0],[20,0],[20,20],[0,20]]', text(parts[0].outline));
+    check('the middle of the courtyard and both ends of the stroke are outside', !t.at([10, 1, 10]) && !t.at([6.5, 1, 10]) && !t.at([13.5, 1, 10]));
+    check('the solid ring around it is inside', t.at([1, 1, 1]) && t.at([10, 1, 2]) && t.at([10, 1, 18]) && t.at([2, 1, 10]) && t.at([18, 1, 10]));
+    check('the courtyard area has no findings', t.api.areaFindings(t.area()).length === 0, text(t.api.areaFindings(t.area())));
+    const file = t.api.scenarioText(), obj = JSON.parse(file);
+    check('a painted trigger is saved as missionlab-plan/2', obj.schema === 'missionlab-plan/2' && !!obj.mission && obj.mission.triggers[0].area !== undefined, file.slice(0, 80));
+    check('the saved area is the painted one, hole included', text(obj.mission.triggers[0].area) === t.sig(), text(obj.mission.triggers[0].area));
+    const again = await load(script, 'courtyard.json', file), z = again.api.state.zones[0];
+    check('the saved courtyard loads again', !again.api.state.refused && !!z && !!z.area, again.banner());
+    if (z && z.area) {
+      check('the loaded area has the same shape', again.api.areaSignature(z.area) === t.sig(), again.api.areaSignature(z.area));
+      check('after loading, the courtyard is still outside and the ring inside', !again.api.areaContains(z.area, [10, 1, 10]) && again.api.areaContains(z.area, [1, 1, 1]));
+      check('saving the loaded file again gives the same text', again.api.scenarioText() === file);
+    }
+  }
+  {   // The same 10 x 10 square by rectangle, polygon, brush and brush-then-erase is saved as the same shape.
+    const made = fn => { const t = fresh(); fn(t); return t.sig(); };
+    const rect = made(t => t.api.paintRect([10, 10], [0, 0]));
+    const poly = made(t => t.api.paintPoly([[10, 10], [10, 0], [0, 0], [0, 10]]));    // clockwise, from another corner
+    const brush = made(t => { t.s.paint.tip = 'square'; t.s.paint.size = 10; t.api.paintStroke([[5, 5]]); });
+    const trimmed = made(t => {   // a 12 m square, then a 2 m square eraser along each of its four sides
+      t.s.paint.tip = 'square'; t.s.paint.size = 12; t.api.paintStroke([[5, 5]]);
+      t.s.paint.size = 2;
+      t.api.paintStroke([[-1, -2], [-1, 12]], true); t.api.paintStroke([[11, -2], [11, 12]], true);
+      t.api.paintStroke([[-2, -1], [12, -1]], true); t.api.paintStroke([[-2, 11], [12, 11]], true);
+    });
+    check('the rectangle gives the plain square', rect === '{"parts":[{"floor":[-0.5,2.6],"outline":[[0,0],[10,0],[10,10],[0,10]]}]}', rect);
+    check('a polygon drawn the other way round gives the same signature', poly === rect, poly);
+    check('a square brush covering it gives the same signature', brush === rect, brush);
+    check('a bigger brush trimmed by the eraser gives the same signature', trimmed === rect, trimmed);
+  }
+  {   // Undo: rectangle, eraser and a corner move each come back exactly, every part and hole with them.
+    const t = fresh();
+    const s0 = t.sig();
+    t.api.paintRect([0, 0], [20, 20]);
+    const sA = t.sig();
+    t.api.paintRect([30, 0], [40, 10]);
+    const s1 = t.sig();
+    t.s.paint.size = 4; t.api.paintStroke([[6, 10], [14, 10]], true);
+    const s2 = t.sig();
+    const j = t.area().parts.findIndex(p => p.holes.length);
+    check('the eraser made a hole in the big part only', j >= 0 && t.area().parts.length === 2 && t.area().parts.filter(p => p.holes.length).length === 1, s2);
+    check('a corner moves', t.api.areaVertex(j, -1, 0, [-1, -1]) === true && t.at([-0.5, 1, -0.4]));
+    const s3 = t.sig();
+    check('each step changed the shape', new Set([s0, s1, s2, s3]).size === 4);
+    t.api.undo();
+    check('one undo takes back the corner move, the hole still there', t.sig() === s2 && !t.at([-0.5, 1, -0.4]) && !t.at([10, 1, 10]), t.sig());
+    t.api.undo();
+    check('the next undo takes back the eraser: both parts, no hole', t.sig() === s1 && t.at([10, 1, 10]) && t.at([35, 1, 5]), t.sig());
+    t.api.undo();
+    check('the next undo takes back the second rectangle, the first stays', t.sig() === sA && t.area().parts.length === 1, t.sig());
+    t.api.undo();
+    check('the last undo takes back the first rectangle too', t.sig() === s0, t.sig());
+  }
+  {   // Limits: a polygon of 257 corners, and a 33rd part, are refused with a message and change nothing.
+    const t = fresh();
+    const ring = n => Array.from({ length: n }, (_, k) => [Math.round(3000 * Math.cos(2 * Math.PI * k / n)) / 100, Math.round(3000 * Math.sin(2 * Math.PI * k / n)) / 100]);
+    t.api.paintRect([100, 100], [102, 102]);
+    const before = t.sig();
+    check('a polygon of 257 corners is refused', t.api.paintPoly(ring(257)) === false);
+    check('the author is told a ring has at most 256 corners', t.page.banner().includes('at most 256 corners'), t.page.banner());
+    check('the area is unchanged by the refused polygon', t.sig() === before);
+    check('a polygon of 256 corners is accepted', t.api.paintPoly(ring(256)) === true && t.area().parts.length === 2);
+    for (let k = 2; k < 32; k++) t.api.paintRect([k * 3 - 200, 0], [k * 3 - 198, 2]);
+    const full = t.sig();
+    check('32 parts are accepted', t.area().parts.length === 32, String(t.area().parts.length));
+    check('a 33rd part is refused', t.api.paintRect([300, 300], [302, 302]) === false);
+    check('the author is told an area has at most 32 parts', t.page.banner().includes('at most 32 parts'), t.page.banner());
+    check('the area is unchanged by the refused part', t.sig() === full && !t.at([301, 1, 301]));
+  }
+  {   // Two floors and stairs: the ground floor courtyard copied upstairs, and a stair part whose band reaches both.
+    const t = fresh();
+    courtyard(t);
+    check('a ground-floor-only area leaves out a point 3 m up', t.at([2, 1, 2]) && !t.at([2, 3, 2]));
+    check('adding a floor is accepted', t.api.paintAddFloor() === true);
+    check('the copy lies on the floor above, and painting goes on there', t.area().parts.length === 2 && text(t.area().parts[1].floor) === '[2.5,5.6]' && text([t.s.paint.bottom, t.s.paint.top]) === '[2.5,5.6]', t.sig());
+    check('the copy keeps the courtyard hole', text(t.area().parts[1].holes) === text(t.area().parts[0].holes));
+    check('the stair band is accepted', t.api.setPaintBand(-0.5, 5.6) === true);
+    t.api.paintRect([20, 8], [23, 12]);
+    check('the stairs are a third part spanning both floors', t.area().parts.length === 3 && text(t.area().parts[2].floor) === '[-0.5,5.6]', t.sig());
+    check('ground floor, upstairs and the stairs are inside', t.at([2, 1, 2]) && t.at([2, 4, 2]) && t.at([21.5, 0.5, 10]) && t.at([21.5, 2.8, 10]) && t.at([21.5, 4.5, 10]));
+    check('the void above the courtyard is outside, upstairs as on the ground', !t.at([10, 4, 10]) && !t.at([10, 1, 10]));
+    check('above the top floor band is outside', !t.at([2, 6, 2]));
+    check('a floor band upside down is refused', t.api.setPaintBand(3, 1) === false && t.s.paint.bottom === -0.5);
+  }
+  {   // Erasing everything leaves no area: the trigger is written as its circle again, and the file stays plan/1.
+    const t = fresh();
+    t.api.paintRect([0, 0], [10, 10]);
+    t.s.paint.tip = 'square'; t.s.paint.size = 14;
+    check('the eraser over the whole area is accepted', t.api.paintStroke([[5, 5]], true) === true);
+    check('no part is left', t.area() === null || t.area().parts.length === 0, t.sig());
+    const obj = t.api.scenarioObject();
+    check('the file is missionlab-plan/1 again', obj.schema === 'missionlab-plan/1', obj.schema);
+    check('the trigger is written as a circle, with no area key', obj.triggers && obj.triggers[0].radius === 12 && !('area' in obj.triggers[0]), text(obj.triggers && obj.triggers[0]));
+    check('the circle counts again for the trigger', t.api.membershipInside(t.s.zones[0], [14, 0, 5]));
+  }
+  {   // The anchor: outside the area or in its courtyard, it is moved to a point inside, on the floor.
+    const t = fresh();
+    courtyard(t);
+    t.s.zones[0].pos = [10, 0, 10];
+    const p = t.api.areaInteriorPoint(t.area());
+    check('the interior point is inside the area, not in the courtyard', !!p && t.at(p) && !(Math.abs(p[0] - 10) < 4.5 && Math.abs(p[2] - 10) < 4.5), text(p));
+    check('the anchor in the courtyard is outside the area', !t.at(t.s.zones[0].pos));
+    check('moving the anchor inside is accepted', t.api.areaAnchorInside() === true);
+    check('the anchor now stands inside the area, on the ground', t.at(t.s.zones[0].pos) && t.s.zones[0].pos[1] === 0, text(t.s.zones[0].pos));
+    t.api.undo();
+    check('undo puts the anchor back in the courtyard', text(t.s.zones[0].pos) === '[10,0,10]', text(t.s.zones[0].pos));
+    t.s.zones[0].pos = [50, 0, 50];
+    t.api.areaAnchorInside();
+    check('an anchor beyond the outline is moved inside too', t.at(t.s.zones[0].pos), text(t.s.zones[0].pos));
+    const ring = { parts: [{ floor: [-0.5, 2.6], outline: [[0, 0], [40, 0], [40, 40], [0, 40]], holes: [[[1, 1], [39, 1], [39, 39], [1, 39]]] }] };
+    const q = t.api.areaInteriorPoint(ring);
+    check('a thin ring around a big hole still gets a point on the ring', !!q && t.api.areaContains(ring, q), text(q));
+  }
+  {   // Turning and moving there and back restore the shape; the hole and the anchor go with the outline.
+    const t = fresh();
+    t.api.paintRect([0, 0], [20, 10]);
+    t.s.paint.tip = 'square'; t.s.paint.size = 4; t.api.paintStroke([[5, 5]], true);    // a 4 x 4 m hole at (5, 5)
+    const before = t.sig(), pos = text(t.s.zones[0].pos);
+    check('the hole is there to turn', t.area().parts[0].holes.length === 1 && !t.at([5, 1, 5]), before);
+    t.api.areaTurn(90);
+    check('a quarter turn about the middle stands the 20 x 10 m box on end', text(t.area().parts[0].outline) === '[[5,-5],[15,-5],[15,15],[5,15]]', text(t.area().parts[0].outline));
+    check('the hole turns with it, to (10, 10)', !t.at([10, 1, 10]) && t.at([10, 1, 14]) && t.at([10, 1, 0]), text(t.area().parts[0].holes));
+    t.api.areaTurn(-90);
+    check('turning back gives the same signature', t.sig() === before, t.sig());
+    t.api.areaMove(30, -7);
+    check('a move takes the hole along', !t.at([35, 1, -2]) && t.at([31, 1, -6]) && t.at([5, 1, 5]) === false && !t.at([1, 1, 1]));
+    check('the anchor moves with the area', text(t.s.zones[0].pos) === '[35,0,-2]', text(t.s.zones[0].pos));
+    t.api.areaMove(-30, 7);
+    check('moving back gives the same signature and anchor', t.sig() === before && text(t.s.zones[0].pos) === pos, t.sig());
+  }
+  {   // The brush joins what it touches into one part; an eraser right across a part cuts it in two; other floors stay as they were.
+    const t = fresh();
+    t.api.paintRect([0, 0], [10, 10]);
+    t.api.setPaintBand(2.5, 5.6); t.api.paintRect([0, 0], [10, 10]); t.api.setPaintBand(-0.5, 2.6);
+    const upstairs = text(t.area().parts[1]);
+    t.s.paint.tip = 'square'; t.s.paint.size = 4; t.api.paintStroke([[12, 5]]);    // a 4 x 4 m square against the east side
+    const ground = t.area().parts.filter(p => text(p.floor) === text(GROUND));
+    check('a brush stroke against a rectangle makes them one part', ground.length === 1 && text(ground[0].outline) === '[[0,0],[10,0],[10,3],[14,3],[14,7],[10,7],[10,10],[0,10]]', t.sig());
+    check('the part on the floor above is kept exactly', t.area().parts.some(p => text(p) === upstairs), t.sig());
+    t.s.paint.size = 2; t.api.paintStroke([[5, -2], [5, 12]], true);
+    const cut = t.area().parts.filter(p => text(p.floor) === text(GROUND));
+    check('an eraser right across cuts the ground floor into two parts, without holes', cut.length === 2 && cut.every(p => !p.holes.length), t.sig());
+    check('the cut is outside, both sides inside, upstairs still whole', !t.at([5, 1, 5]) && t.at([2, 1, 5]) && t.at([8, 1, 5]) && t.at([5, 4, 5]));
+    check('an eraser on a floor with nothing painted there is refused and changes nothing', (() => { const b = t.sig(); t.api.setPaintBand(10, 12); const ok = t.api.paintStroke([[5, 5]], true); return ok === false && t.sig() === b && t.page.banner().includes('Nothing painted'); })(), t.page.banner());
+  }
+  {   // Corners and parts: inserting a corner, removing one, deleting a part, each undone in one step.
+    const t = fresh();
+    t.api.paintRect([0, 0], [10, 10]); t.api.paintRect([20, 0], [30, 10]);
+    const two = t.sig();
+    check('a corner is inserted after the first', t.api.areaInsertVertex(0, -1, 0, [5, -3]) === true && t.area().parts[0].outline.length === 5 && t.at([5, 1, -2]), t.sig());
+    check('removing that corner gives the rectangle back', t.api.areaVertex(0, -1, 1, null) === true && t.sig() === two, t.sig());
+    check('a triangle outline keeps its last three corners', (() => { t.api.areaVertex(0, -1, 0, null); const b = t.sig(); return t.api.areaVertex(0, -1, 0, null) === false && t.sig() === b; })(), t.sig());
+    t.api.undo();
+    check('undo brings the removed corner back', t.sig() === two, t.sig());
+    check('deleting a part leaves the other', t.api.paintDeletePart(0) === true && t.area().parts.length === 1 && !t.at([5, 1, 5]) && t.at([25, 1, 5]));
+    t.api.undo();
+    check('undo brings the deleted part back', t.sig() === two, t.sig());
+    check('the 3D view gets the painted trigger as one strong volume', (() => { const v = t.api.areaVolumes(); return v.length === 1 && v[0].strong && v[0].area.parts.length === 2; })());
+    t.api.areaEditStop();
+    check('after Done, painting is refused with a message and nothing changes', t.api.paintRect([40, 0], [50, 10]) === false && t.sig() === two && t.page.banner().includes('Choose what to paint'), t.page.banner());
+  }
+}
+
+console.log('encounter modules (ML-019)');
+{
+  const text = JSON.stringify, MODS = path.join(ROOT, 'examples', 'modules');
+  const plate = (x0, z0, x1, z1, y) => [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1];
+  // An empty scenario on a page of its own; with a map of one 10 x 10 m floor at height 0 when asked.
+  const fresh = withMap => {
+    const api = openEditor(script).api, s = api.state;
+    Object.assign(s, { infils: [], authored: [], zones: [], things: [], objectives: [], doors: [], places: [], extractionAfter: 0, selected: -1, squad: [], enemies: [], example: false });
+    s.map = withMap ? api.makeMap(new Float32Array(plate(0, 0, 10, 10, 0)), 'module test') : null;
+    return api;
+  };
+  const ofCopy = (s, copy) => ({ enemies: s.enemies.filter(e => e.moduleCopy === copy), zones: s.zones.filter(z => z.moduleCopy === copy) });
+  const module = (name, spawns, triggers, bindings) => ({ schema: 'missionlab-module/1', name, anchor: { pos: [0, 0, 0], yaw: 0 }, spawns, triggers, bindings: bindings || [] });
+  const guard = (pos, more) => Object.assign({ group: 0, role: 'Guard', pos, yaw: 0, trigger: 0, patrol: [] }, more || {});
+  for (const file of fs.readdirSync(MODS).filter(n => n.endsWith('.module.json')).sort()) {   // The shipped examples are valid and go into an empty scenario as they are.
+    const api = fresh(false), s = api.state, mod = JSON.parse(fs.readFileSync(path.join(MODS, file), 'utf8'));
+    check(file + ' has no problems', api.moduleProblems(mod).length === 0, api.moduleProblems(mod).join(' / '));
+    const r = api.moduleInsert(mod, [0, 0, 0], 0);
+    check(file + ' inserts into an empty scenario with all its enemies and triggers and nothing to bind', !r.error && s.enemies.length === mod.spawns.length && s.zones.length === mod.triggers.length && r.open.length === 0 && api.moduleBlock() === '', text(r));
+    const errors = api.scenarioProblems(api.scenarioObject()).filter(f => f.level === 'error');
+    check(file + ' gives a scenario the file rules accept', errors.length === 0, text(errors));
+  }
+  check('both example modules are shipped', fs.readdirSync(MODS).filter(n => n.endsWith('.module.json')).length === 2);
+  {   // The same module put down twice: two copies with their own trigger ids, groups, lots, either-sets and counted tag.
+    const api = fresh(false), s = api.state;
+    const pair = module('Pair', [
+      guard([0, 0, 0], { trigger: 2, chance: 50, lot: 1, tag: 'pair' }), guard([2, 0, 0], { trigger: 2, chance: 50, lot: 1, tag: 'pair' }),
+      guard([0, 0, 4], { group: 1, trigger: 3, either: 1, option: 1 }), guard([2, 0, 4], { group: 1, trigger: 3, either: 1, option: 2 }),
+    ], [{ id: 1, when: 'time', delay: 5, message: 'Five' }, { id: 2, when: 'after', after: 1, message: 'Then' },
+      { id: 3, when: 'all', of: [1, 2], message: 'Both' }, { id: 4, when: 'down', tag: 'pair', count: 2, message: 'Pair down' }]);
+    check('the test module has no problems', api.moduleProblems(pair).length === 0, api.moduleProblems(pair).join(' / '));
+    const a = api.moduleInsert(pair, [0, 0, 0], 0), b = api.moduleInsert(pair, [20, 0, 0], 0);
+    check('both copies go in', !a.error && !b.error && s.enemies.length === 8 && s.zones.length === 8, text([a, b]));
+    check('every trigger id is used once', new Set(s.zones.map(z => z.id)).size === 8 && a.triggers.every(id => !b.triggers.includes(id)), text(s.zones.map(z => z.id)));
+    for (const [r, n] of [[a, 1], [b, 2]]) {
+      const own = ofCopy(s, r.copy), mine = new Set(r.triggers), [t1, t2] = r.triggers;
+      check('copy ' + n + ': its enemies wait only for its own triggers', own.enemies.length === 4 && own.enemies.every(e => mine.has(e.trigger)), text(own.enemies.map(e => e.trigger)));
+      const after = own.zones.find(z => z.when === 'after'), all = own.zones.find(z => z.when === 'all');
+      check('copy ' + n + ': "after" and "all of" point inside the copy', after.after === t1 && text(all.of) === text([t1, t2]), text([after.after, all.of, r.triggers]));
+    }
+    const ca = ofCopy(s, a.copy), cb = ofCopy(s, b.copy), values = (c, f) => new Set(c.enemies.map(e => e[f]).filter(v => f === 'group' || v > 0));
+    for (const f of ['group', 'lot', 'either']) {
+      const va = values(ca, f), vb = values(cb, f);
+      check('the copies share no ' + f + ' number', va.size > 0 && vb.size > 0 && [...va].every(v => !vb.has(v)), text([[...va], [...vb]]));
+    }
+    const downA = ca.zones.find(z => z.when === 'down'), downB = cb.zones.find(z => z.when === 'down');
+    check('the second copy counts its own enemies under a new tag', downA.tag === 'pair' && downB.tag !== 'pair' && cb.enemies.filter(e => e.lot > 0).every(e => e.tag === downB.tag) && ca.enemies.filter(e => e.lot > 0).every(e => e.tag === 'pair'), text([downA.tag, downB.tag, cb.enemies.map(e => e.tag)]));
+    const errors = api.scenarioProblems(api.scenarioObject()).filter(f => f.level === 'error');
+    check('the scenario with both copies has no file errors', errors.length === 0, text(errors));
+  }
+  {   // Turned by 90 degrees at anchor (10, 3, 20): a point (x, y, z) of the module lands on (10 + z, 3 + y, 20 - x).
+    const api = fresh(false), s = api.state;
+    const area = { parts: [{ floor: [-0.5, 2.5], outline: [[0, 0], [4, 0], [4, 2], [0, 2]], holes: [[[1, 0.5], [2, 0.5], [2, 1.5]]] }] };
+    const mod = module('Turned', [
+      guard([2, 0, 1], { role: 'Patrol', yaw: 300, trigger: 1, patrol: [[2, 0, 1], [4, 1, 0]] }), guard([0, 0, 2], { yaw: 90, trigger: 1 }),
+    ], [{ id: 1, when: 'zone', pos: [3, 0, 1], radius: 5, area, message: 'In the yard' }]);
+    check('the turned test module has no problems', api.moduleProblems(mod).length === 0, api.moduleProblems(mod).join(' / '));
+    const r = api.moduleInsert(mod, [10, 3, 20], 90), [p, g] = s.enemies, z = s.zones[0];
+    check('enemy positions are turned and moved', !r.error && text(p.pos) === '[11,3,18]' && text(g.pos) === '[12,3,20]', text([p && p.pos, g && g.pos]));
+    check('facing turns by 90 degrees, past 360 back to 30', p.yaw === 30 && g.yaw === 180, text([p.yaw, g.yaw]));
+    check('the patrol route is turned and moved the same way', text(p.patrol) === '[[11,3,18],[10,4,16]]', text(p.patrol));
+    check('the trigger anchor is turned and moved', text(z.pos) === '[11,3,17]', text(z.pos));
+    const want = { parts: [{ floor: [2.5, 5.5], outline: [[10, 20], [10, 16], [12, 16], [12, 20]], holes: [[[10.5, 19], [10.5, 18], [11.5, 18]]] }] };
+    check('the area outline and hole are turned and moved, its floor band raised by the anchor height', text(api.areaWrite(z.area)) === text(want), text(z.area));
+    const back = api.moduleInsert(mod, [10, 3, 20], -270);
+    check('turning by -270 is the same as by 90', !back.error && text(s.enemies[2].pos) === text(p.pos) && s.enemies[2].yaw === 30 && text(api.areaWrite(s.zones[1].area)) === text(want), text(s.enemies[2]));
+  }
+  {   // Keeping a selection: two enemies of a backup trigger that waits for a timer which also brings another enemy.
+    const api = fresh(false), s = api.state;
+    s.zones = [api.newTrigger(1, 'time', { delay: 10, message: 'Ten seconds' }), api.newTrigger(2, 'after', { after: 1, delay: 5, message: 'Backup' })];
+    s.enemies = [Object.assign(api.newEnemy([10, 0, 10]), { trigger: 2 }), Object.assign(api.newEnemy([12, 0, 13], 'Patrol'), { trigger: 2, patrol: [[12, 0, 13], [14, 0, 13]] }),
+      Object.assign(api.newEnemy([30, 0, 30]), { trigger: 1 })];
+    s.squad = [0, 1]; s.selected = 0;
+    const got = api.moduleOfSelection('Backup pair'), m = got.module;
+    check('the selection is kept as a module', !!m, text(got));
+    check('the outside timer becomes a trigger binding; only the backup trigger comes along',
+      m.triggers.length === 1 && m.triggers[0].id === 1 && m.triggers[0].after === '@t1' && text(m.bindings) === text([{ kind: 'trigger', ref: 't1', label: 'After a set time (trigger 1)' }]), text([m.triggers, m.bindings]));
+    check('positions are kept relative to the first selected enemy', text(m.anchor.pos) === '[10,0,10]' && text(m.spawns.map(e => e.pos)) === '[[0,0,0],[2,0,3]]' && text(m.spawns[1].patrol) === '[[2,0,3],[4,0,3]]' && m.spawns.every(e => e.trigger === 1), text(m.spawns));
+    const read = JSON.parse(api.moduleText(m)), diff = differences(m, read, 'module', []);
+    check('the module text reads back as the same module, without problems', diff.length === 0 && api.moduleProblems(read).length === 0, diff.join(' / '));
+    const r = api.moduleInsert(read, [50, 0, 50], 0), open = api.moduleOpen();
+    check('inserting the read-back module asks for the timer binding', !r.error && open.length === 1 && open[0].kind === 'trigger' && open[0].ref === 't1' && open[0].copy === r.copy && open[0].required, text(open));
+    s.squad = [0, 1, 2];
+    const whole = api.moduleOfSelection('All three').module;
+    check('when the timer brings only selected enemies it comes along and nothing is bound', whole && whole.triggers.length === 2 && whole.bindings.length === 0 && whole.triggers[1].after === 1, text(whole));
+  }
+  {   // A module with an outside trigger and door: no save path lets the scenario out until both are bound.
+    const api = fresh(false), s = api.state, msg = () => String(api.byId('saveMsg').textContent);
+    s.doors = [{ name: 'Front', pos: [40, 0, 40], mid: [40.5, 0, 40], locked: null, enemiesCanOpen: null, open: null, chance: 100, isLocked: null, enemiesKeptOut: null, broken: false, known: true }];
+    s.zones = [api.newTrigger(1, 'alert', { message: 'Alerted' })]; s.enemies = [api.newEnemy([0, 0, 0])];
+    const mod = module('Door rush', [guard([1, 0, 0], { trigger: 1 })],
+      [{ id: 1, when: 'after', after: '@t1', delay: 5, message: 'They rush the door', doors: [{ pos: '@d1', locked: false }] }],
+      [{ kind: 'trigger', ref: 't1', label: 'When the enemy is alerted' }, { kind: 'door', ref: 'd1', label: 'The front door', hint: [3, 0, 0] }]);
+    check('the door module has no problems', api.moduleProblems(mod).length === 0, api.moduleProblems(mod).join(' / '));
+    const r = api.moduleInsert(mod, [20, 0, 20], 0), z = s.zones[1], key = ref => r.open.find(b => b.ref === ref).key;
+    check('both outside references are open after inserting', !r.error && r.open.length === 2 && z.after === 0 && text(z.doors[0].pos) === '[23,0,20]', text(r));
+    const held = api.moduleBlock();
+    check('the save block names both references', held.startsWith('Not saved: 2 outside references') && held.includes('The front door') && held.includes('When the enemy is alerted'), held);
+    check('Save and Copy are switched off', api.byId('save').disabled === true && api.byId('copy').disabled === true);
+    check('the mission check lists the missing binding', api.missionCheck().some(f => f.text.includes('The front door')));
+    const rev = s.revision;
+    api.byId('saveMsg').textContent = ''; await api.saveFile();
+    check('saving the file is refused with the reason', msg() === held && s.revision === rev, msg());
+    api.byId('saveMsg').textContent = ''; await api.copyFile();
+    check('copying the file text is refused with the reason', msg() === held, msg());
+    api.live.on = true; api.byId('saveMsg').textContent = ''; await api.saveToCatalogue(false); api.live.on = false;
+    check('saving into the game\'s scenarios folder is refused with the reason', msg() === held && s.revision === rev, msg());
+    check('a trigger of the copy itself cannot be the outside trigger', api.moduleBind(key('t1'), z.id) === false && api.moduleOpen().length === 2);
+    check('a door that is not on the map cannot be bound', api.moduleBind(key('d1'), 5) === false && api.moduleOpen().length === 2);
+    check('binding the trigger leaves only the door', api.moduleBind(key('t1'), 1) === true && z.after === 1 && api.moduleBlock().startsWith('Not saved: 1 outside reference ') && api.moduleBlock().includes('(The front door)'), api.moduleBlock());
+    check('binding the door clears the block', api.moduleBind(key('d1'), 0) === true && api.moduleBlock() === '' && api.byId('save').disabled === false, api.moduleBlock());
+    const written = api.scenarioObject().triggers.find(t => t.id === z.id), file = api.scenarioText();
+    check('the trigger now waits for trigger 1 and opens the map\'s front door', written.after === 1 && text(written.doors) === text([{ name: 'Front', pos: [40, 0, 40], locked: false }]), text(written));
+    check('no module mark reaches the file', !file.includes('@') && !file.includes('binds') && !file.includes('moduleCopy'));
+    await api.saveFile();
+    check('with everything bound the scenario saves', msg().startsWith('Saved as') && s.revision === rev + 1, msg());
+    api.undo();
+    check('Undo takes the door binding back and holds saving again', api.moduleBlock().includes('(The front door)') && api.byId('save').disabled === true, api.moduleBlock());
+  }
+  {   // On a map with one 10 x 10 m floor: the alarm module at (5, 0, 5) leaves its two newcomers 9 m off the floor.
+    const api = fresh(true), s = api.state, mod = JSON.parse(fs.readFileSync(path.join(MODS, 'two_guard_alarm.module.json'), 'utf8'));
+    const r = api.moduleInsert(mod, [5, 0, 5], 0);
+    const want = ['Enemy 3 at -9.0, 2.0 (height 0.0)', 'Route stop 1 of enemy 3 at -9.0, 2.0 (height 0.0)', 'Enemy 4 at -9.0, 8.0 (height 0.0)'];
+    check('placement lists exactly the enemies and route stops off the floor', text(r.off) === text(want) && text(api.modulePlacement(r.copy)) === text(want), text(r.off));
+    check('the report says the placement was checked against the map', s.moduleReport.checked === true && s.moduleReport.copy === r.copy);
+    s.enemies[2].pos = [3, 0, 2]; s.enemies[2].patrol[0] = [3, 0, 2]; s.enemies[3].pos = [3, 0, 8];
+    check('moved onto the floor, nothing is listed', api.modulePlacement(r.copy).length === 0, text(api.modulePlacement(r.copy)));
+    check('another copy number lists nothing', api.modulePlacement(r.copy + 1).length === 0);
+  }
+}
+
 console.log('editor -> plugin -> editor');
 {
   // Every kind of awkward text: quotes, backslashes, letters of other scripts, a character outside the BMP, control characters.

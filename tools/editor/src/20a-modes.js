@@ -277,6 +277,8 @@ $('cdEdit').addEventListener('click', async () => {
 // ------------------------------------------------------------------ saving into the scenarios folder (between missions)
 async function saveToCatalogue(replace) {
   if (!live.on) return;
+  const held = moduleBlock();     // an inserted module with an outside reference still to bind (ML-019)
+  if (held) { $('saveMsg').textContent = held; return; }
   if (!state.enemies.length) { $('saveMsg').textContent = 'Place at least one enemy first: MissionLab does not use a scenario without enemies.'; return; }
   state.revision++;
   const name = fileName(), text = scenarioText();
