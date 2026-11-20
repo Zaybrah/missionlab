@@ -13,8 +13,8 @@ Steps marked **(game)** need OPERATOR running with you as host; the others work 
 ## 1. Install
 
 1. Unzip the release ZIP (`MissionLab-<version>.zip`) into the OPERATOR folder, the one that holds `OPERATOR_Data`.
-2. The ZIP puts the example missions in `BepInEx/MissionLab/scenarios/examples/`, where they are not used. Move these
-   three up one folder, into `BepInEx/MissionLab/scenarios/`:
+2. The ZIP puts the example missions in `BepInEx/MissionLab/examples/`, where they are not used. Copy these
+   three into `BepInEx/MissionLab/scenarios/` (copy rather than move, so that an update never overwrites your edits):
    - `clean_house_quiet_raid.json`: a quiet intel raid;
    - `clean_house_escalation.json`: hold a room against waves;
    - `clean_house_game_master.json`: the host fires events by hand.
@@ -46,9 +46,10 @@ The encounter: when the squad reaches the room upstairs (trigger 1 "Upstairs"), 
 
 1. Open the Mission tab. It now lists a warning: the new enemy appears inside trigger 1, where the players are when
    it fires (it would pop up in front of them). Click the warning to go to the enemy.
-2. If the warning offers **Preview repair**, press it, read what would change and press **Apply repair** (one Undo
-   step undoes it). Otherwise drag the enemy out of the circle by hand, for example down the stairs. If a new
-   warning says it appears in plain view, move it further, out of sight of the room.
+2. If the warning offers **Preview repair**, press it, read what would change and press **Apply repair**. The History
+   box above Save lists it as one named step ("Repair: …"), and Ctrl+Z undoes it. Otherwise drag the enemy out of the
+   circle by hand, for example down the stairs. If a new warning says it appears in plain view, move it further, out
+   of sight of the room.
 3. The warning disappears. The Mission check says whether the rules can be finished; it cannot tell whether the
    fight is fair.
 
@@ -64,14 +65,15 @@ The encounter: when the squad reaches the room upstairs (trigger 1 "Upstairs"), 
 ## 7. Play it (game)
 
 1. In **Play**, choose your copy and press **Play this next**.
-2. Host Clean House and go upstairs: your message appears and your enemy comes up the stairs.
+2. Host Clean House and go upstairs: your message appears, and your enemy appears where you put it. MissionLab does
+   not send it anywhere.
 
 ## The three missions
 
 | Mission | Pacing | Way out | Failure | Squad | Minutes |
 |---|---|---|---|---|---|
 | Quiet Raid | Stealth: few enemies, a timer only after an alarm | Take the phone, then extract | Four minutes after the alarm; everyone dead | 1–4 | 15 |
-| Escalation | Rising pressure: four timed waves and a last push | Hold the upper north room for three minutes | Fifteen minutes run out; everyone dead | 2–4 | 15 |
+| Escalation | Rising pressure: four timed waves walking patrol routes to the house, and a last push | Hold the upper north room for three minutes | Fifteen minutes run out; everyone dead | 2–4 | 15 |
 | Game Master | The host fires events by hand | Extract once the phone is taken, the host opens it, or 20 minutes pass | Everyone dead | 2–6 | 25 |
 
 Squad and minutes are the author's estimates. No playtest has measured them yet; measured times will come from run

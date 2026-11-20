@@ -126,7 +126,7 @@ function syncSide() {
     // Only while connected to the game do we know where the game itself put the item.
     back.type = 'button'; back.className = 'btn'; back.textContent = 'Usual place'; back.style.padding = '3px 8px'; back.hidden = !(o.home && o.moved !== false);
     back.title = 'Put it back where the game laid it. It is then left out of the scenario file.';
-    back.addEventListener('click', () => { pushUndo(); o.pos = o.home.slice(); o.yaw = o.homeYaw; o.moved = false; changed(); });
+    back.addEventListener('click', () => { willChange('Put intel ' + o.label + ' back in its usual place'); o.pos = o.home.slice(); o.yaw = o.homeYaw; o.moved = false; changed(); });
     li.append(name, at, show, back); il.appendChild(li);
   });
   const zl = $('zoneList');
@@ -134,16 +134,17 @@ function syncSide() {
     zl.textContent = '';
     state.zones.forEach((z, zi) => {
       const mk = (tag, props) => Object.assign(document.createElement(tag), props || {});
+      const zEdit = what => willChange('Change ' + what + ' of ' + trigTitle(z).toLowerCase());      // one named undo step per field (ML-045)
       const li = mk('li'), title = mk('b', { textContent: trigTitle(z) });
       const name = mk('input', { type: 'text', value: z.name || '', placeholder: 'Name (optional)', maxLength: 40 }); name.setAttribute('aria-label', 'Name of ' + trigTitle(z));
-      name.addEventListener('change', () => { pushUndo(); z.name = name.value.trim(); changed(); });
+      name.addEventListener('change', () => { zEdit('the name'); z.name = name.value.trim(); changed(); });
       const fire = mk('button', { type: 'button', className: 'btn', textContent: 'Fire now', hidden: !live.on || state.fired.includes(z.id) }); fire.style.padding = '3px 8px';
       fire.title = 'Immediate: sets this trigger off in the game now, whatever it waits for. Never staged, also in Draft mode.'; fire.addEventListener('click', () => liveCommand('fire', { id: z.id }));
       const del = mk('button', { type: 'button', className: 'btn danger', textContent: 'Delete' }); del.style.padding = '3px 8px';
-      del.addEventListener('click', () => { pushUndo(); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); state.zones.forEach(q => { if (q.after === z.id) q.after = 0; }); if (state.extractionAfter === z.id) state.extractionAfter = 0; changed(); });
+      del.addEventListener('click', () => { willChange('Delete ' + trigTitle(z).toLowerCase()); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); state.zones.forEach(q => { if (q.after === z.id) q.after = 0; }); if (state.extractionAfter === z.id) state.extractionAfter = 0; changed(); });
       // What it waits for.
       const what = mk('div', { className: 'what' });
-      const numIn = (value, min, max, step, label, set) => { const el = mk('input', { type: 'number', min, max, step, value }); el.setAttribute('aria-label', label); el.addEventListener('change', () => { pushUndo(); set(Math.max(min, Math.min(max, +el.value || 0))); changed(); }); return el; };
+      const numIn = (value, min, max, step, label, set) => { const el = mk('input', { type: 'number', min, max, step, value }); el.setAttribute('aria-label', label); el.addEventListener('change', () => { willChange('Change ' + label.charAt(0).toLowerCase() + label.slice(1)); set(Math.max(min, Math.min(max, +el.value || 0))); changed(); }); return el; };
       const grp = (...parts) => { const g = mk('span', { className: 'grp' }); g.append(...parts); return g; };
       if (z.when === 'zone') {
         // Shape: the old circle, or an area painted floor by floor (27a-paint.js), which then replaces the radius.
@@ -157,6 +158,7 @@ function syncSide() {
         areaB.addEventListener('click', () => { if (!editing) areaEditStart({ kind: 'trigger', index: zi }, painted ? z.area.parts[0].floor.slice(0, 2) : undefined); });
         shape.append(circleB, areaB);
         what.append(grp('Players walk in. Shape', shape));
+        const placeBox = placeLinkBox(z); if (placeBox) what.append(placeBox);     // copy or link a named place's area (ML-040; 29b-places.js)
         if (!painted) what.append(grp('Radius', numIn(Math.round(z.radius), 2, 200, 1, 'Radius of zone ' + z.id + ' in metres', v => { z.radius = v; }), 'm'));
         what.append(grp('and stay', numIn(Math.round(z.hold || 0), 0, 3600, 5, 'Seconds players must stay in zone ' + z.id, v => { z.hold = v; }), 's'));
       }
@@ -169,24 +171,37 @@ function syncSide() {
         const kinds = [...new Set(state.objectives.map(o => o.label || o.name).filter(Boolean))];
         if (z.item && z.item !== 'all' && !kinds.includes(z.item)) kinds.push(z.item);
         [['', 'Any item'], ['all', 'Every item'], ...kinds.map(k => [k, k])].forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t })));
-        sel.value = z.item || ''; sel.addEventListener('change', () => { pushUndo(); z.item = sel.value; changed(); });
+        sel.value = z.item || ''; sel.addEventListener('change', () => { zEdit('the intel item'); z.item = sel.value; changed(); });
         what.append(grp('Picked up:', sel));
+      } else if (z.when === 'outcome') {
+        // ML-047: waits for what was seen of the latest firing of another trigger, not for the firing itself.
+        const sel = mk('select'); sel.setAttribute('aria-label', 'Which trigger\'s action ' + trigTitle(z) + ' watches');
+        [[0, 'Choose a trigger'], ...state.zones.filter(q => q.id !== z.id).map(q => [q.id, trigTitle(q) + (q.name ? ': ' + q.name : '')])].forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t })));
+        sel.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; sel.addEventListener('change', () => { if (!outcomeSet(z.id, 'after', +sel.value || 0)) sel.value = z.after; });
+        const word = mk('select'); word.setAttribute('aria-label', 'Outcome ' + trigTitle(z) + ' waits for');
+        [['applied', 'is seen to take'], ['failed', 'fails'], ['partial', 'only partly takes'], ['unconfirmed', 'goes through but cannot be seen'], ['timeout', 'has no answer in time']].forEach(([v, t]) => word.appendChild(mk('option', { value: v, textContent: t })));
+        word.value = z.outcome || 'applied'; word.addEventListener('change', () => outcomeSet(z.id, 'outcome', word.value));
+        const within = mk('input', { type: 'number', min: 1, max: 3600, step: 5, value: z.within || OUTCOME_WITHIN }); within.setAttribute('aria-label', 'Seconds ' + trigTitle(z) + ' gives the action to be seen');
+        within.addEventListener('change', () => outcomeSet(z.id, 'within', +within.value));
+        within.title = 'Only for "has no answer in time": how long after the firing an answer must come. A late answer is recorded, never acted on twice.';
+        what.append(grp('When the action of', sel), grp(word));
+        if (z.outcome === 'timeout') what.append(grp('Answer within', within, 's'));
       } else {
         const sel = mk('select'); sel.setAttribute('aria-label', 'Which trigger comes first');
         [[0, 'Choose a trigger'], ...state.zones.filter(q => q.id !== z.id).map(q => [q.id, trigTitle(q) + (q.name ? ': ' + q.name : '')])].forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t })));
-        sel.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; sel.addEventListener('change', () => { pushUndo(); z.after = +sel.value || 0; changed(); });
+        sel.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; sel.addEventListener('change', () => { zEdit('the trigger it waits for'); z.after = +sel.value || 0; changed(); });
         what.append(grp('After', sel));
       }
       if (z.when === 'zone' && isVec(z.pos)) { const at = placeName(z.pos); if (at) what.append(grp('Its spot is in ' + at)); }
       what.append(grp('Then wait', numIn(Math.round(z.delay || 0), 0, 7200, 5, 'Seconds ' + trigTitle(z) + ' waits before it fires', v => { z.delay = v; }), 's'));
       const face = mk('label'), box = mk('input', { type: 'checkbox', checked: z.facePlayer !== false });
-      box.addEventListener('change', () => { pushUndo(); z.facePlayer = box.checked; changed(); });
+      box.addEventListener('change', () => { zEdit('facing'); z.facePlayer = box.checked; changed(); });
       face.append(box, 'Its enemies appear looking at ' + (z.when === 'zone' ? 'the player who walks in' : 'the nearest player'));
       const n = state.enemies.filter(en => en.trigger === z.id).length, locks = (z.doors || []).filter(d => d.locked === true).length, opens = (z.doors || []).filter(d => d.locked === false).length, moves = (z.doors || []).filter(d => d.open != null).length;
       const sum = mk('div', { className: 'sum hint' });
       const act = mk('div', { className: 'what' });
-      const pick = (label, options, value, set) => { const sel = mk('select'); sel.setAttribute('aria-label', label + ' of ' + trigTitle(z)); options.forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t }))); sel.value = value || ''; sel.addEventListener('change', () => { pushUndo(); set(sel.value); changed(); }); return sel; };
-      if (z.when === 'zone') { const el = mk('label'), eb = mk('input', { type: 'checkbox', checked: !!z.everyone }); eb.setAttribute('aria-label', 'Every player must be in zone ' + z.id); eb.addEventListener('change', () => { pushUndo(); z.everyone = eb.checked; changed(); }); el.append(eb, ' every player, not just one'); what.append(el); }
+      const pick = (label, options, value, set) => { const sel = mk('select'); sel.setAttribute('aria-label', label + ' of ' + trigTitle(z)); options.forEach(([v, t]) => sel.appendChild(mk('option', { value: v, textContent: t }))); sel.value = value || ''; sel.addEventListener('change', () => { zEdit(label.toLowerCase()); set(sel.value); changed(); }); return sel; };
+      if (z.when === 'zone') { const el = mk('label'), eb = mk('input', { type: 'checkbox', checked: !!z.everyone }); eb.setAttribute('aria-label', 'Every player must be in zone ' + z.id); eb.addEventListener('change', () => { zEdit('every player'); z.everyone = eb.checked; changed(); }); el.append(eb, ' every player, not just one'); what.append(el); }
       if (z.when === 'down') { const tags = tagsOf(); what.append(grp('Only those tagged', pick('Tag wanted', [['', 'any enemy'], ...tags.map(t => [t, t]), ...(z.tag && !tags.includes(z.tag) ? [[z.tag, z.tag + ' (no enemy has it)']] : [])], z.tag || '', v => { z.tag = v; }))); }
       if (z.when === 'door') { const at = doorOf(z); what.append(grp('This door is opened or broken:', pick('Door watched', [...(at === '' ? [['', isVec(z.pos) ? 'the door from the file' : 'choose a door']] : []), ...state.doors.map((d, i) => [String(i), (d.name || 'Door') + ' ' + (i + 1)])], at, v => { if (v !== '' && state.doors[+v]) z.pos = state.doors[+v].pos.slice(0, 3); })), state.doors.length ? '' : ' Doors are listed once the game has sent them, on the World tab.'); }
       let ofBox = null;
@@ -196,29 +211,29 @@ function syncSide() {
         if (!others.length) ofBox.append('Add other triggers first, then tick them here.');
         for (const q of others) {
           const lab = mk('label'), cb = mk('input', { type: 'checkbox', checked: (z.of || []).includes(q.id) }); cb.setAttribute('aria-label', trigTitle(q) + ' counts for ' + trigTitle(z));
-          cb.addEventListener('change', () => { pushUndo(); z.of = (z.of || []).filter(id => id !== q.id); if (cb.checked) z.of.push(q.id); changed(); });
+          cb.addEventListener('change', () => { zEdit('the triggers it waits for'); z.of = (z.of || []).filter(id => id !== q.id); if (cb.checked) z.of.push(q.id); changed(); });
           lab.append(cb, trigTitle(q) + (q.name ? ' (' + q.name + ')' : '')); ofBox.appendChild(lab);
         }
       }
       const odds = mk('div', { className: 'what' });
       odds.append(grp('Chance', numIn(z.chance || 100, 1, 100, 5, 'Chance in percent that ' + trigTitle(z) + ' is part of the mission', v => { z.chance = Math.round(v); }), '%'));
-      if (z.delay >= 20) { const wl = mk('label'), wb = mk('input', { type: 'checkbox', checked: !!z.warn }); wb.setAttribute('aria-label', 'Warn players before ' + trigTitle(z)); wb.addEventListener('change', () => { pushUndo(); z.warn = wb.checked; changed(); }); wl.append(wb, ' tell players how much time is left'); odds.append(wl); }
+      if (z.delay >= 20) { const wl = mk('label'), wb = mk('input', { type: 'checkbox', checked: !!z.warn }); wb.setAttribute('aria-label', 'Warn players before ' + trigTitle(z)); wb.addEventListener('change', () => { zEdit('the warning'); z.warn = wb.checked; changed(); }); wl.append(wb, ' tell players how much time is left'); odds.append(wl); }
       odds.append(grp('Again after', numIn(Math.round(z.repeat || 0), 0, 3600, 10, 'Seconds before ' + trigTitle(z) + ' may fire again', v => { z.repeat = v > 0 && v < 5 ? 5 : v; }), 's'));
       if (z.repeat > 0) odds.append(grp('at most', numIn(z.times | 0, 0, 100, 1, 'How often ' + trigTitle(z) + ' may fire', v => { z.times = v | 0; }), 'times (0: no limit)'));
       act.append(grp('Lights', pick('Lights', [['', 'stay as they are'], ['off', 'go out'], ['on', 'come back on']], z.power, v => { z.power = v; })),
                  grp('Mission', pick('End of the mission', [['', 'goes on'], ['success', 'ends as a success'], ['failed', 'ends as failed']], z.end, v => { z.end = v; })));
       const rg = grp('Enemies within', numIn(Math.round(z.rally || 0), 0, 300, 10, 'Metres within which enemies walk to the place of ' + trigTitle(z), v => { z.rally = v; }), 'm walk there');
-      const tick = (text, label, key) => { const l = mk('label'), c = mk('input', { type: 'checkbox', checked: !!z[key] }); c.setAttribute('aria-label', label + ' ' + trigTitle(z)); c.addEventListener('change', () => { pushUndo(); z[key] = c.checked; changed(); }); l.append(c, ' ' + text); return l; };
+      const tick = (text, label, key) => { const l = mk('label'), c = mk('input', { type: 'checkbox', checked: !!z[key] }); c.setAttribute('aria-label', label + ' ' + trigTitle(z)); c.addEventListener('change', () => { zEdit('"' + text + '"'); z[key] = c.checked; changed(); }); l.append(c, ' ' + text); return l; };
       act.append(tick('its enemies come to the players', 'Enemies come to the players for', 'hunt'), tick('dead players come back', 'Dead players come back on', 'respawn'));
       rg.title = 'There: where the player stood who set off a zone, the door of a door trigger, and otherwise where the first player is.'; act.append(rg);
       const msg = mk('input', { type: 'text', className: 'msg', value: z.message || '', placeholder: 'Message on every player\'s screen (optional)', maxLength: 120 }); msg.setAttribute('aria-label', 'Message of ' + trigTitle(z));
-      msg.addEventListener('change', () => { pushUndo(); z.message = cleanMessage(msg.value); changed(); });
+      msg.addEventListener('change', () => { zEdit('the message'); z.message = cleanMessage(msg.value); changed(); });
       msg.title = '{enemies}, {players} and {time} become the numbers of the moment';
       const redL = mk('label'), redB = mk('input', { type: 'checkbox', checked: !!z.red }); redB.setAttribute('aria-label', 'Show the message of ' + trigTitle(z) + ' in red');
-      redB.addEventListener('change', () => { pushUndo(); z.red = redB.checked; changed(); }); redL.append(redB, ' in red'); redL.hidden = !z.message;
+      redB.addEventListener('change', () => { zEdit('the message colour'); z.red = redB.checked; changed(); }); redL.append(redB, ' in red'); redL.hidden = !z.message;
       sum.textContent = [n + (n === 1 ? ' enemy' : ' enemies'), z.power ? (z.power === 'off' ? 'lights out' : 'lights on') : '', z.message ? 'shows a message' : '', z.end ? 'ends the mission' : '', z.rally > 0 ? 'calls enemies' : '', z.repeat > 0 ? 'repeats' : '', moves ? 'opens or closes ' + moves + (moves === 1 ? ' door' : ' doors') : '', z.hunt && n ? 'its enemies come to you' : '', z.respawn ? 'brings players back' : '', phaseWords(z), locks ? 'locks ' + locks + (locks === 1 ? ' door' : ' doors') : '', opens ? 'unlocks ' + opens + (opens === 1 ? ' door' : ' doors') : '', z.opensExtraction ? 'opens the extraction' : '', state.extractionAfter === z.id ? 'the extraction waits for it' : '', state.fired.includes(z.id) ? 'has fired' : ''].filter(Boolean).join(' · ');
       const exf = mk('label'), exb = mk('input', { type: 'checkbox', checked: !!z.opensExtraction });
-      exb.addEventListener('change', () => { pushUndo(); z.opensExtraction = exb.checked; changed(); });
+      exb.addEventListener('change', () => { zEdit('the extraction'); z.opensExtraction = exb.checked; changed(); });
       exf.append(exb, 'It opens the extraction, whatever the mission\'s own rule says');
       li.append(title, name, fire, del, what); if (ofBox) li.append(ofBox); li.append(face, exf, act, odds, msg, redL, sum);
       const paintBox = paintBoxFor('trigger', zi); if (paintBox) li.append(paintBox);     // the painting tools, while this zone's area is painted
@@ -263,7 +278,7 @@ function syncSide() {
       const cur = (z.doors || []).find(x => nearDoor(x.pos, [dr]) === 0);
       sel.value = !cur ? '' : cur.open === true ? (cur.locked === false ? 'uo' : 'o') : cur.open === false ? (cur.locked === true ? 'cl' : 'c') : cur.locked ? '1' : '0';
       sel.addEventListener('change', () => {
-        pushUndo(); z.doors = (z.doors || []).filter(x => nearDoor(x.pos, [dr]) !== 0);
+        willChange('Change what ' + trigTitle(z).toLowerCase() + ' does to ' + (dr.name ? 'door "' + dr.name + '"' : 'the door')); z.doors = (z.doors || []).filter(x => nearDoor(x.pos, [dr]) !== 0);
         const v = sel.value;
         if (v !== '') z.doors.push({ name: dr.name || '', pos: dr.pos.slice(), locked: v === '1' || v === 'cl' ? true : v === '0' || v === 'uo' ? false : null, open: v === 'o' || v === 'uo' ? true : v === 'c' || v === 'cl' ? false : null });
         changed();
@@ -308,18 +323,19 @@ function syncSide() {
   $('ceilingOut').textContent = isFinite(state.ceiling) ? 'up to ' + state.ceiling.toFixed(1) + ' m' : 'all floors';
   $('floorDown').disabled = $('floorUp').disabled = !m;
   syncPaint();
+  syncHistory(); syncEncounter();     // 27-editing.js and 27b-history.js: the undo history, and moving an encounter together (ML-045)
 }
 // Any other edit makes a previewed repair stale, so its preview goes (ML-017).
 // Live: the game's own state arriving (applying) becomes the staging base; in Draft mode an edit is staged, not sent (ML-014).
 // Between missions there is no game to send edits to: a scenario opened from the catalogue stays on the page until saved (ML-013).
 function changed() { if (state.repair) cancelRepair(); syncSide(); view3d.syncEnemies(); invalidate(); if (live.on) { if (live.applying) stageFollowGame(); else if (stageHolds()) stageChanged(); else if (live.mission) pushLive(); } else if (!stageKeepSeparate()) saveDraft(); viewsChanged(); }
-const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; pushUndo(); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
+const edit = fn => { const e = state.enemies[state.selected]; if (!e) return; willChange('Change enemy ' + (state.selected + 1)); fn(e); state.lastRole = e.role; state.lastGroup = e.group; changed(); };
 
 document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => edit(e => { e.role = b.dataset.role; if (e.role === 'Patrol') { e.fixed = false; if (e.patrol.length < 2) { setTool('route'); say('Click the stops of the patrol route on the map.'); } } })));
 $('group').addEventListener('change', ev => edit(e => { e.group = Math.max(0, Math.min(98, (parseInt(ev.target.value, 10) || 1) - 1)); }));
-let yawUndo = false;
-$('yaw').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (!e) return; if (!yawUndo) { pushUndo(); yawUndo = true; } e.yaw = +ev.target.value; invalidate(); });
-$('yaw').addEventListener('change', () => { yawUndo = false; changed(); });
+// A slider drag is one step: a transaction from its first movement to the release (ML-045).
+$('yaw').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (!e) return; if (!txOpen()) txBegin('Turn enemy ' + (state.selected + 1)); e.yaw = +ev.target.value; invalidate(); });
+$('yaw').addEventListener('change', () => { txCommit(); changed(); });
 $('wander').addEventListener('input', ev => { const e = state.enemies[state.selected]; if (e) { e.wanderDistance = Math.max(0, Math.min(200, Math.round(+ev.target.value || 0))); invalidate(); } });
 $('wander').addEventListener('change', ev => edit(e => { e.wanderDistance = Math.max(0, Math.min(200, Math.round(+ev.target.value || 0))); }));
 $('wait').addEventListener('change', ev => edit(e => { e.patrolWaitSeconds = Math.max(0, Math.min(120, +ev.target.value || 0)); }));
@@ -329,7 +345,7 @@ $('prone').addEventListener('change', ev => edit(e => { e.prone = ev.target.chec
 $('type').addEventListener('change', ev => edit(e => { e.type = ev.target.value; }));
 // Chance and either/or go to everything selected: a squad shares one roll, and is one option of a set together.
 function optionLetter(n) { return n >= 1 && n <= 26 ? String.fromCharCode(64 + n) : String(n || ''); }
-const editPicked = fn => { const list = picked().map(i => state.enemies[i]); if (!list.length) return; pushUndo(); fn(list); changed(); };
+const editPicked = fn => { const list = picked().map(i => state.enemies[i]); if (!list.length) return; willChange(list.length === 1 ? 'Change enemy ' + (picked()[0] + 1) : 'Change ' + list.length + ' enemies'); fn(list); changed(); };
 function eitherSets() {
   const sets = new Map();
   for (const e of state.enemies) { if (!e.either) continue; if (!sets.has(e.either)) sets.set(e.either, new Map()); const o = sets.get(e.either); o.set(e.option, (o.get(e.option) || 0) + 1); }
@@ -352,11 +368,15 @@ function syncEither(e) {
   if (!bits.length) bits.push('Chance and either/or are rolled anew each time the mission starts.' + (n > 1 ? ' With ' + n + ' selected, they share one roll and one option.' : ''));
   $('chanceHint').textContent = bits.join(' ');
 }
-$('chance').addEventListener('change', ev => editPicked(list => {
-  const c = Math.max(1, Math.min(100, Math.round(+ev.target.value || 100)));
-  const lot = c < 100 && list.length > 1 ? 1 + Math.max(0, ...state.enemies.map(e => e.lot || 0)) : 0;
-  for (const e of list) { e.chance = c; e.lot = lot; }
-}));
+// A lot is the enemy's own (host options drop lots at any chance), so a change of chance keeps it. Several enemies made
+// chancy together get a new shared lot only when they do not already share one, so that they share one roll.
+function chanceSet(list, c) {
+  const shared = list[0].lot > 0 && list.every(e => e.lot === list[0].lot);
+  const lot = c < 100 && list.length > 1 && !shared ? 1 + Math.max(0, ...state.enemies.map(e => e.lot || 0)) : 0;
+  for (const e of list) { e.chance = c; if (lot) e.lot = lot; }
+}
+$('chance').addEventListener('change', ev => editPicked(list => chanceSet(list, Math.max(1, Math.min(100, Math.round(+ev.target.value || 100))))));
+expose({ chanceSet });   // chance keeps the lot (ML-044), for automated tests
 $('team').addEventListener('change', ev => editPicked(list => { const t = +ev.target.value || 0; for (const e of list) e.team = t; }));
 $('minPlayers').addEventListener('change', ev => editPicked(list => { const n = Math.max(1, Math.min(8, Math.round(+ev.target.value || 1))); for (const e of list) e.minPlayers = n > 1 ? n : 0; }));
 $('skill').addEventListener('change', ev => editPicked(list => { const v = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; for (const e of list) e.skill = v; }));
@@ -365,7 +385,7 @@ $('tag').addEventListener('change', ev => editPicked(list => { const v = cleanTa
 $('allSkill').addEventListener('change', ev => missionEdit(() => { state.allSkill = ev.target.value === 'recruit' || ev.target.value === 'veteran' ? ev.target.value : ''; }));
 $('allNvg').addEventListener('change', ev => missionEdit(() => { state.allNvg = ev.target.checked; }));
 $('needsGm').addEventListener('change', ev => missionEdit(() => { state.gameMaster = ev.target.checked; }));
-$('repeatRun').addEventListener('change', ev => api('/api/repeat', { file: ev.target.value }).then(s => { live.rev = null; live.runsFor = null; say(ev.target.value ? 'The next mission you host repeats that run: same roll. It needs the same scenario and number of players to come out the same.' : 'The next mission gets a new roll.'); return applyLive(s); }).catch(e => say(liveTrouble(e))));
+$('repeatRun').addEventListener('change', ev => api('/api/repeat', { file: ev.target.value }).then(s => { live.rev = null; live.runsFor = null; say(ev.target.value ? 'The next mission you host repeats that run: same roll. A generated layout is repeated only if the map and the settings it was made with are unchanged; otherwise the game\'s own mission runs and the reason shows here. A scenario needs the same file and number of players to come out the same.' : 'The next mission gets a new roll.'); return applyLive(s); }).catch(e => say(liveTrouble(e))));
 $('readyCopy').addEventListener('click', async () => {
   const text = readyReport($('readyBundle').checked ? await reportBundle() : null);
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => say('The report is on the clipboard. Its first lines list what it holds.')).catch(() => { $('fileText').value = text; say('The report could not be copied; it is in the text box of the File section instead.'); });
@@ -406,6 +426,7 @@ function readyRows(st, s) {
   if (st.rejected) add(false, st.rejected);
   for (const h of st.health || []) if (h.paused) add(false, 'The part "' + h.name + '" is paused: ' + (h.lastError || 'unknown error') + '.');
   if (s && s.page && PAGE_STAMP.indexOf('ML_PAGE_STAMP') < 0 && s.page !== PAGE_STAMP) add(false, 'This page is older than the one the game serves. Reload it.');
+  for (const r of scenarioReadyRows(st, s)) rows.push(r);     // the next mission's scenario: its needs here and its capabilities (ML-036)
   return rows;
 }
 function syncReady(s) {
@@ -483,7 +504,9 @@ function syncRuns(s) {
     sel.textContent = ''; sel.append(new Option('A new roll', ''));
     for (const r of (d && d.runs) || []) {
       const when = String(r.startedUtc || '').slice(11, 16), what = r.scenario || 'generated layout';
-      sel.append(new Option(when + ' UTC, ' + what + ', roll ' + r.roll + ', ' + r.players + (r.players === 1 ? ' player' : ' players') + (r.outcome === 'refused' ? ', refused' : ''), r.file));
+      const o = new Option(when + ' UTC, ' + what + ', roll ' + r.roll + ', ' + r.players + (r.players === 1 ? ' player' : ' players') + (r.outcome === 'refused' ? ', refused' : ''), r.file);
+      if (r.outcome === 'refused' && r.reason) o.title = r.reason;      // why it was refused, on hover: a refused repeat says what changed
+      sel.append(o);
     }
     sel.value = (d && d.repeat) || '';
   }).catch(() => { live.runsFor = null; });
@@ -513,7 +536,7 @@ $('gmOrder').addEventListener('click', () => {
   state.order = ids; say('Now click the spot on the map where ' + (ids.length === 1 ? 'that enemy' : 'those ' + ids.length + ' enemies') + ' should go.');
 });
 $('recipeAdd').addEventListener('click', () => {
-  pushUndo(); let id = state.zones.reduce((m, q) => Math.max(m, q.id), 0);
+  willChange('Add the triggers of a recipe'); let id = state.zones.reduce((m, q) => Math.max(m, q.id), 0);
   const add = (when, more) => { const z = newTrigger(++id, when, more); state.zones.push(z); return z; }, kind = $('recipe').value;
   if (kind === 'countdown') { const a = add('intel', { name: 'Intel taken', message: 'You have the intel. Get out.' }); add('after', { name: 'Out of time', after: a.id, delay: 180, warn: true, message: 'Out of time.', red: true, end: 'failed' }); }
   else if (kind === 'help') add('alert', { name: 'Alarm', delay: 5, rally: 60, message: 'They know you are here.', red: true });
@@ -572,11 +595,11 @@ function syncThings() {
     setVal($('thingChance'), t.chance || 100);
   }
 }
-const editThing = fn => { const t = state.things[state.thing]; if (!t) return; pushUndo(); fn(t); changed(); };
+const editThing = fn => { const t = state.things[state.thing]; if (!t) return; willChange('Change the ' + String(t.name).trim()); fn(t); changed(); };
 $('thingName').addEventListener('change', ev => { state.thingName = ev.target.value; const t = state.things[state.thing]; if (t) editThing(q => { q.name = state.thingName; }); else syncSide(); });
 $('thingYaw').addEventListener('change', ev => editThing(t => { t.yaw = ((Math.round(+ev.target.value || 0) % 360) + 360) % 360; }));
 $('thingTrigger').addEventListener('change', ev => editThing(t => { t.trigger = +ev.target.value || 0; }));
-$('thingDel').addEventListener('click', () => { if (state.thing < 0) return; pushUndo(); state.things.splice(state.thing, 1); state.thing = -1; changed(); });
+$('thingDel').addEventListener('click', () => { if (state.thing < 0) return; const t = state.things[state.thing]; willChange('Delete the ' + (t ? String(t.name).trim() : 'thing')); state.things.splice(state.thing, 1); state.thing = -1; changed(); });
 
 $('either').addEventListener('change', ev => editPicked(list => {
   const v = ev.target.value; let set = 0, opt = 0;
@@ -588,7 +611,7 @@ $('hvt').addEventListener('change', ev => edit(e => { e.hvt = ev.target.checked;
 $('vehicle').addEventListener('change', ev => edit(e => { e.vehicle = ev.target.checked; if (e.vehicle) { e.trigger = 0; e.type = ''; e.hvt = false; e.prone = false; e.role = 'Guard'; e.patrol = []; } }));
 $('trigger').addEventListener('change', ev => edit(e => { e.trigger = +ev.target.value || 0; }));
 function addZone(x, y, z) {
-  pushUndo();
+  willChange('Add zone ' + (state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1));
   const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1;
   state.zones.push(newTrigger(id, 'zone', { pos: [x, y, z] })); showTab('triggers');
   const e = state.enemies[state.selected];
@@ -608,11 +631,33 @@ $('undo').addEventListener('click', undo);
 $('fit').addEventListener('click', fit);
 $('zoomIn').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1.4); });
 $('zoomOut').addEventListener('click', () => { const s = size(); zoomAt(s.w / 2, s.h / 2, 1 / 1.4); });
-$('trigNew').addEventListener('click', () => {
-  pushUndo();
-  const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1, when = $('trigKind').value, last = state.zones.length ? state.zones[state.zones.length - 1].id : 0;
-  state.zones.push(newTrigger(id, when, when === 'time' ? { delay: 300 } : when === 'after' ? { after: last } : {}));
+// One history entry per new trigger; the Add trigger button and the automated tests come through here.
+function trigAdd(when) {
+  const id = state.zones.reduce((m, q) => Math.max(m, q.id), 0) + 1, last = state.zones.length ? state.zones[state.zones.length - 1].id : 0;
+  willChange('Add trigger ' + id);
+  state.zones.push(newTrigger(id, when, when === 'time' ? { delay: 300 } : when === 'after' || when === 'outcome' ? { after: last } : {}));
   changed();
+  return id;
+}
+// One field of an outcome trigger (ML-047), as its row sets it: the watched trigger, the outcome word or the window in
+// seconds. One named history entry each; a value the file would refuse is not taken, so the row cannot make one.
+function outcomeSet(id, key, value) {
+  const z = state.zones.find(q => q.id === id);
+  if (!z || z.when !== 'outcome') return false;
+  let v;
+  if (key === 'after') { v = value | 0; if (v === z.id || !state.zones.some(q => q.id === v)) return false; }
+  else if (key === 'outcome') { if (!OUTCOMES.includes(value)) return false; v = value; }
+  else if (key === 'within') { v = Math.max(1, Math.min(3600, +value || OUTCOME_WITHIN)); }
+  else return false;
+  if (z[key] === v) return true;
+  willChange('Change ' + (key === 'after' ? 'the trigger it watches' : key === 'outcome' ? 'the outcome it waits for' : 'the answer window') + ' of ' + trigTitle(z).toLowerCase());
+  z[key] = v;
+  changed();
+  return true;
+}
+expose({ trigAdd, outcomeSet });   // adding a trigger and editing an outcome trigger (ML-047), for automated tests
+$('trigNew').addEventListener('click', () => {
+  const id = trigAdd($('trigKind').value);
   showTab('triggers');
   say('Trigger ' + id + ' added. Select an enemy and set "Appears" to bind it, or select a door to have the trigger lock or unlock it.');
 });
@@ -630,7 +675,7 @@ function addWaves(count, size, first, gap) {
     if (!levels.length) return null;
     return [x, wantY === undefined ? Math.min(...levels) : floorNear(x, z, wantY), z];
   };
-  pushUndo();
+  willChange(count === 1 ? 'Add a wave' : 'Add ' + count + ' waves');
   let id = state.zones.reduce((m, q) => Math.max(m, q.id), 0), group = state.enemies.reduce((m, e) => Math.max(m, e.group + 1), 0), prev = 0, made = 0, waves = 0;
   for (let w = 0; w < count; w++) {
     // The side this wave comes from: tried until enough starting spots are found there, well away from where players arrive.
@@ -670,8 +715,8 @@ $('sqPaste').addEventListener('click', () => { if (clip) startPlacing(clip, 'the
 $('sqTurnL').addEventListener('click', () => turnSquad(-45));
 $('sqTurnR').addEventListener('click', () => turnSquad(45));
 $('sqDel').addEventListener('click', removeSelected);
-$('sqGroup').addEventListener('click', () => { const list = picked(); if (list.length < 2) return; pushUndo(); const g = state.enemies[state.selected >= 0 ? state.selected : list[0]].group; for (const i of list) state.enemies[i].group = g; changed(); say('All ' + list.length + ' are group ' + (g + 1) + ' now.'); });
-$('sqTrig').addEventListener('change', ev => { if (ev.target.value === '') return; const list = picked(); pushUndo(); for (const i of list) { const e = state.enemies[i]; if (!e.hvt && !e.vehicle) e.trigger = +ev.target.value || 0; } changed(); });
+$('sqGroup').addEventListener('click', () => { const list = picked(); if (list.length < 2) return; willChange('Make ' + list.length + ' enemies one group'); const g = state.enemies[state.selected >= 0 ? state.selected : list[0]].group; for (const i of list) state.enemies[i].group = g; changed(); say('All ' + list.length + ' are group ' + (g + 1) + ' now.'); });
+$('sqTrig').addEventListener('change', ev => { if (ev.target.value === '') return; const list = picked(); willChange('Change when ' + list.length + ' enemies appear'); for (const i of list) { const e = state.enemies[i]; if (!e.hvt && !e.vehicle) e.trigger = +ev.target.value || 0; } changed(); });
 $('sqSave').addEventListener('click', () => {
   const list = picked(), name = $('sqName').value.trim();
   if (!list.length) return;
@@ -682,14 +727,14 @@ $('sqSave').addEventListener('click', () => {
 $('sqPick').addEventListener('change', syncSide);
 $('sqPlace').addEventListener('click', () => { const q = allSquads()[+$('sqPick').value]; if (q) startPlacing(q.data, 'the squad "' + q.name + '"'); });
 $('sqForget').addEventListener('click', () => { const q = allSquads()[+$('sqPick').value]; if (!q || q.fixed) return; storeSquads(savedSquads().filter(x => x.name !== q.name)); syncSide(); say('Squad "' + q.name + '" forgotten.'); });
-const missionEdit = fn => { pushUndo(); fn(); changed(); };
+const missionEdit = fn => { willChange('Change the mission settings'); fn(); changed(); };
 $('extractAfter').addEventListener('change', ev => missionEdit(() => { state.extractionAfter = +ev.target.value || 0; }));
 $('insertion').addEventListener('change', ev => missionEdit(() => { state.insertion = ev.target.value; }));
 $('power').addEventListener('change', ev => missionEdit(() => { state.power = ev.target.value === 'off' || ev.target.value === 'on' ? ev.target.value : ''; }));
 $('wxRain').addEventListener('change', ev => missionEdit(() => { state.weather.rain = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('wxStorm').addEventListener('change', ev => missionEdit(() => { state.weather.sandstorm = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('wxHour').addEventListener('change', ev => missionEdit(() => { state.weather.hour = ev.target.value === '' ? null : Math.max(0, Math.min(24, +ev.target.value || 0)); }));
-const doorEdit = fn => { const d = state.doors[state.door]; if (!d) return; pushUndo(); fn(d); changed(); };
+const doorEdit = fn => { const d = state.doors[state.door]; if (!d) return; willChange('Change ' + (d.name ? 'door "' + d.name + '"' : 'door ' + (state.door + 1))); fn(d); changed(); };
 $('doorLock').addEventListener('change', ev => doorEdit(d => { d.locked = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('doorAi').addEventListener('change', ev => doorEdit(d => { d.enemiesCanOpen = ev.target.value === '' ? null : ev.target.value === '1'; }));
 $('doorClear').addEventListener('click', () => doorEdit(d => { d.locked = null; d.enemiesCanOpen = null; d.open = null; }));
@@ -703,7 +748,7 @@ function click3d(p, enemyIndex, button) {
   if (!p) { if (state.tool === 'select') select(-1); return; }
   const level = levelsAt(p[0], p[2]).filter(y => Math.abs(y - p[1]) <= 1.0).sort((a, b) => Math.abs(a - p[1]) - Math.abs(b - p[1]))[0];
   if (state.tool === 'add') {
-    pushUndo();
+    willChange('Add enemy ' + (state.enemies.length + 1));
     const walk = level !== undefined;
     const e = newEnemy(walk ? [p[0], level, p[2]] : p, walk ? (state.lastRole === 'Patrol' ? 'Guard' : state.lastRole) : 'Guard', state.lastGroup);
     if (!walk) e.fixed = true;                           // on furniture, a roof, under a bed: it can only stay put
@@ -713,7 +758,7 @@ function click3d(p, enemyIndex, button) {
     const e = state.enemies[state.selected];
     if (!e) return say('Select an enemy first, then click the stops of its route.');
     if (level === undefined) return say('Route stops must be on walkable ground.');
-    pushUndo(); e.role = 'Patrol'; e.fixed = false; e.patrol.push([p[0], level, p[2]]); changed();
+    willChange('Add a route stop to enemy ' + (state.selected + 1)); e.role = 'Patrol'; e.fixed = false; e.patrol.push([p[0], level, p[2]]); changed();
     say('Stop ' + e.patrol.length + ' added' + (e.patrol.length < 2 ? '. Add at least one more.' : '.'));
   } else select(-1);
 }

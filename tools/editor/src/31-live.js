@@ -104,7 +104,7 @@ const liveTrouble = err => {
 };
 function startLive() {
   live.on = true; document.body.classList.add('live');
-  state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0;
+  state.example = false; state.map = null; state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; historyReset('The page is linked to the game now.');
   $('save').hidden = false; $('save').textContent = 'Save in the game';
   listReplays(); setInterval(listReplays, 15000);
   pollLive();

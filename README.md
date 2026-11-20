@@ -65,13 +65,24 @@ uses"). The choice is the `Scenario` setting. `examples/` holds a hand-made scen
 Clean House that uses zones, a patrol, a prone guard, a fixed sentry and moved intel.
 
 ### Missions to play
-Three finished missions for Clean House ship in `examples/`, each with a short briefing and clear endings:
+Four finished missions for Clean House ship in `examples/`, each with a short briefing and clear endings:
 `clean_house_quiet_raid.json` (stealth: take the phone and leave; a four-minute countdown only after an alarm),
-`clean_house_escalation.json` (hold a room upstairs against timed waves) and `clean_house_game_master.json` (the
-host fires events by hand; taking the phone or 20 minutes opens the way out without them). Squad size and minutes
-in each file are the author's estimates: none has been playtested yet, so no measured duration exists. Each stays
-finishable when its chance enemies are absent. `docs/first-edit.md` walks a first-time host through playing one,
-changing an encounter, fixing a Mission check warning and saving it.
+`clean_house_escalation.json` (hold a room upstairs against timed waves), `clean_house_game_master.json` (the
+host fires events by hand; taking the phone or 20 minutes opens the way out without them) and
+`clean_house_two_man_job.json` (sealed, for two: take the intel and hold the painted upstairs together for a minute,
+or last six minutes after the intel; host options for garrison, skill, respawns and time limit, scattered guards,
+an either/or courier and two optional Game Master cards). None of the four sends hunters or calls enemies (`rally`)
+any more: from 0.27 their waves and reinforcements walk patrol routes, because orders to freshly spawned enemies have
+not yet been seen to move anyone in the game (Status table). Squad size and minutes in each file are the author's
+estimates. Only the Two-Man Job has been played (once, with two players, 19 November: 11 minutes to the extraction);
+none has been playtested for balance. Each stays finishable when its chance enemies are absent. `docs/first-edit.md`
+walks a first-time host through playing one, changing an encounter, fixing a Mission check warning and saving it.
+
+Three more files in `examples/` are for trying things out rather than finished missions, and none has run in the game:
+`clean_house_recipe_intel_raid.json` (what the editor's "New mission: Intel raid" recipe makes, with its rehearsal in
+`examples/rehearsals/`), `clean_house_objectives.json` (`missionlab-plan/3`: two required objectives in a chain, one
+optional, and the extraction waiting for the required ones) and `clean_house_movement_probe.json` (the test of whether
+enemies walk where MissionLab sends them; the host fires its triggers by hand from Direct and keeps the log).
 
 ### Zones
 A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
@@ -129,6 +140,7 @@ unlocks its doors, and can open the extraction. What it can wait for:
 | `intel` | an intel item is picked up (`item`: its name, `""` for any, `"all"` for every one) |
 | `time` | `delay` seconds after the mission started |
 | `after` | another trigger (`after`: its id) has fired |
+| `outcome` | the host has seen what became of another trigger's latest firing (`after`: its id): `"outcome"` is `applied`, `failed`, `partial`, `unconfirmed` or `timeout` (no answer within `within` seconds, default 30, 1 to 3600) |
 
 Every kind takes `delay` (seconds to wait before firing), `doors` (a list like the
 scenario's own, with `locked`), and `"extraction": "open"`. In the editor triggers have
@@ -137,6 +149,16 @@ their own tab; connected to the game each has a "Fire now" button.
 ### Mission settings
 - `"extraction": { "after": 3 }` holds the extraction shut until trigger 3 has fired; the
   mission's own rule still has to be met as well.
+- `"extraction": { "goals": true }` (0.27) also holds it shut until every required objective is done.
+- **Objectives** (0.27): `"goals": [{ "id": "phone", "name": "Recover the phone", "succeed": 3 }]`. Each goal is started,
+  done or failed by triggers (`activate`, `succeed`, `fail`), may wait for other goals (`after`), and is `required`
+  unless it says `false`. Players get "New objective", "Objective complete" and, in red, "Objective failed" on screen
+  (`"notify": false` keeps a goal quiet). When a goal's success and failure come in the same moment, failure wins.
+- **A trigger shaped like a named place** (0.27): `"place": 2` on a zone or hold trigger, with no `area` of its own,
+  uses that painted place's shape; changing the place changes every trigger linked to it.
+- A file with `goals` or place links is written as `missionlab-plan/3`. MissionLab 0.26 and older refuse it as a newer
+  format rather than playing it without them. For a mission whose only plan/3 feature is place links, the editor can
+  export a copy without links (plan/2, each zone with its own copy of the shape) that 0.25 and 0.26 can play.
 - `"insertion": "Alpha 2"` gives every player that insertion, whatever they pick.
 - `"weather": { "hour": 5.5, "rain": true, "sandstorm": false }` on maps that have
   weather. Clean House, Mexico Depot and Georgia have none, so it does nothing there.
@@ -271,6 +293,208 @@ in the enemy panel, for everything selected.
 - **Ready-made sets** on the Triggers tab: a countdown after the intel, an alarm that calls help,
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
+
+### New in 0.27.0 (not run in the game yet)
+The v0.27 milestone of `docs/backlog.md` (ML-028 to ML-053). Everything here is covered by `./test.sh`, which now also
+works the page in a real browser; none of it has run in OPERATOR yet, and none of it has been seen by a friend without
+the mod. `docs/backlog-status.md` says what each ticket still needs in the game.
+
+**Stabilisation**
+- **A circle never opens the way out** (ML-029). A trigger that waits, through `after`, `all` or `any`, on a chain that
+  comes back to itself never fires by itself (only "Fire now" sets it off), so it no longer counts as a way to open the
+  extraction, not even through an `any` with another way in. The plugin and the Mission check now both refuse a
+  scenario whose only way out is such a trigger, whatever the order of the list; another trigger that can open the
+  extraction still makes it acceptable.
+- **Game Master lets go completely after an error** (ML-030). When the mission rules are paused after errors while
+  Game Master is open, the mod closes it, gives the game's keys back, switches off the free camera it opened and drops a
+  half-placed enemy; recovering does not take the keys again, and F8 opens Game Master as usual. Closing Game Master by
+  hand now also switches off a free camera it opened. Still for the game: a run with the rules failing while Game Master
+  is open and `BlockGameKeys` on.
+- **Repeating a generated run uses that run's roll** (ML-031), not the `Seed` in the config. The run record now keeps
+  what the layout was made from (generator version, scene, map file and its fingerprint, the scene's spawn and insertion
+  points, enemy count, `RandomExtras`, `RandomIntel`, `MoveTarget`, the target mission), and all of it is compared before
+  anything is changed: if one differs, or the record is older, unreadable or from a refused mission, the mission is left
+  as shipped and the page and the log say why. "A new roll" plays a fresh setup. A repeat promises the same setup, not
+  the same play. Still for the game: a repeated generated setup seen to match. The doors that random extras lock are
+  taken from the scene and are not part of the comparison.
+- **An area drag is kept or given up as a whole** (ML-032). Giving up a corner, edge or whole-area drag (Esc, the
+  browser cancelling the pointer, another tool, Done) puts the area and its anchor back exactly, with nothing to undo or
+  send; a finished drag is one undo step for the shape, the anchor and the inside test, which follows the shape while
+  you drag. What the game makes of a shape sent during a mission is still unseen.
+- **Updating and uninstalling keep your work** (ML-033). The ZIP now puts the examples in `BepInEx/MissionLab/examples/`
+  (copy one into `scenarios/` to play it), so an update never writes into `scenarios/`, `revisions/`, `runs/` or
+  `replays/`; an example you edited where it was installed is put back by the next update. Uninstalling is deleting
+  `BepInEx/plugins/MissionLab/`; removing your data as well is a separate step (see Install, below).
+  `python3 tools/package.py --check` tries both on a scratch install; an update of a real install has not been done.
+- **Fresh enemies' orders are followed to the end in the log** (ML-035). Each order is logged in stages: accepted, path
+  found, on its way, and one last word (arrived, in a fight, no progress, stopped short, unreachable after 45 s, gone or
+  replaced), at most 150 such lines a mission. An order to a spot more than 3 m across or 1.8 m up or down from walkable
+  ground sends nobody. The enemy's own path search is switched on and a path is asked for only when one is needed. Game
+  Master orders say "accepted, not yet seen to move", a refused call (`rally`) fails its trigger's action, and a hunter's
+  line says it accepted an order, never that it moved. Moving fresh enemies stays **failing** until one is seen to arrive:
+  the starter missions no longer use hunters or calls (Missions to play), and
+  `examples/clean_house_movement_probe.json` is the test to play next.
+- **One list of what has been seen to work** (ML-036). `docs/capabilities.json` is read by the plugin, the page (Play
+  view, "Is everything ready?") and the README Status table, so they cannot disagree. "Failing" (tried, did not work)
+  is kept apart from "untested"; a result counts as confirmed only on the build that ran it, and a solo run or a host's
+  log never counts as what a client saw. Before a mission Play names what is missing (an intel kind the map's recon file
+  lacks, the wrong scene, map or mode), and the plugin leaves the mission as shipped when none of its intel items
+  matches a scenario's intel trigger or moved item. A scenario that uses something failing or experimental can still be
+  chosen, as "Play this next (experimental)". Two assumptions are not yet seen in the game: that the recon's map file
+  name is the map file, and that the game lists every candidate intel item when the mission starts.
+- **A co-op record for 0.27** (ML-037). `docs/coop-record.md` now holds a 21-row record for one host and one friend with
+  no mod at all, on the 0.27.0 candidate, played with `examples/clean_house_acceptance.json` and
+  `examples/clean_house_objectives.json`: messages, doors, moved intel, delayed enemies, both endings, the extraction,
+  shared waves after two deaths at once, the painted house with its stairs and crouching, live edits, stale and retried
+  commands, and two missions in a row. A row passes only on the word of the player whose screen it is. Nobody has
+  played it yet.
+- **The first-session path** (ML-039) is prepared, not proven: the examples folder, the update and removal steps above
+  and `docs/first-edit.md` agree, and the walkthrough no longer relies on enemies walking where they are sent. Still
+  needed: both plugins built against the game from the release commit, the ZIP with its checksum, and a first-time host
+  following `docs/first-edit.md` through to playing the saved mission with a friend without the mod.
+
+**Authoring**
+- **Rooms painted once** (ML-040). A zone or hold trigger can "Link to Place" (`"place": <id>`, no area of its own)
+  instead of copying the place's shape. Changing the place's footprint changes every linked trigger in one undo step and
+  one staged change; renaming keeps the links; a place with links cannot be deleted until they are moved or detached
+  (Detach, Detach all, Move links). Links make the file `missionlab-plan/3`; "Export a copy without links" and the pack
+  option "Without links to places" write plan/2 with the exact shapes. During a mission a footprint change is one
+  shape change: holds in progress start again, what has fired stays. A Game Master save keeps the links while the shapes
+  agree and copies the shape where they do not. An inserted module asks whether to link a place of this map or keep its
+  own shape (`docs/modules.md`). Still for the game: a place edited live, a Game Master save of a linked mission.
+- **Floors and rooms** (ML-041, Map tab). Floors are height bands (presets for Clean House and for 3 m storeys, or the
+  floors found on the map), buildings are sets of named places; each can be focused, isolated, hidden, locked and
+  ordered. Anything locked, hidden or faded cannot be clicked, boxed, dragged, deleted or added to, in 2D or 3D. A
+  vertical section along a drawn line shows the floor bands, stairs, feet and where floors overlap. The layout is kept
+  in this browser per map print; a different print asks for a review. Still open: the 3D view with the real 3D library
+  (hidden floors are still drawn there), and whether the floors found on Clean House are right.
+- **A mission graph** (ML-042, read-only, Triggers tab and Direct): the start, every trigger with what it waits for, its
+  delay, chance and repeat and what it does, missing references, the extraction and the endings, with a line style per
+  kind of link and the Mission check's findings marked on it. In Direct it shows how often each trigger fired, its phase
+  and its outcome; after a rehearsal, its results. Clicking selects the trigger (Direct) or its enemies (Create). A sealed
+  mission shows nothing. Editing in the graph is for later; its look has not been checked in a real browser.
+- **Walk the map, keep it as a test** (ML-043). The area probe says why a point is inside or outside (which part, a hole,
+  the floor band or the circle's distance). A walkthrough moves up to four test players along timed waypoints with set
+  heights, samples every 0.5 s and warns when a step jumps through an area; tracks from a replay can be used as paths.
+  Rehearsal results go event by event, with the state before and after, the first failed check, the first difference
+  from the previous run, and what the rehearsal models and what it does not. Offline, "Export trace (not run)" writes it
+  down without running it. Saved tests ship in `examples/rehearsals/`. Still open: running it through the plugin from the
+  page, clicking across real floors, importing a real replay (its clock is assumed to start with the mission).
+- **New mission: Intel raid** (ML-044, Map tab): insertion, the kind of intel, the building (a place, or paint one),
+  encounter modules for its rooms, garrison, skill, time limit and alarm. It says what is missing or not supported
+  (hunters and calls are left out) before it makes anything, and the whole mission is one undo step: triggers, guards,
+  host options, patrol reinforcements, briefing, held extraction and a rehearsal "Intel raid: in, intel, out". Also
+  fixed: the editor dropped an enemy's `lot` when its chance was 100, which broke the Two-Man Job's garrison option once
+  saved from the page. Still open: a new author completing it, the example played with a friend without the mod.
+- **Named undo and redo** (ML-045). The History panel above Save lists each change by name; Ctrl+Z, Ctrl+Shift+Z and
+  Ctrl+Y work (not while typing). A drag in 2D or 3D, the facing slider and an area edit are one step each, and a
+  cancelled one leaves nothing. "Move with everything" (Enemies tab) moves or turns the selected enemies with their
+  routes, the triggers that bring them, those triggers' things and the painted places they stand in, around one pivot,
+  with a preview; doors stay with the map and are listed, and a landing off walkable ground is refused. Opening another
+  file or a new mission session clears the history, says so, and keeps the unsaved page under Revisions as a separate
+  draft. Undoing a change the running game already has stages the reverse change in Draft mode. Still open: jumping by
+  clicking a history entry, undo against a running game.
+- **Wall snapping and room suggestions** (ML-050, a first try). With a `.mlgeo` file open, rectangle, polygon and corner
+  points can snap to the walls cut at waist height on the current floor, and "Suggest room" floods out from a click
+  between walls and drawn barriers (30 m around by default, at most 80 m), with pillars as holes. If it leaks, it shows
+  where and how wide the narrowest gap is and proposes nothing until a barrier or "Close the gap" seals it; the draft is
+  kept as one undo step or dropped. It fails where you would expect: open windows and doorless doorways leak, tall
+  furniture becomes holes, low railings stop nothing, rising stairs join floors, curved walls hit the 256-corner limit,
+  and the geometry file is matched to the map by name and ground overlap. Tested only on synthetic walls; not yet on a
+  real export or by hand in a browser.
+- **Proposals from a coding assistant** (ML-053). A coding agent can read the scenarios and the capability list through
+  the browser link (`/api/agent/…`, local only) and propose changes as operations on stable ids. MissionLab applies them
+  to a copy and checks the result with the strict reader, the completion check (only problems the change introduces
+  refuse it) and the capability list (a feature marked failing or unavailable is refused); a proposal made against an
+  older text or revision is refused as stale. Accepted proposals are kept in `BepInEx/MissionLab/proposals/`, never in
+  `scenarios/` and never sent to the running mission. In the editor, "Agent proposals" (Mission tab) opens one as a
+  separate draft with the usual list of differences, and Apply makes it one undo step (in Draft mode while a mission
+  runs), refused if the draft or the scenario has changed since. `tools/agent/missionlab_agent.py` lets an MCP client
+  (such as Claude Code) use it; `tools/agent/example.py` is a scripted example; `docs/agent-api.md` describes it all.
+  The tools stay in the repository and are not in the ZIP. Still to do: the example against a running plugin, an MCP
+  client through the adapter, and the editor part in a real browser.
+
+**Mission design and sessions**
+- **Objectives** (ML-046): `goals` in a scenario (Mission settings, above), the Objectives section of the Mission tab, a
+  board in Direct, and only the objectives already given in a sealed mission's Play view. Completion, rehearsal and the
+  Game Master read them through the same rules, so a chain finishes in one step and each change happens once. Notices go
+  through the same queue as trigger messages (none for objectives given from the start). The extraction can wait for
+  the required ones, and the plugin, rehearsal and Direct say which are still missing. Run records and replays note
+  them; a Game Master save keeps them. Example: `examples/clean_house_objectives.json`. Still for the game: the notices
+  on a client without the mod, and the extraction opening when the last required objective is done.
+- **Branches on what was seen to happen** (ML-047): `"when": "outcome"` (Triggers, above) waits for the host's answer to
+  the latest firing of another trigger and is met at most once per firing. "Unconfirmed" is an answer; "timeout" means
+  none came in time. An answer that comes late, or for an older firing, is shown in the inspector and the recording but
+  never moves the branch, and nothing is retried. A trigger that brings enemies and only some appear is now "partial"
+  (it was "failed"); the mission's end fails any branch still waiting. The Mission check blocks an `applied` or
+  `partial` branch the host can never see (doors, calls, messages and the like are never more than unconfirmed) when the
+  way out depends on it, and notes it otherwise.
+- **Validate before playing** (ML-048, Mission tab): the format, whether the mission can be finished for every host
+  option combination (all of them up to 256, a fixed sample above), 1, 2 and 4 players and several rolls, scatter (with
+  the map open) and the saved rehearsals, within a budget (2,000 combinations by default) that, like Cancel, keeps what
+  was found. The report names the file's hash, the map print and the rules version, and says it is out of date when one
+  changes; the first failing combination is kept (`validations/<scenario id>/`) and can be reproduced, and "Show what it
+  is about" marks it in the graph. Offline only the format and the Mission check run. It never claims balance, paths or
+  anything about multiplayer.
+- **Session playlists** (ML-049, Play). A host's list for an evening, kept in `BepInEx/MissionLab/playlists/`: each entry
+  pins a scenario (file, id, revision and hash), its host options, squad size and dice (a new roll, an exact repeat, or a
+  retry of the last failed setup), and tells the host which map and mode to start. After a restart of the game the
+  entry's options and dice are put back at the mission start. The list moves on once per run record: success or failure
+  moves on, a run without a clear result waits for the host, whose mark is shown as the host's. A changed or missing
+  scenario asks what to do.
+- **Operations** (ML-051, Play): two to six missions in a chain, each a pinned setup, where the next one depends on the
+  last run's result and its objectives, by the author's branches in order; a branch the run record cannot answer waits
+  for the host, and the fallback is used only when every branch is ruled out. The host can choose any branch, the
+  fallback, or "does not count, play again"; such choices are kept and labelled. Files in `BepInEx/MissionLab/operations/`
+  are saved whole with the previous version beside them, a damaged file is restored from it with a message, and a file
+  from a newer version is left alone. Nothing from inside a mission is carried into the next one.
+- **A pressure director, as an experiment** (ML-052). An optional `director.pressure` lets the Game Master budget be
+  spent by itself on the author's own cards, within bands the author writes (from a time, while given objectives are
+  active, with at least so many living players; at most so many points every 10 to 600 s), never past the budget, a
+  card's cooldown or placement rule, or a cap on living enemies, and with a rest after a player goes down. When
+  something it needs is unknown it holds and says what. `mode` is `off`, `preview` (logs what it would play, fires
+  nothing) or `on`, and the host can switch it in Direct, where every decision and every card passed over is listed
+  with its reason, with Hold now and Spend now marked as the host's. Older versions ignore the key and play without it.
+  The placement check is an approximation, and no playtest has compared a mission with it on and off. Still for the
+  game: that playtest, and whether downed players and the game's enemy list are counted as the director assumes.
+
+**Tools and tests**
+- **Tests that fail when they cannot run** (ML-028). `./test.sh` now also checks that the README Status table is what
+  `docs/capabilities.json` makes (`tools/status.py --check`), runs the published schema over the examples and fixtures
+  (`tools/schema_check.py`, needs `jsonschema`), runs the browser suite and the coding-agent adapter's self-test. On
+  GitHub a missing Node, .NET leg or `jsonschema` fails the run instead of skipping it. The workflow has not yet run on
+  the release commit.
+- **The schema judges files as the readers do** (ML-034). `docs/scenario.schema.json` now says where the scenario sits
+  for each format, that only zone and hold triggers carry an `area` and that zone, hold and door triggers need a `pos`.
+  Both readers now refuse a plan/1 file (or one without a format line) holding a `"mission"`, a plan/2 scenario with a
+  `schema` of its own, and a format number with anything but digits; a very large number reads as a newer format. The
+  editor opens a mission record that holds a plan/2 scenario. One difference is left: the schema needs a thing's `name`,
+  the plugin does not.
+- **A real-browser suite** (ML-038): `node tests/browser/run.mjs` (Node 22 or later, Chrome or Edge, no packages) opens
+  the built page and works it with real mouse and keys: open and save, drawing, editing and giving up an area, choosing
+  across floors, 2D and 3D lining up, and Draft changes against a stand-in for the plugin (a stale session, a change still
+  running, a retry carried out once). Its 67 checks passed on the first run, with Edge on Windows.
+- Each new ticket has its own test file (`tests/Pure/Ml0NNTests.cs`, `tests/editor/cases/ml0NN-*.mjs`).
+
+### New in 0.26.2 (fixes after the co-op run of 19 November; the fixes themselves have not run in the game yet)
+0.26.1 ran once with two players on Clean House by night (`clean_house_two_man_job`, to the extraction in 11 minutes):
+what the host's log and recording show is in `docs/findings.md`. What the second player saw was not recorded.
+- **Extracting is not dying.** The game removes the players it extracts just as it removes dead ones, so the respawn
+  rule counted the whole squad as dead the moment it left. It announced a reinforcement wave on every screen ("2
+  players are down…") as the mission was won, and had done the same after every success ending before. Now no wave is
+  counted while the game is extracting, once it has finished, or once an ending is decided.
+- **A squad that extracts has won.** When the game itself finishes the extraction (`ServerCompleteExfil`, hooked for
+  every mission the mod lays out), the mission counts as a success. The run record says "success" instead of "over"
+  (Play view, debrief), the recording ends with "the players have extracted", and no trigger fires after it.
+- **A repeat that brings nobody shows no message.** When a repeating trigger fires again but none of its enemies is
+  down, nobody comes. If it does nothing else either (no doors, lights, respawn, call, ending or extraction), its
+  message is now left out instead of announcing enemies who never come. A reminder with no enemies of its own, or a
+  repeat that also cuts the power, still shows its message.
+- **Two-Man Job messages.** In `examples/clean_house_two_man_job.json` the intel's and the hold's messages now read
+  right whichever comes first, and the way out says "Job done". On 19 November the hold came first, so "Now hold the
+  upstairs…" arrived after the hold, just ahead of the way-out message.
+- Logs: the facing check gives the facing an enemy was actually given (toward a player) rather than its planned one,
+  and opening the extraction also logs the game's mission-wide extraction flag.
 
 ### New in 0.26.1 (fix after the run of 18 November; the fix itself has not run in the game yet)
 0.26.0 ran once in the game, solo on Clean House by night: what was seen is in `docs/findings.md` and the Status table.
@@ -410,8 +634,13 @@ The first part of `docs/backlog.md`; `docs/backlog-status.md` says where each ti
 
 ### Tests
 `./test.sh` runs the tests that need nothing of the game (scenario model, dice, trigger rules, completion check,
-reinforcement waves, and the editor's own checks): the .NET 8 SDK, Python 3 and Node 18 or newer (without Node the editor
-checks are skipped). `./test.sh --map <navmesh.bytes> <recon.json>` adds the checks that read one of your own map files.
+reinforcement waves, and the editor's own checks), checks that the editor page and the README Status table are what
+their sources make, runs `docs/scenario.schema.json` over the examples and fixtures, and works the page in a real
+browser. It needs the .NET 8 SDK, Python 3 and Node 18 or newer; the schema check also needs `pip install jsonschema`,
+and the browser checks Node 22 or newer and Chrome or Edge. On your own computer a missing one is skipped with a note;
+on GitHub (`CI` set) a skip fails the run. It also runs `python3 tools/agent/missionlab_agent.py --selftest`, which
+starts its own stand-in for the browser link. `./test.sh --map <navmesh.bytes> <recon.json>` adds the checks that read
+one of your own map files.
 
 ### New in 0.23
 - **Messages take turns.** Two messages at the same moment used to push each other off the screen.
@@ -474,52 +703,61 @@ in the running mission. "Save in the game" writes the scenario file. The page it
 are in the `[LiveLink]` config section.
 
 ## Status
-Every result below is from OPERATOR 0.09.5 with BepInEx 6.0.0-be.785 (IL2CPP), the only game version tried. Statuses:
-**tested** = seen to work in the game on the named build, map and mode; **experimental** = built and switched on, but
-the last run failed or the fix has not run in the game yet; **unavailable** = tried and the game does not do it, so the
-mod does not use it; **untested** = never run in that combination. "Solo" means a modded host alone; "co-op" means a
-modded host with a friend who has no mod. 0.24.1 to 0.26.0 have run once in the game (18 November, 0.26.0, solo; the rows
-below name what was seen); everything else they add is covered only by `./test.sh` and the editor tests. Sources:
-`docs/findings.md` (what was seen, run by run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the
-record to fill in for the next co-op run.
+<!-- capability table: made from docs/capabilities.json by python3 tools/status.py --write; change that file, not this table -->
+Every result below is from OPERATOR 0.09.5 with BepInEx 6.0.0-be.785 (IL2CPP), the only game version tried. Statuses: **supported** = seen to work in the game on the named build, map and mode; **experimental** = built and switched on, but not proven in the game (the effect was hardly noticed, or it is off by default until something else is seen); **failing** = tried in the game, and it did not work; **unavailable** = tried and the game does not do it, so the mod does not use it; **untested** = never run in that combination. "Solo" means a modded host alone; "co-op" means a modded host with a friend who has no mod; "by the host's log" means a run with two players of which only the host's log and recording were kept, which is never a client's word.
+
+A status holds for the builds it names. The plugin and the editor show anything seen only on an older build as "seen on <build>, not yet on <current>", never as confirmed, and solo or host's-log evidence never as seen by a client. 0.24.1 to 0.26.0 have run once in the game (18 November, 0.26.0, solo; the rows below name what was seen); everything else they add is covered only by `./test.sh` and the editor tests. 0.26.1 ran once with two players (19 November); only the host's log and recording were kept, so nothing from that run is a client's word and it does not count as co-op here. Sources: `docs/findings.md` (what was seen, run by run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the record to fill in for the next co-op run.
+
+This table is made from `docs/capabilities.json` by `python3 tools/status.py --write`: change the file, not the table. The plugin and the editor read the same file.
 
 | Capability | Status | Build, map, mode | Evidence and what is still open |
 |---|---|---|---|
-| Client joins a modded host; scenario enemies, enemies spawned later and zone enemies appear for the client | tested | 0.13.0, Clean House, co-op | Findings, co-op 0.13.0. Nothing added after 0.13 has been seen by a client |
-| Everything else in co-op on 0.14 to 0.24.3 (triggers, doors, messages, intel, extraction, waves, endings, live edits) | untested | 0.24.3, Clean House, co-op | ML-011 not started; `docs/coop-record.md` lists every check |
+| Client joins a modded host; scenario enemies, enemies spawned later and zone enemies appear for the client | supported, co-op | 0.13.0, Clean House, co-op | Findings, co-op 0.13.0. Nothing added after 0.13 has been seen by a client |
+| Everything else in co-op on 0.14 to 0.26.1 (triggers, doors, messages, intel, extraction, waves, endings, live edits) | untested | 0.26.1, Clean House, co-op | 19 November, two players: triggers, the hold by everyone, messages, the held extraction and the squad's extraction all ran by the host's log; what the second player saw, and whether they had the mod, was not recorded. `docs/coop-record.md` lists every check |
 | Rejoin or late join; a modded player who is not the host | untested | any | ML-011 |
-| Generated layouts | tested | build not recorded (before 0.15), Suburb and Mexico Depot Day, solo | Findings: enemies on every planned point; Mexico Depot 31 of 31, patrols walking |
+| Generated layouts | supported, solo | build not recorded (before 0.15), Suburb and Mexico Depot Day, solo | Findings: enemies on every planned point; Mexico Depot 31 of 31, patrols walking |
 | Generated layouts on Georgia | untested | Georgia | Only the game's own target person is recorded there; an earlier note said layouts ran, with no build or record |
 | Maps other than Suburb, Mexico Depot and Georgia | untested | any | Findings, "Not yet verified" |
-| Scenario files and patrol routes | tested | 0.15 to 0.24.0, Clean House, solo | Findings, runs 0.15.0 to 0.24.0; patrols walked their routes |
-| The scenario picker in the lobby, the empty map | tested | build not recorded, Clean House, solo | An earlier status note only; no run in the findings records them |
-| A scenario that cannot be finished is refused, the game's own mission runs | tested | 0.24.0, Clean House, solo | Two refused missions with the refusal test (ML-001) |
-| Trigger engine: time with repeat and cap, zone, hold, hold by everyone, alarm, door, enemies down, tagged down, intel, all-of, after, chance, fire by hand, countdown | tested | 0.24.0 and 0.26.0, Clean House by night, solo | Findings, 17 and 18 November; repeat fired at 60, 150 and 240 s and stopped |
-| Messages on screen, taking turns; briefing | tested | 0.24.0, Clean House, solo | Findings: messages took turns. Never confirmed on a client's screen |
-| Shared respawn wave | tested | 0.24.0 and 0.26.0, Clean House, solo | 18 November: two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later. Two players dead at once: untested |
-| Respawn by trigger (`"respawn": true`) | tested | 0.22.0, Clean House, solo | The dead host was back within a second |
-| Failed ending (red message, back to the lobby without a result screen) | tested | 0.22.0, 0.24.0 and 0.26.1, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used. 0.26.1: the trigger's red message and "Mission failed." go out together |
-| Success ending | tested | 0.17.0, 0.26.0 and 0.26.1, Clean House, solo | The mission ends 2.5 to 2.7 s after the call. 0.26.1: the ending waited 11 s for the two messages fired with it |
-| Door locked or unlocked at the start and by a trigger | tested | 0.15.0 to 0.24.0, Clean House, solo | Findings: our doors hold after the game's own roll |
-| Door that stands open | tested, solo | 0.26.0, Clean House by night, solo | 18 November: opened by the third way (turning it by hand) 5 s after the trigger, seen by the plugin; a client's view: untested |
-| Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | experimental, failing | 0.26.1, Clean House, solo | 18 November: two hunters had no path and moved 3.9 m in 90 s after all three ways. 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
-| Moved intel (`objectives` in a scenario) | tested, solo | 0.26.0, Clean House by night, solo | 18 November: the phone was moved upstairs at the start, picked up there, and fired its trigger. How an unmodded client sees it: untested |
+| Scenario files and patrol routes | supported, solo | 0.15 to 0.24.0, Clean House, solo | Findings, runs 0.15.0 to 0.24.0; patrols walked their routes |
+| The scenario picker in the lobby, the empty map | supported, solo | build not recorded, Clean House, solo | An earlier status note only; no run in the findings records them |
+| A scenario that cannot be finished is refused, the game's own mission runs | supported, solo | 0.24.0, Clean House, solo | Two refused missions with the refusal test (ML-001) |
+| Trigger engine: time with repeat and cap, zone, hold, hold by everyone, alarm, door, enemies down, tagged down, intel, all-of, after, chance, fire by hand, countdown | supported, solo | 0.24.0 and 0.26.0, Clean House by night, solo | Findings, 17 and 18 November; repeat fired at 60, 150 and 240 s and stopped |
+| Messages on screen, taking turns; briefing | supported, solo | 0.24.0, Clean House, solo | Findings: messages took turns. Never confirmed on a client's screen |
+| Shared respawn wave | supported, solo | 0.24.0 and 0.26.0, Clean House, solo | 18 November: two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later. Extracting players were counted as dead, and a wave announced on every screen as the mission was won (19 November, and after every success ending before); 0.26.2 stops that, not run yet. Two players dead at once: untested |
+| Respawn by trigger (`"respawn": true`) | supported, solo | 0.22.0, Clean House, solo | The dead host was back within a second |
+| Failed ending (red message, back to the lobby without a result screen) | supported, solo | 0.22.0, 0.24.0 and 0.26.1, Clean House, solo | Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used. 0.26.1: the trigger's red message and "Mission failed." go out together |
+| Success ending | supported, solo | 0.17.0, 0.26.0 and 0.26.1, Clean House, solo | The mission ends 2.5 to 2.7 s after the call. 0.26.1: the ending waited 11 s for the two messages fired with it. The game's own extraction: two players extracted on 19 November, recorded as "over"; 0.26.2 records it as a success, not run yet |
+| Extraction held shut until a trigger (`extraction.after`, a trigger's `"extraction": "open"`) | supported, solo and by the host's log | 0.15.2 to 0.26.1, Clean House, solo and two players | Not a row before 0.27; taken from the findings. 18 November: "two down" and the phone opened the extraction. 19 November: held until trigger 5, then the squad extracted (host's log). Opened by the fallback "set on each extraction zone" in every run. What a client sees: untested |
+| Door locked or unlocked at the start and by a trigger | supported, solo | 0.15.0 to 0.24.0, Clean House, solo | Findings: our doors hold after the game's own roll |
+| Door that stands open | supported, solo | 0.26.0, Clean House by night, solo | 18 November: opened by the third way (turning it by hand) 5 s after the trigger, seen by the plugin; a client's view: untested |
+| Calling enemies (`rally`), hunters, Game Master orders to fresh enemies | failing | 0.26.1, Clean House, solo | 18 November: two hunters had no path and moved 3.9 m in 90 s after all three ways. 0.22.0: a Game Master order moved two enemies after a fight (ML-003) |
+| Moved intel (`objectives` in a scenario) | supported, solo | 0.26.0, Clean House by night, solo | 18 November: the phone was moved upstairs at the start, picked up there, and fired its trigger. How an unmodded client sees it: untested |
 | Random layouts laying the intel elsewhere (`RandomIntel`) | experimental, off by default | 0.24.3 | Off until moved intel is seen on an unmodded client. The rest of `RandomExtras` (waves, ambush, locked doors) stays on |
 | Target person placement (`hvt`, `MoveTarget`) | untested | any | Only the game's own target was seen, on Georgia |
-| Insertion chosen by the scenario | tested | 0.15.2, Clean House, solo | The host started on Alpha 2. A client's insertion: untested |
-| Placed weapons | tested | 0.19.0, Clean House by night, solo | Picked up and used |
+| Insertion chosen by the scenario | supported, solo | 0.15.2, Clean House, solo | The host started on Alpha 2. A client's insertion: untested |
+| Placed weapons | supported, solo | 0.19.0, Clean House by night, solo | Picked up and used |
 | Placed grenades and landmines | untested | 0.17.0, Clean House, solo | Placed without error but not seen |
-| Two sides, lights out, suicide bomber type, gun truck (with the plugin's fallback) | tested | 0.15.0 to 0.20.0, Clean House, solo | Findings |
+| Two sides, lights out, suicide bomber type, gun truck (with the plugin's fallback) | supported, solo | 0.15.0 to 0.20.0, Clean House, solo | Findings |
 | Skill and night vision | experimental | 0.21.0 and 0.22.0, Clean House, solo | Applied by the log; the difference was hardly noticed in play |
 | Weather and time of day | unavailable | Suburb, Mexico Depot, Georgia | The game has no weather object on these maps |
 | Noise to alert enemies (`HeardTarget`, `ShotFired`) | unavailable | 0.19.0 and 0.20.0, Clean House, solo | Nobody reacted; replaced by patrol orders |
-| Game Master mode in the game and in the browser, recordings | tested | 0.15 to 0.24.0, Clean House, solo | Findings, every run |
-| Notice to other players that the host runs MissionLab (`TellPlayers`) | untested | co-op | Uses the message call that works solo; never seen by a client |
+| Game Master mode in the game and in the browser, recordings | supported, solo | 0.15 to 0.24.0, Clean House, solo | Findings, every run |
+| Notice to other players that the host runs MissionLab (`TellPlayers`) | untested, co-op | co-op | Uses the message call that works solo; never seen by a client. 19 November: sent with 2 players in, by the host's log |
 | PvP, wave survival and other modes left alone | untested | any | Not tried in the game |
-| Scenario contract, run records, recording identities, readiness check, release ZIP | tested, solo | 0.26.0, Clean House, solo | 18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game |
-| Painted trigger areas | tested offline on recorded movement | 0.26.1, Clean House by night, solo recordings | 18 November: the house painted on the real map and all 8,564 recorded player positions (15–18 November) played through the plugin's own rules: entered and left only at the doors, floors and stairs right, hold not reset by the stairs, basement left out. A shape sent live in a mission, and a client: untested |
-| Sealed missions | tested, solo | 0.26.1, Clean House by night, solo | 18 November: played to its failed ending; the host reported the page view as expected (the logs cannot show what the page drew) |
-| Play/Create/Direct, inspector, options, scatter, cards, packs (0.25 and 0.26) | inspector tested, the rest untested | 0.26.0, Clean House, solo | 18 November: the inspector followed every trigger of the diagnostic; the rest was not played |
+| Scenario contract, run records, recording identities, readiness check, release ZIP | supported, solo | 0.26.0, Clean House, solo | 18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game |
+| Named places (`places`: labels, and painted rooms that zone and hold triggers can link to) | untested | any | Not a row before 0.27. A place labels a spot or a painted room for logs, recordings and explanations; from 0.27 a zone or hold trigger may link to a painted place (missionlab-plan/3) and uses its shape, resolved when the file is read. No run on record names or links one |
+| Mission objectives (`goals`: required and optional, notices, extraction waiting for them) | untested | any | New in 0.27 (missionlab-plan/3). Objectives are driven by triggers; the plugin shows 'New objective', 'Objective complete' and 'Objective failed' through the same on-screen message as trigger messages, and can hold the extraction until every required objective is done. No run on record has one; a client's view of the notices is unseen |
+| Branches on observed outcomes (`when: "outcome"`: applied, failed, partial, unconfirmed, timeout) | untested | any | New in 0.27. A trigger waits for what the host saw of another trigger's latest firing; only enemies made by the spawner count as seen to take, and messages, doors and calls are never more than unconfirmed. A late result is shown but never moves the branch, and nothing is retried. No run on record has one |
+| Pressure director, an experiment (`director.pressure`: bands, caps, preview, rest) | experimental | any | New in 0.27, a spike. Spends the Game Master budget on the author's own cards within authored bands, never past the budget, the living-enemy cap or a card's placement rule, and rests after a casualty; preview logs without firing. Placement checks are an approximation. Covered only by the tests: no playtest has compared it with the director off |
+| Draft proposals from coding agents (`/api/agent`, `tools/agent/`) | untested | any | New in 0.27. Proposals are checked by the strict reader, Completion and the capability list on a copy and stored under proposals/; they never touch scenario files or the running mission until the author applies one as a draft. No run on record has used it |
+| Painted trigger areas | supported, offline on recorded movement; hold by everyone run with two players | 0.26.1, Clean House by night | 18 November: the house painted on the real map and all 8,564 recorded player positions (15–18 November) played through the plugin's own rules: entered and left only at the doors, floors and stairs right, hold not reset by the stairs, basement left out. 19 November: the painted upstairs hold by everyone counted both players and fired 60 s after the second went up (host's log). A shape sent live in a mission: untested |
+| Sealed missions | supported, solo | 0.26.1, Clean House by night, solo | 18 November: played to its failed ending; the host reported the page view as expected (the logs cannot show what the page drew). 19 November: the sealed Two-Man Job played with two players to its extraction |
+| Play, Create and Direct views and the trigger inspector (0.25) | supported, solo | 0.26.0, Clean House | 18 November: the inspector followed every trigger of the diagnostic. Until 0.27 this row also held options, scatter, cards and packs |
+| Host options before the mission (0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): the picks applied at the start (Standard, Regulars, Two, 25 minutes) |
+| Constrained scatter (0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): scatter moved 5 of 5 enemies |
+| Game Master budget and action cards (`director`, 0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): both cards were spent (the breaker reported the lights off; the street patrol appeared) |
+| Scenario packs (0.26) | untested | any | Covered only by the tests; not installed in a game yet |
+<!-- end of the capability table -->
 
 See `docs/findings.md` for what is known about the game's internals.
 
@@ -529,12 +767,19 @@ See `docs/findings.md` for what is known about the game's internals.
 - `src/MissionLab.Recon`     the observer plugin
 - `tests/Pure`               the tests that need nothing of the game (`./test.sh`, also on GitHub)
 - `tests/CoreTest`           offline checks of the generator against real map data
+- `tests/editor`             the editor's checks in Node, with one file per ticket in `tests/editor/cases`
+- `tests/browser`            the editor in a real Chrome or Edge, driven over the DevTools Protocol
 - `tests/fixtures`           scenario files the tests read, and the findings expected for the broken ones
-- `examples`                 hand-made scenarios, shipped in the ZIP
+- `examples`                 hand-made scenarios, shipped in the ZIP; saved rehearsals in `examples/rehearsals`
 - `tools/editor`             the scenario editor page and its 3D library
 - `tools/package.py`         builds the release ZIP from `dist/`
+- `tools/status.py`          writes the README Status table from `docs/capabilities.json`
+- `tools/schema_check.py`    runs the JSON Schema over the examples and fixtures
+- `tools/agent`              the coding-agent adapter (MCP over stdio, standard library only) and an example client; not in the ZIP
 - `tools/preview`            Python scripts that draw a plan on a map's walkable surface
 - `docs/scenario.schema.json` the scenario format as a JSON Schema
+- `docs/capabilities.json`   what has been seen to work in the game, read by the plugin, the page and the Status table
+- `docs/agent-api.md`        the coding-agent routes and the proposal format
 
 Build: `python3 tools/build.py --refs <OPERATOR folder>` (or set `OPERATOR_REFS` and run `./build.sh`). It compiles with
 Roslyn from the newest installed .NET SDK against the game's `dotnet`, `BepInEx/core` and `BepInEx/interop`; the game folder itself works. Built for Unity 6000.3.8f1,
@@ -542,7 +787,20 @@ BepInEx 6.0.0-be.785, game code dated 7 July 2026.
 
 Install: unzip the release ZIP (`python3 tools/package.py` after `./build.sh`) into the OPERATOR folder. By hand: copy
 both DLLs to `BepInEx/plugins/MissionLab/`, and `tools/editor/index.html` with `three.min.js` to
-`BepInEx/MissionLab/web/` for the browser link. Remove: delete `BepInEx/plugins/MissionLab/`.
+`BepInEx/MissionLab/web/` for the browser link. The example scenarios land in `BepInEx/MissionLab/examples/`; copy one
+into `BepInEx/MissionLab/scenarios/` to use it.
+
+Update: unzip the new ZIP over the old install and let it replace files. It writes only the plugins, the page, the
+examples and the example modules, never into `scenarios/`, `revisions/`, `runs/`, `replays/`, `rehearsals/`,
+`playlists/`, `operations/` (with their `.prev.json` copies), `validations/` or `proposals/`, so your own work is kept;
+an example you edited in place is put back as shipped, so save changes under another name.
+`python3 tools/package.py --check` tries this on a scratch install.
+
+Uninstall: delete `BepInEx/plugins/MissionLab/`. The mod stops loading and everything under `BepInEx/MissionLab/`
+(scenarios, modules, revisions, runs, replays, rehearsals, playlists, operations, validations, agent proposals, recon,
+maps, missions, the page) stays for a later install. Removing all data as well is a separate step that cannot be undone:
+first copy `BepInEx/MissionLab/` somewhere else or use Export pack on the page, then delete `BepInEx/MissionLab/`, which
+erases all of the above; `BepInEx/config/missionlab.director.cfg` holds the settings.
 
 ## Permission
 In November 2026 the maker of MissionLab sent Vector Interactive a video of the mod and asked

@@ -1,0 +1,48 @@
+{
+ "schema": "missionlab-plan/3",
+ "mission": {
+  "name": "Fixture: every field of missionlab-plan/3",
+  "id": "sc-fixture27",
+  "revision": 2,
+  "scene": "Fixture",
+  "seed": 27,
+  "triggers": [
+   { "id": 1, "name": "Arrival", "when": "zone", "pos": [5, 0, 5], "radius": 6, "place": 1, "message": "You are at the house." },
+   { "id": 2, "name": "Everyone inside", "when": "zone", "pos": [6, 0, 6], "radius": 6, "place": 1, "everyone": true },
+   { "id": 3, "name": "Hold the house", "when": "hold", "pos": [5, 0, 5], "radius": 6, "hold": 20, "place": 1, "extraction": "open" },
+   { "id": 4, "name": "Yard copy", "when": "zone", "pos": [52, 0, 50], "radius": 4,
+     "area": { "parts": [ { "floor": [-1, 2], "outline": [[45, 45], [55, 45], [55, 55], [45, 55]] } ] } },
+   { "id": 5, "name": "Gate", "when": "zone", "pos": [80, 0, 80], "radius": 5 },
+   { "id": 6, "name": "Alarm", "when": "alert" },
+   { "id": 7, "name": "No answer to the alarm", "when": "outcome", "after": 6, "outcome": "timeout", "within": 45, "message": "Nobody came." }
+  ],
+  "places": [
+   { "id": 1, "name": "House interior", "pos": [5, 0, 5],
+     "area": { "parts": [
+      { "floor": [-1, 3], "outline": [[-10, -10], [10, -10], [10, 10], [-10, 10]], "holes": [ [[-2, -2], [2, -2], [2, 2], [-2, 2]] ] },
+      { "floor": [3, 6], "outline": [[10, -5], [20, -5], [20, 5], [10, 5]] }
+     ] } },
+   { "id": 2, "name": "Rear stairs", "pos": [1, 0, 1], "floor": [0, 3] },
+   { "id": 3, "name": "Yard", "pos": [50, 0, 50], "area": { "parts": [ { "floor": [-1, 2], "outline": [[45, 45], [55, 45], [55, 55], [45, 55]] } ] } }
+  ],
+  "goals": [
+   { "id": "phone", "name": "Recover the phone", "succeed": 1, "fail": 6 },
+   { "id": "upper", "name": "Secure the upper floor", "after": ["phone"], "activate": 2, "succeed": 3 },
+   { "id": "power-cut", "name": "Cut the power", "required": false, "succeed": 5, "notify": false }
+  ],
+  "extraction": { "after": 3, "goals": true },
+  "director": { "budget": 12, "regen": 1, "actions": [
+   { "id": "yard", "name": "Yard reinforcements", "cost": 4, "cooldown": 90, "fire": 4, "minDistance": 30, "unseen": true }
+  ],
+   "pressure": { "mode": "preview", "bands": [
+    { "name": "Upstairs push", "from": 120, "minPlayers": 2, "spend": 4, "every": 45 },
+    { "name": "Otherwise quiet", "spend": 0 }
+   ], "maxEnemies": 12, "rest": 90 } },
+  "spawns": [
+   { "pos": [0, 0, 8], "role": "Guard" },
+   { "pos": [15, 4, 0], "trigger": 1 },
+   { "pos": [50, 0, 52], "trigger": 4 },
+   { "pos": [78, 0, 78], "trigger": 6 }
+  ]
+ }
+}

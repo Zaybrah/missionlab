@@ -1,0 +1,1 @@
+{ "schema": "missionlab-mission/1", "scene": "Fixture", "plan": { "schema": "missionlab-plan/1", "triggers": [ { "id": 1, "when": "zone", "pos": [5, 0, 5], "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } } ], "spawns": [ { "pos": [0, 0, 0] } ] } }

@@ -7,7 +7,8 @@
 // at one recording the author opens. Its items are suggestions for review, never faults.
 const DEBRIEF_NOT_RECORDED = 'health, shots fired, door use by players';
 const DB_WHO = 3, DB_FIRE = 4;        // recording semantics from which rows say who an enemy is, and from which alerts and firings are events
-const DB_TRIGGER_KINDS = ['zone', 'alert', 'intel', 'time', 'after', 'hold', 'down', 'all', 'any', 'door'];
+// As TriggerPlan.Known: an unknown kind is read as a zone, which without a place is dropped, so every kind must be listed.
+const DB_TRIGGER_KINDS = ['zone', 'alert', 'intel', 'time', 'after', 'hold', 'down', 'all', 'any', 'door', 'outcome'];
 const dbMmss = t => mmss(Math.max(0, t));
 const dbNum = v => typeof v === 'number' && isFinite(v);
 const dbStr = (o, k) => (o && typeof o[k] === 'string' ? o[k] : '');

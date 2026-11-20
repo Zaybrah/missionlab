@@ -24,10 +24,11 @@ static class CatalogueTests
 
     private static string Ended(int seconds, string result) => "{\"utc\":\"2026-11-17T10:30:00Z\",\"seconds\":" + seconds + ",\"result\":\"" + result + "\"}";
 
-    private static JsonElement Json(CatalogueEntry e, string compat, ICollection<string> seen)
+    private static JsonElement Json(CatalogueEntry e, string compat, CapabilityRegistry registry)
     {
+        if (registry != null) CatalogueInfo.Check(e, registry, "0.26.0", null);
         var sb = new StringBuilder();
-        CatalogueInfo.Write(e, sb, compat, seen, "Clean House");
+        CatalogueInfo.Write(e, sb, compat, "Clean House");
         return JsonDocument.Parse(sb.ToString()).RootElement.Clone();
     }
 
@@ -39,17 +40,20 @@ static class CatalogueTests
             check("title, id, revision, briefing and map come from the file", e.Title == "Clean House" && e.Id == "sc-cleanhouse" && e.Revision == 3 && e.Briefing.Count == 1 && e.NavFile == "suburbv2.bytes" && e.Value == "clean_house", e.Title + " " + e.Id);
             check("the author's squad range and estimate are kept", e.SquadMin == 2 && e.SquadMax == 4 && e.Minutes == 25f, e.SquadMin + "-" + e.SquadMax + " " + e.Minutes);
             check("nothing measured without runs", e.Measured == null && e.Runs == 0 && e.Finished == 0 && e.LastRun == null, "");
-            JsonElement j = Json(e, "tested", new HashSet<string> { "doors" });
+            JsonElement j = Json(e, "tested", CapabilityRegistry.Embedded());
             check("the author's numbers are written under author", j.GetProperty("author").GetProperty("minutes").GetDouble() == 25 && j.GetProperty("author").GetProperty("squad")[1].GetInt32() == 4, j.GetRawText());
             check("an unmeasured duration is written as null, not as the estimate", j.GetProperty("measured").GetProperty("minutes").ValueKind == JsonValueKind.Null, j.GetRawText());
             check("no last run is null", j.GetProperty("lastRun").ValueKind == JsonValueKind.Null, j.GetRawText());
-            bool doorsTested = false, chanceUntested = false;
+            string doorsShown = "", chanceShown = "", doorsBuild = "";
+            bool doorsConfirmed = true;
             foreach (JsonElement c in j.GetProperty("capabilities").EnumerateArray())
             {
-                if (c.GetProperty("name").GetString() == "doors") doorsTested = c.GetProperty("tested").GetBoolean();
-                if (c.GetProperty("name").GetString() == "chance") chanceUntested = !c.GetProperty("tested").GetBoolean();
+                if (c.GetProperty("name").GetString() == "doors") { doorsShown = c.GetProperty("shown").GetString(); doorsBuild = c.GetProperty("build").GetString(); doorsConfirmed = c.GetProperty("confirmed").GetBoolean(); }
+                if (c.GetProperty("name").GetString() == "chance") chanceShown = c.GetProperty("shown").GetString();
             }
-            check("capabilities are marked tested only when listed as seen", doorsTested && chanceUntested, j.GetProperty("capabilities").GetRawText());
+            // On 0.26.0: doors were last seen working on 0.24.0, the trigger engine's chance on 0.26.0 itself.
+            check("a capability last seen on an older build is shown as seen earlier, with that build, not confirmed", doorsShown == "seen-earlier" && doorsBuild == "0.24.0" && !doorsConfirmed, j.GetProperty("capabilities").GetRawText());
+            check("a capability seen on the running build is confirmed", chanceShown == "supported", j.GetProperty("capabilities").GetRawText());
             check("the compatibility word is passed through", j.GetProperty("compat").GetString() == "tested" && j.GetProperty("mode").GetString() == "pve", j.GetRawText());
         }
 

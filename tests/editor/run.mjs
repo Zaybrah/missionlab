@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FIXTURES = path.join(ROOT, 'tests', 'fixtures');
@@ -522,7 +522,7 @@ console.log('staged live changes and revisions (ML-014)');
   live.on = true; live.mission = true; live.session = 's1'; live.rev = 'r1';
   api.stageSetMode('draft');
   check('Draft mode starts from the game\'s state', api.stage.mode === 'draft' && api.stage.base !== null && !api.stage.dirty);
-  api.pushUndo();
+  api.willChange('Move three enemies and lock the front door');
   s.enemies[0].pos = [10, 0, 11]; s.enemies[1].pos = [4, 0, 1]; s.enemies[2].pos = [7, 0, 2]; s.doors[s.doors.length - 1].locked = true;
   api.changed();
   const staged = live.staged.map(l => l.kind + ': ' + l.text).join(' / ');
@@ -662,7 +662,8 @@ console.log('views: Play, Create and Direct (ML-013)');
   check('the estimate is labelled as the author\'s', facts.get('Length (the author\'s estimate)') === 'about 20 min', JSON.stringify([...facts]));
   check('offline the measured length is not made up', facts.get('Length (measured)') === 'not measured yet: run records are kept by the game');
   check('offline compatibility and the last run stay unknown', facts.get('Tested with this build') === 'not known without the game' && facts.get('Last run') === 'not known without the game');
-  check('offline capabilities are neither tested nor untested', entry.capabilities.length > 0 && entry.capabilities.every(c => c.tested === null), JSON.stringify(entry.capabilities));
+  // Offline the plugin's build is not known, so no capability may read as confirmed (ML-036: tests/editor/cases/ml036-capabilities.mjs has the rest).
+  check('offline no capability is claimed as confirmed on a build', entry.capabilities.length > 0 && entry.capabilities.every(c => c.confirmed === false && c.shown !== 'supported'), JSON.stringify(entry.capabilities));
 
   // A catalogue entry as the plugin writes it (Catalogue.cs): unknown stays unknown, measurements are their own row.
   const none = new Map(api.catalogueFacts({ file: 'a.json', value: 'a', usable: true, author: { squad: null, minutes: null }, measured: { minutes: null, finished: 0, runs: 2 }, navFile: '', scene: '', map: '', compat: '', capabilities: [], lastRun: null }, {}));
@@ -1618,6 +1619,7 @@ console.log('editor -> plugin -> editor');
     ['all_fields.json', fs.readFileSync(path.join(FIXTURES, 'all_fields.json'), 'utf8')],
     ['all_fields_v2.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v2.json'), 'utf8')],
     ['all_fields_v26.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v26.json'), 'utf8')],
+    ['all_fields_v27.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v27.json'), 'utf8')],
     ['legacy_minimal.json', fs.readFileSync(path.join(FIXTURES, 'legacy_minimal.json'), 'utf8')],
     ...fs.readdirSync(path.join(ROOT, 'examples')).filter(n => n.endsWith('.json')).sort().map(n => ['examples/' + n, fs.readFileSync(path.join(ROOT, 'examples', n), 'utf8')]),
     ['awkward_text.json', oddFile],
@@ -1637,7 +1639,9 @@ console.log('editor -> plugin -> editor');
   let plugin = null;
   try { plugin = pluginRoundTrip(legs.map(l => l.file)); }
   catch (err) { check('the plugin writes the editor\'s files back', false, err.message); }
-  if (plugin === null) console.log('  dotnet not found: the plugin\'s leg of the round trip is skipped; the editor reads its own files back');
+  // In CI a missing prerequisite is a failure, not a quietly skipped check (ML-028).
+  if (plugin === null && process.env.CI) check('the plugin\'s leg of the round trip runs in CI (dotnet is required there)', false, 'dotnet not found');
+  else if (plugin === null) console.log('  dotnet not found: the plugin\'s leg of the round trip is skipped; the editor reads its own files back');
   // Second leg: the editor reads what the plugin wrote (or, without dotnet, its own text) and writes it again.
   const again = new Map();
   for (const leg of legs) {
@@ -1666,6 +1670,18 @@ console.log('editor -> plugin -> editor');
     check('awkward text: line breaks in a trigger name are kept, in a message they become spaces', s.zones[1].name === 'line\nbreak' && s.zones[1].message === 'a b', JSON.stringify([s.zones[1].name, s.zones[1].message]));
     check('awkward text: door names', s.zones[0].doors[0].name === odd && s.doors.length === 1 && s.doors[0].name === odd, JSON.stringify(w.doors));
     check('awkward text: thing name, enemy type and tag', s.things[0].name === odd && s.enemies[0].type === odd && s.enemies[0].tag === 'Wache ü-1', JSON.stringify([s.things[0].name, s.enemies[0].type, s.enemies[0].tag]));
+  }
+}
+
+// ---------------------------------------------------------------- one file per ticket in tests/editor/cases, run in name order
+// Each exports a default async function that receives the harness: { script, openEditor, load, fakeFile, check, differences, ROOT, FIXTURES }.
+{
+  const dir = path.join(ROOT, 'tests', 'editor', 'cases');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.mjs')).sort() : [];
+  for (const name of files) {
+    const mod = await import(pathToFileURL(path.join(dir, name)).href);
+    try { await mod.default({ script, openEditor, load, fakeFile, check, differences, ROOT, FIXTURES }); }
+    catch (err) { check(name + ' runs to its end', false, err && err.stack ? err.stack : String(err)); }
   }
 }
 

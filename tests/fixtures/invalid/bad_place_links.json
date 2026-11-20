@@ -1,0 +1,13 @@
+{ "schema": "missionlab-plan/3", "mission": {
+  "places": [
+   { "id": 1, "name": "House", "pos": [5, 0, 5], "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+   { "id": 2, "name": "Rear stairs", "pos": [1, 0, 1], "floor": [0, 3] }
+  ],
+  "triggers": [
+   { "id": 1, "when": "alert", "place": 1 },
+   { "id": 2, "when": "zone", "pos": [5, 0, 5], "place": 1, "area": { "parts": [ { "floor": [0, 3], "outline": [[0, 0], [10, 0], [10, 10], [0, 10]] } ] } },
+   { "id": 3, "when": "zone", "pos": [5, 0, 5], "place": 2 },
+   { "id": 4, "when": "zone", "pos": [5, 0, 5], "place": "House" },
+   { "id": 5, "when": "hold", "hold": 10, "pos": [5, 0, 5], "place": 9 }
+  ],
+  "spawns": [ { "pos": [0, 0, 0] } ] } }

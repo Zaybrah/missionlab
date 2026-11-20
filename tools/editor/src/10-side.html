@@ -68,6 +68,54 @@
     <p class="hint" id="optPlayRun"></p>
   </section>
 
+  <section aria-labelledby="h-goalplay" id="goalPlayBox" data-view="play" hidden>
+    <h2 id="h-goalplay">Objectives <span id="goalPlayCount"></span></h2>
+    <p class="hint" id="goalPlayNote" role="status"></p>
+    <ul id="goalPlayList" class="goal-list" aria-label="Objectives players have been given"></ul>
+  </section>
+
+  <section aria-labelledby="h-playlist" id="plBox" data-view="play">
+    <h2 id="h-playlist">Session playlist <span id="plCount"></span></h2>
+    <p class="hint offline">A playlist is kept by the game, so it survives a restart: start OPERATOR with MissionLab and open <code>http://localhost:8765</code>.</p>
+    <div id="plLive" hidden>
+      <p class="hint">Queue the evening's missions in order, each with its options, squad size and dice. You still pick the map and mode in the game's lobby.</p>
+      <div class="field"><label for="plPick">Playlist</label><select id="plPick" title="The playlist in use. Each is a file in BepInEx/MissionLab/playlists."></select></div>
+      <div class="row"><input id="plName" type="text" maxlength="60" placeholder="Name, e.g. Friday" aria-label="Name for a new playlist"><button class="btn" id="plNew" type="button">New playlist</button><button class="btn danger" id="plDelete" type="button">Delete</button></div>
+      <p id="plOutcome" role="status" aria-live="polite"></p>
+      <div class="row" id="plMarkRow" hidden>
+        <button class="btn" id="plMarkWin" type="button" title="Counted as a success marked by you, not by the game">Mark as a success</button>
+        <button class="btn" id="plMarkFail" type="button" title="Counted as failed marked by you, not by the game">Mark as failed</button>
+      </div>
+      <ol id="plEntries" aria-label="Missions in this playlist, in order"></ol>
+      <div class="row"><button class="btn" id="plAdd" type="button" title="Adds the mission picked in the list above, pinned as it is now">Add the picked mission</button></div>
+      <p class="hint" id="plNote" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-operation" id="opBox" data-view="play">
+    <h2 id="h-operation">Operation <span id="opCount"></span></h2>
+    <p class="hint offline">An operation is kept by the game, so its progress survives a restart: start OPERATOR with MissionLab and open <code>http://localhost:8765</code>.</p>
+    <div id="opLive" hidden>
+      <p class="hint">Chain two or three missions: how one ends (its result and objectives, as its run record says) decides which comes next. Only results carry over. Enemies, inventory, positions and everything else inside a mission start as the scenario says; nothing is saved or restored mid-mission. You still pick the map and mode in the game's lobby.</p>
+      <div class="field"><label for="opPick">Operation</label><select id="opPick" title="The operation in use. Each is a file in BepInEx/MissionLab/operations, saved with its previous version beside it."></select></div>
+      <div class="row"><input id="opName" type="text" maxlength="60" placeholder="Name, e.g. Phone job" aria-label="Name for a new operation"><button class="btn" id="opNew" type="button" title="A new operation that starts with the mission picked in the list above">New operation</button><button class="btn danger" id="opDelete" type="button">Delete</button></div>
+      <p id="opOutcome" role="status" aria-live="polite"></p>
+      <div id="opDecide" hidden>
+        <p class="warn" id="opDecideText" role="status"></p>
+        <div class="row" id="opDecideRow"></div>
+      </div>
+      <ol id="opProgress" aria-label="Runs counted in this round"></ol>
+      <ol id="opNodes" aria-label="Missions of this operation"></ol>
+      <div class="row">
+        <button class="btn" id="opAdd" type="button" title="Adds the mission picked in the list above, pinned as it is now">Add the picked mission</button>
+        <button class="btn primary" id="opArm" type="button" title="The next mission you host uses the next mission's scenario, options and dice">Set up the next mission</button>
+        <button class="btn" id="opRetry" type="button" hidden title="Plays the last run of the next mission again with exactly its setup; nothing is counted twice">Retry the last run's setup</button>
+        <button class="btn" id="opRestart" type="button" title="Begins a new round from the first mission; the runs counted so far stay on record">Restart the operation</button>
+      </div>
+      <p class="hint" id="opNote" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
   <section aria-labelledby="h-direct" id="directBox" data-view="direct" hidden>
     <h2 id="h-direct">The running mission</h2>
     <p class="hint offline">Direct needs the game: start OPERATOR with MissionLab, host a mission and open <code>http://localhost:8765</code>.</p>
@@ -132,6 +180,14 @@
     <p class="hint">Select a trigger to see what it waits for and what it brings, here and on the map. A failed or unconfirmed action is told apart from a condition that is not met. Fire now changes the mission; looking does not.</p>
   </section>
 
+  <section aria-labelledby="h-goalboard" id="goalBoard" data-view="direct" hidden>
+    <h2 id="h-goalboard">Objectives <span id="goalBoardCount"></span></h2>
+    <p class="hint" id="goalBoardNote" role="status"></p>
+    <ul id="goalBoardList" class="goal-list" aria-label="Objectives and where each stands"></ul>
+    <p class="hint" id="goalBoardWait" role="status" aria-live="polite"></p>
+    <p class="hint">The game's own state, asked for every few seconds. Players see a message when an objective is given, completed or failed (unless the author turned that off); there is no lasting objective list on their screens.</p>
+  </section>
+
   <section aria-labelledby="h-cards" id="cardsBox" data-view="direct" hidden>
     <h2 id="h-cards">Action cards</h2>
     <p class="hint" id="cardsNote" role="status"></p>
@@ -140,6 +196,13 @@
     <ul id="cardsList" aria-label="Action cards"></ul>
     <h3 id="cardsSpentHead" hidden>Recent spends</h3>
     <ol id="cardsSpent" aria-labelledby="cardsSpentHead"></ol>
+    <div id="prLive" hidden>
+      <h3 id="h-prLive">Pressure director (experiment)</h3>
+      <p class="hint" id="prLiveNote" role="status"></p>
+      <div class="field"><label for="prLiveMode">Mode for this session</label><select id="prLiveMode"><option value="off">Off: decides nothing</option><option value="preview">Preview: logs what it would play, fires nothing</option><option value="on">On: plays the cards by itself</option></select></div>
+      <div class="row"><button class="btn" id="prHoldNow" type="button" title="No automatic spending for the author's rest after a casualty (at least 10 s).">Hold now</button><button class="btn" id="prSpendNow" type="button" title="Decide now, skipping the wait and the rest but never the bands, cap or budget. Logged as manual.">Spend now</button></div>
+      <ol id="prLog" aria-labelledby="h-prLive"></ol>
+    </div>
     <p class="hint">The game checks every card, whichever page plays it, and gives the points back when a card is refused, cancelled, fails or gets no answer within 30 s. Where reinforcements appear and whether a player could see them is checked by the plugin's own distance and view test; how well that matches what players see has still to be observed in the game.</p>
   </section>
 
@@ -160,6 +223,65 @@
         <li>Any other mission: host it once with MissionLab installed. The banner at the top left of the game names the file, and so does <code>missions/last.json</code>.</li>
       </ul>
     </details>
+  </section>
+
+  <section aria-labelledby="h-recipe" id="recipeBox" data-tab="map" data-view="create">
+    <h2 id="h-recipe">New mission: Intel raid</h2>
+    <p class="hint">Five steps to a whole mission: the squad goes in, takes intel from a building and gets out. Make the mission writes ordinary triggers, enemies and host options that you change afterwards like any others, and a walkthrough test in Rehearse. One Undo takes all of it back.</p>
+    <ol class="rc-steps">
+      <li>
+        <div class="field"><label for="rcInsertion">Squad goes in at</label><select id="rcInsertion"></select></div>
+        <p class="hint">The map's own insertions, from the game or the map's recon file.</p>
+      </li>
+      <li>
+        <div class="field"><label for="rcIntel">Intel to take</label><select id="rcIntel"></select></div>
+        <p class="hint">Only intel this map is known to have. The game decides where it lies; the way out stays shut until it is taken.</p>
+      </li>
+      <li>
+        <div class="field"><label for="rcBuilding">The building</label><select id="rcBuilding"></select></div>
+        <div class="row"><button class="btn" id="rcPaint" type="button" title="Click where its name stands, then paint its shape; name it under Places">Paint a new place</button></div>
+        <p class="hint">A named place under Places. Walking into it tells the squad they are in the right building, and the garrison stands inside it.</p>
+      </li>
+      <li>
+        <p class="sub">Encounters (optional)</p>
+        <ul id="rcEncList" aria-label="Encounters and the rooms they stand in"></ul>
+        <div class="row"><button class="btn" id="rcEncAdd" type="button">Add an encounter</button></div>
+        <p class="hint">A kept module (Modules, Triggers tab) put down in a named place. Modules whose enemies hunt or rally are not offered: that has failed in the game.</p>
+      </li>
+      <li>
+        <p class="sub">Pressure and your estimates</p>
+        <div class="field"><label for="rcGarrison">Garrison</label><select id="rcGarrison">
+          <option value="light">Light: 2 guards</option>
+          <option value="standard" selected>Standard: 4 guards</option>
+          <option value="heavy">Heavy: 6 guards</option>
+        </select></div>
+        <div class="field"><label for="rcSkill">Enemy skill</label><select id="rcSkill">
+          <option value="recruit">Recruits</option>
+          <option value="" selected>Regulars (left to the game)</option>
+          <option value="veteran">Veterans</option>
+        </select></div>
+        <p class="hint">Both become host options with your pick as the default: the host can change them before each mission.</p>
+        <div class="field"><label for="rcClock">Time limit</label><select id="rcClock">
+          <option value="0" selected>None</option>
+          <option value="15">15 minutes</option>
+          <option value="20">20 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">60 minutes</option>
+        </select></div>
+        <label class="check"><input id="rcAlarm" type="checkbox"><span>The alarm brings two more, walking a route into the building from the map's own spawn points</span></label>
+        <div class="field"><label for="rcMinutes">Takes about (min)</label><input id="rcMinutes" type="number" min="1" max="600" step="1" value="15"></div>
+        <div class="field"><label for="rcSquadMin">Squad</label><div class="row rc-squad"><input id="rcSquadMin" type="number" min="1" max="16" step="1" value="1" aria-label="Fewest players"><span class="hint">to</span><input id="rcSquadMax" type="number" min="1" max="16" step="1" value="4" aria-label="Most players"></div></div>
+        <p class="hint">Length and squad are your estimate, written into the scenario as such; nobody has measured them.</p>
+      </li>
+    </ol>
+    <p class="hint" id="rcReady" role="status"></p>
+    <ul id="rcBefore" aria-labelledby="rcReady"></ul>
+    <div class="row">
+      <button class="btn primary" id="rcGo" type="button">Make the mission</button>
+      <button class="btn" id="rcSaveTest" type="button" hidden>Save the walkthrough test</button>
+    </div>
+    <p class="hint" id="rcNote" role="status" aria-live="polite"></p>
   </section>
 
   <section aria-labelledby="h-quick" id="quickBox" data-tab="map" data-view="create">
@@ -213,7 +335,51 @@
         <button class="btn danger" id="placeDel" type="button">Delete place</button>
       </div>
       <p class="hint" id="placeUses" role="status"></p>
+      <div id="placeLinks"></div>
     </div>
+    <div class="row" id="placeFlatRow" hidden>
+      <button class="btn" id="placeFlat" type="button" title="The same mission with each linked zone holding its own copy of the shape, for MissionLab versions before 0.27. Your scenario keeps its links.">Export a copy without links</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-outliner" id="outlinerBox" data-tab="map" data-view="create">
+    <h2 id="h-outliner">Floors and rooms <span id="olCount"></span></h2>
+    <p class="hint">Work on one floor or room at a time. Focus brings it into view, Isolate shows only it, Hide leaves it off the map, and Lock keeps clicks, boxes and drags from moving anything on it. None of this is saved in the scenario: it is kept in this browser for this map file, and saving, export, the mission check and the game always include everything.</p>
+    <div id="olReview" class="ol-review" hidden>
+      <p class="hint" id="olReviewWhy" role="status"></p>
+      <div class="row">
+        <button class="btn" id="olReviewKeep" type="button" title="Use the same floors, bands and buildings on this map file">Keep them for this map</button>
+        <button class="btn" id="olReviewDrop" type="button">Start afresh</button>
+      </div>
+    </div>
+    <div class="field"><label for="olPreset">Floor preset</label><select id="olPreset">
+      <option value="">Choose a preset</option>
+      <option value="clean-house">Clean House (basement, ground floor, upstairs)</option>
+      <option value="storeys">Storeys of 3 m from height 0</option>
+      <option value="map">Floors found on this map</option>
+    </select></div>
+    <h3>Floors</h3>
+    <ul id="olFloors" class="ol-list" aria-label="Floors"></ul>
+    <p class="hint" id="olFloorsEmpty">No floors yet. Choose a preset, or add one for the floor in the middle of the map.</p>
+    <div class="row"><button class="btn" id="olAddFloor" type="button">Add floor</button></div>
+    <h3>Buildings</h3>
+    <ul id="olBuildings" class="ol-list" aria-label="Buildings"></ul>
+    <p class="hint" id="olBuildingsEmpty">No buildings yet. A building is a set of Places, one per room.</p>
+    <div class="row"><button class="btn" id="olAddBuilding" type="button" title="Starts with the place selected under Places, if any">Add building</button></div>
+    <h3>Apply a floor band</h3>
+    <p class="hint">Presets, bands and the order above change only this page. Apply is the one step here that changes the mission: every ticked area takes the chosen floor's band, and Undo takes it back.</p>
+    <div class="field"><label for="olApplyFloor">Floor</label><select id="olApplyFloor"></select></div>
+    <p class="hint" id="olChosen" role="status"></p>
+    <div class="row"><button class="btn" id="olApply" type="button">Apply to ticked areas</button></div>
+    <h3>Section</h3>
+    <div class="row">
+      <button class="btn" id="olSectionDraw" type="button" aria-pressed="false">Draw a section line</button>
+      <button class="btn" id="olSectionRoom" type="button" title="Across the isolated room, or the place selected under Places">Through a room</button>
+      <button class="btn" id="olSectionClear" type="button">Clear</button>
+    </div>
+    <p class="hint" id="olSectionNote" role="status"></p>
+    <div id="olSectionWrap"><svg id="olSection" xmlns="http://www.w3.org/2000/svg" width="0" height="0" role="img" aria-label="Height bands along the section line"></svg></div>
+    <ul id="olSectionNotes" aria-label="What the section shows"></ul>
   </section>
 
   <section aria-labelledby="h-replay" id="replayBox" data-tab="replay" data-view="create direct" hidden>
@@ -296,6 +462,29 @@
             <button class="btn" id="paintTurnL" type="button" title="Turn the whole area 15 degrees anticlockwise">Turn left</button>
             <button class="btn" id="paintTurnR" type="button" title="Turn the whole area 15 degrees clockwise">Turn right</button>
           </div>
+          <!-- Wall tracing and room suggestions (27c-walls.js, ML-050): help from the exported 3D geometry, never saved. -->
+          <div id="wallsBox">
+            <p class="hint" id="wallsStatus" role="status"></p>
+            <div class="row">
+              <label class="check"><input id="wallsSnap" type="checkbox"><span>Snap corners to walls</span></label>
+              <label class="grp" for="wallsTol">within</label><input id="wallsTol" type="number" min="0.05" max="2" step="0.05" value="0.5"><span>m</span>
+            </div>
+            <div class="shape tools" role="group" aria-label="Room suggestion tool">
+              <button type="button" data-walls="room" title="Click inside a room: its outline is suggested as a draft you can correct, add or drop">Suggest room</button>
+              <button type="button" data-walls="barrier" title="Drag across a doorway, a window or a stairwell: suggestions stop there">Barrier</button>
+            </div>
+            <div class="row">
+              <label class="grp" for="wallsRegion">Working region</label><input id="wallsRegion" type="number" min="6" max="80" step="1" value="30"><span>m square</span>
+              <button class="btn" id="wallsClearBarriers" type="button" hidden>Clear barriers</button>
+            </div>
+            <p class="hint" id="wallsNote" role="status"></p>
+            <ul id="wallsFindings"></ul>
+            <div class="row">
+              <button class="btn" id="wallsGap" type="button" hidden title="Adds a barrier across the gap marked red and asks again">Close the gap</button>
+              <button class="btn primary" id="wallsAccept" type="button" hidden>Add the room</button>
+              <button class="btn" id="wallsReject" type="button" hidden>Drop it</button>
+            </div>
+          </div>
           <ul id="paintParts"></ul>
           <p class="hint" id="paintCount"></p>
           <ul id="paintFindings"></ul>
@@ -312,6 +501,7 @@
           <option value="intel">When intel is picked up</option>
           <option value="time">After a set time</option>
           <option value="after">After another trigger</option>
+          <option value="outcome">When another trigger's action is seen</option>
           <option value="down">When enemies are down</option>
           <option value="all">When all of several triggers have fired</option>
           <option value="any">When one of several triggers has fired</option>
@@ -331,6 +521,27 @@
       </div>
       <p class="hint">When a trigger fires, the enemies bound to it appear and its doors lock or unlock. For a zone, choose Add zone and click the map. Bind an enemy by selecting it and setting "Appears"; give a trigger a door by selecting the door.</p>
     </div>
+  </section>
+  <section aria-labelledby="h-graph" id="graphBox" data-tab="triggers" data-view="create direct">
+    <h2 id="h-graph">Mission graph <span id="graphCount"></span></h2>
+    <p class="hint" id="graphNote" role="status"></p>
+    <div class="row" id="graphDirRow">
+      <span class="seg" role="group" aria-label="How the graph is laid out"><button type="button" data-graph-dir="down" aria-pressed="true">Top to bottom</button><button type="button" data-graph-dir="across" aria-pressed="false">Left to right</button></span>
+    </div>
+    <div id="graphWrap"><svg id="graphSvg" xmlns="http://www.w3.org/2000/svg" width="0" height="0" role="group" aria-label="What each trigger waits for and what it brings"></svg></div>
+    <p class="hint" id="graphDetail" aria-live="polite"></p>
+    <ul id="graphKey" aria-label="What the lines mean">
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-after" d="M0,4 H30"/></svg>waits for one trigger</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-outcome" d="M0,4 H30"/></svg>waits for what was seen of its action (word on the line)</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-all" d="M0,4 H30"/></svg>all of a list, every one needed</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-any" d="M0,4 H30"/></svg>one of a list is enough</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-start" d="M0,4 H30"/></svg>armed from the start</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-hand" d="M0,4 H30"/></svg>fired by hand only</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-holds" d="M0,4 H30"/></svg>holds the extraction until it fires</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-opens" d="M0,4 H30"/></svg>opens the extraction</li>
+      <li><svg width="30" height="8" aria-hidden="true"><path class="g-edge e-end" d="M0,4 H30"/></svg>ends the mission</li>
+    </ul>
+    <p class="hint">The graph only shows the scenario: it changes nothing, and how it is laid out is never saved. A box marked in red is one the Mission check names, with the reason written in it. While a mission runs, "Now" says where a trigger stands, the tick on its corner how often it has fired so far, and a last row whether its actions took. A sealed mission shows nothing here until it is revealed.</p>
   </section>
   <section data-tab="triggers" aria-labelledby="h-waves" id="waveSection">
     <h2 id="h-waves">Waves</h2>
@@ -415,6 +626,17 @@
     </div>
   </section>
 
+  <section aria-labelledby="h-goals" id="goalSection" data-tab="mission" data-view="create">
+    <h2 id="h-goals">Objectives <span id="goalCount"></span></h2>
+    <p class="hint">What the players are asked to do, in order. Each objective is completed when a trigger fires and can fail by another; it becomes active once the objectives it waits for are complete (and its own trigger, if you choose one, has fired). Players see "New objective", "Objective complete" and "Objective failed" messages. These are not the intel items on the map.</p>
+    <ol id="goalList" aria-label="Objectives"></ol>
+    <p class="hint" id="goalNoTrig" hidden>Add a trigger first: an objective is completed when one fires.</p>
+    <div class="row"><button class="btn" id="goalAdd" type="button">Add objective</button></div>
+    <label class="check"><input id="goalExtract" type="checkbox"><span>The extraction waits until every required objective is complete</span></label>
+    <ul id="goalProblems" aria-label="What the mission check says about the objectives"></ul>
+    <p class="hint" id="goalLive" hidden>A mission is running: these are its objectives, as the game started it with them. They cannot be changed until it ends.</p>
+  </section>
+
   <section data-tab="mission" aria-labelledby="h-intel" id="intelSection" hidden>
     <h2 id="h-intel">Intel items</h2>
     <p class="hint" id="objectiveHint" hidden>Amber markers are the mission's intel items. Drag one to move it; in 3D you can put it on a table or shelf. The game lays each item in one of a few places, a different one each mission; an item you move always lies where you put it.</p>
@@ -430,6 +652,46 @@
       <div class="field"><label for="rhPlayers">Players</label><input id="rhPlayers" type="number" min="1" max="16" step="1" value="2" title="How many players the mission is rolled for: it decides which players-needed enemies take part."></div>
       <div class="field"><label for="rhRoll">Roll</label><input id="rhRoll" type="number" step="1" value="0" title="Settles chance, either/or and lots exactly as the Director's seed does. The same roll and players give the same mission."></div>
       <p class="hint" id="rhPin"></p>
+      <div id="walkBox">
+        <p class="sub">Inside or outside?</p>
+        <p class="hint">Probe a point at an exact height: every zone and hold trigger says whether it counts as inside, and why: which part of its area takes it, which hole leaves it out, which floor bound it misses, or how far it is from an old circle's anchor.</p>
+        <div class="row walk-xyz">
+          <label>X <input id="walkProbeX" type="number" step="0.1" aria-label="Probe x"></label>
+          <label>Height <input id="walkProbeY" type="number" step="0.1" value="0" aria-label="Probe height in metres"></label>
+          <label>Z <input id="walkProbeZ" type="number" step="0.1" aria-label="Probe z"></label>
+        </div>
+        <div class="row">
+          <button class="btn" id="walkProbePick" type="button">Click the map</button>
+          <button class="btn" id="walkProbeFloor" type="button" title="Moves the probe onto the floor nearest its height at that spot.">Put it on the floor</button>
+          <button class="btn" id="walkProbeClear" type="button">Clear</button>
+        </div>
+        <ul id="walkProbeOut" aria-label="Inside or outside, trigger by trigger" aria-live="polite"></ul>
+        <p class="sub">Walk it through</p>
+        <p class="hint">Give up to 4 test players timed paths: they walk in straight lines between waypoints at an even speed, stand at the first waypoint until its time and stay at the last. The rehearsal samples where they are every 0.5 s, as the game's trigger checks do, and plays those places with the events and checks in the rows below. Two waypoints at one time are a jump.</p>
+        <div class="row" id="walkTabs" aria-label="Test players"></div>
+        <div class="row">
+          <button class="btn" id="walkAdd" type="button">Add test player</button>
+          <button class="btn" id="walkRemove" type="button">Remove this test player</button>
+        </div>
+        <ol id="walkPoints" aria-label="Waypoints: seconds, x, height, z"></ol>
+        <div class="row">
+          <button class="btn" id="walkPick" type="button">Add waypoints by clicking</button>
+          <button class="btn" id="walkSnapAll" type="button" title="Moves every waypoint of this test player onto the floor nearest its height.">Snap heights to the floor</button>
+        </div>
+        <div class="field"><label for="walkY">Height for clicks</label><input id="walkY" type="number" step="0.1" value="0" title="A click on the 2D map gives no height: a waypoint takes this one, in metres."></div>
+        <label class="check"><input id="walkSnap" type="checkbox"><span>Clicks land on the floor nearest that height</span></label>
+        <div class="field"><label for="walkDown">Goes down at</label><input id="walkDown" type="number" min="0" step="0.5" placeholder="stays alive" title="Seconds from the mission's start: from then on this test player is not alive, so holds that need everyone no longer wait for him."></div>
+        <p class="hint" id="walkNote"></p>
+        <p class="hint">Between two samples the rehearsal sees nothing. A path that goes through a zone, or out of it and back, between two samples is listed here for you to add a waypoint; it never counts on its own.</p>
+        <ul id="walkWarn" aria-label="Places the samples miss"></ul>
+        <div class="row">
+          <button class="btn" id="walkTrack" type="button" title="Each recorded player's track becomes a test player's path.">Use a replay's tracks</button>
+          <button class="btn" id="walkRows" type="button">Turn player rows into paths</button>
+          <input id="walkTrackFile" type="file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint">A replay shows only where players walked. Intel picked up, doors opened, enemies going down, the alarm and deaths are not taken from it: add them yourself as rows.</p>
+        <p class="hint" id="walkStatus" role="status" aria-live="polite"></p>
+      </div>
       <ol id="rhRows"></ol>
       <div class="row">
         <select id="rhAdd" aria-label="Row to add">
@@ -440,11 +702,13 @@
             <option value="down">Enemies go down</option>
             <option value="door">A door is opened</option>
             <option value="fire">A trigger is fired by hand</option>
+            <option value="outcome">A trigger's action is reported (applied, failed…)</option>
           </optgroup>
           <optgroup label="Checks">
             <option value="fired">Check: a trigger has fired</option>
             <option value="notFired">Check: a trigger has not fired</option>
             <option value="phase">Check: a trigger's phase</option>
+            <option value="goal">Check: an objective's state</option>
             <option value="extraction">Check: the extraction is open or held</option>
             <option value="enemies">Check: how many enemies</option>
           </optgroup>
@@ -456,6 +720,7 @@
         <button class="btn primary" id="rhRun" type="button">Run</button>
         <button class="btn" id="rhSave" type="button">Save as test</button>
         <button class="btn" id="rhRerun" type="button">Rerun saved tests</button>
+        <button class="btn" id="rhExport" type="button" hidden title="Downloads the trace as it would be sent to the game, without running it: offline nothing passes or fails.">Export trace (not run)</button>
       </div>
       <div class="row">
         <button class="btn" id="rhOpen" type="button">Open test file</button>
@@ -487,6 +752,32 @@
     <ul id="optCheckList" aria-label="What the check found"></ul>
   </section>
 
+  <section aria-labelledby="h-validate" id="validateBox" data-tab="mission" data-view="create">
+    <h2 id="h-validate">Validate before playing</h2>
+    <p class="hint">Runs every check in one go and keeps one report for this version of the scenario: the file format, whether the mission can still be finished with each combination of host options, each squad size and each seed, the scatter seeds on the map, and your saved rehearsals. The first combination that fails is kept with the seed, options and squad size that play it again.</p>
+    <p class="hint" id="vOffline">Offline this page runs only the format check and its own mission check; the rest needs the game's plugin and is listed as not run.</p>
+    <div class="field"><label for="vPlayers">Squad sizes</label><input id="vPlayers" type="text" value="1, 2, 4" title="Squad sizes to try, from 1 to 16, separated by commas."></div>
+    <div class="field"><label for="vSeeds">Seeds</label><input id="vSeeds" type="number" min="1" max="200" step="1" value="10" title="Seeds 1 to this number are tried. Seeds are a sample of rolls, never every roll."></div>
+    <div class="field"><label for="vBudget">Work budget</label><input id="vBudget" type="number" min="1" max="20000" step="100" value="2000" title="The most combinations the run executes. A run that reaches it stops early and says so."></div>
+    <label class="check"><input id="vDoCompletion" type="checkbox" checked><span>Completion across host options, squad sizes and seeds</span></label>
+    <label class="check"><input id="vDoScatter" type="checkbox" checked><span>Scatter seeds on the map (needs the matching map file in the game's folder)</span></label>
+    <label class="check"><input id="vDoRehearsals" type="checkbox" checked><span>Saved rehearsals</span></label>
+    <div class="row">
+      <button class="btn" id="vRun" type="button">Validate</button>
+      <button class="btn" id="vCancel" type="button" hidden>Cancel</button>
+    </div>
+    <p class="hint" id="vStatus" role="status" aria-live="polite"></p>
+    <div id="vReport" aria-live="polite"></div>
+    <div id="vCounterBox" hidden>
+      <p class="sub">First failing combination</p>
+      <p id="vCounter"></p>
+      <div class="row">
+        <button class="btn" id="vShow" type="button" title="Selects the triggers or enemy it is about and marks them in the mission graph (Triggers tab).">Show what it is about</button>
+        <button class="btn" id="vClear" type="button" hidden>Clear marks</button>
+      </div>
+    </div>
+  </section>
+
   <section aria-labelledby="h-gb" id="cardsAuthor" data-tab="mission" data-view="create">
     <h2 id="h-gb">Game Master budget</h2>
     <p class="hint">Action cards for whoever directs the mission: each fires one of your triggers, costs points and rests for a while. The game checks every card itself, whichever page plays it; the host may turn the budget rules off for a session.</p>
@@ -497,6 +788,19 @@
       <ol id="gbActions" aria-label="Actions"></ol>
       <p class="hint" id="gbNoTrig" hidden>Add a trigger first: every action fires one. A trigger that waits for nothing ("After another trigger" with none chosen) fires only by hand, which suits a card best.</p>
       <div class="row"><button class="btn" id="gbAdd" type="button">Add action</button></div>
+      <div id="prBox">
+        <h3 id="h-pr">Pressure director (experiment)</h3>
+        <p class="hint">The director plays only the cards above, through the budget and their own placement rules, and never changes how the mission is completed. It looks at the time, active objectives and the living players and enemies the game sees. Where reinforcements appear is checked by the cards' distance and view test, an approximation of what players see. Older MissionLab versions ignore it and play without pacing.</p>
+        <label class="check"><input id="prOn" type="checkbox"><span>Let the pressure director pace this mission</span></label>
+        <div id="prBody" hidden>
+          <div class="field"><label for="prMode">Starts</label><select id="prMode"><option value="off">Off: the host can switch it on</option><option value="preview">Preview: logs what it would play, fires nothing</option><option value="on">On: plays the cards by itself</option></select></div>
+          <div class="field"><label for="prMax">Living enemies at most</label><input id="prMax" type="number" min="0" max="500" step="1" title="The director never plays a card that would bring more living enemies than this, 0 to 500. 0: no cap."></div>
+          <div class="field"><label for="prRest">Rest after a casualty (s)</label><input id="prRest" type="number" min="0" max="600" step="5" title="Seconds without spending after a player goes down, 0 to 600."></div>
+          <p class="hint">Bands are tried in order; the first whose conditions hold decides how much may be spent and how often.</p>
+          <ol id="prBands" aria-labelledby="h-pr"></ol>
+          <div class="row"><button class="btn" id="prAdd" type="button">Add band</button></div>
+        </div>
+      </div>
       <ul id="gbProblems" aria-label="Problems with the budget"></ul>
     </div>
   </section>
@@ -577,6 +881,19 @@
     </div>
   </section>
 
+  <section aria-labelledby="h-encounter" id="encounterBox" data-tab="enemies" data-view="create" hidden>
+    <h2 id="h-encounter">Move with everything <span id="encCount"></span></h2>
+    <p class="hint">Moves the selected enemies with their routes, the triggers that bring them, the things that appear with those triggers and the shaped places they stand in. Doors belong to the map and stay. Untick what should stay too.</p>
+    <div class="row" id="encMove">
+      <label>x <input id="encDx" type="number" step="0.5" value="0" aria-label="Metres to move along x"></label>
+      <label>z <input id="encDz" type="number" step="0.5" value="0" aria-label="Metres to move along z"></label>
+      <label>turn <input id="encTurn" type="number" step="15" value="0" aria-label="Degrees to turn, clockwise on the map"></label>
+    </div>
+    <ul id="encList" aria-label="What moves and what stays"></ul>
+    <p class="hint" id="encNote" role="status"></p>
+    <div class="row"><button class="btn primary" id="encGo" type="button">Move together</button></div>
+  </section>
+
   <section aria-labelledby="h-placement" id="placementBox" data-tab="enemies" data-view="create">
     <h2 id="h-placement">Placement areas <span id="plCount"></span></h2>
     <p class="hint">For enemies with a scatter radius. An allow area is where an enemy that names it as "Within" is placed; an empty area is kept free of scattered enemies. Paint them floor by floor.</p>
@@ -647,6 +964,34 @@
     <div id="revDiff" role="status"></div>
   </section>
 
+  <section aria-labelledby="h-prop" id="propBox" data-tab="mission" data-view="create">
+    <h2 id="h-prop">Agent proposals <span id="propCount"></span></h2>
+    <p class="hint" id="propWhere">Open a proposal file from BepInEx/MissionLab/proposals. Opened from the game, the page lists them.</p>
+    <p class="hint">A coding agent can propose changes through the game's local link (docs/agent-api.md). A proposal is checked by the same rules as this page and kept apart from your scenarios. Review opens it as a separate draft with its differences; Apply puts it on your own draft as one step that Undo takes back, and only when your draft is still the scenario it was made for. Save as usual to keep it.</p>
+    <div class="row">
+      <button class="btn" id="propRefresh" type="button" hidden>Show proposals</button>
+      <button class="btn" id="propOpenFile" type="button">Open proposal file</button>
+      <input id="propFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="hint" id="propTrouble" role="status" hidden></p>
+    <p class="hint" id="propEmpty" hidden>No proposals yet.</p>
+    <ul id="propList" aria-label="Proposals kept by the game, newest first"></ul>
+    <div id="propOpen" hidden>
+      <p class="sub" id="propTitle"></p>
+      <p class="hint" id="propMeta"></p>
+      <p id="propStale" role="alert" hidden></p>
+      <ul id="propChanges" aria-label="The agent's operations, in its words"></ul>
+      <p class="hint" id="propDiffNote"></p>
+      <ul id="propDiff" aria-label="What changes in the scenario"></ul>
+      <div class="row">
+        <button class="btn primary" id="propApply" type="button" title="Puts the proposal on your own draft as one undo step. Refused when the proposal is stale or your draft is not the scenario it was made for.">Apply to my draft</button>
+        <button class="btn" id="propBack" type="button" hidden>Back to my draft</button>
+        <button class="btn" id="propClose" type="button">Close</button>
+      </div>
+    </div>
+    <p class="hint" id="propNote" role="status" aria-live="polite"></p>
+  </section>
+
   <section aria-labelledby="h-unused" id="unusedBox" data-tab="mission" data-view="create">
     <h2 id="h-unused">Unused content</h2>
     <p class="hint">Suggestions for review, not faults: triggers that never fired and enemies that never left their idle state in any comparable run (the same scenario and the same setup after the dice). A guard can add tension without ever engaging.</p>
@@ -665,6 +1010,7 @@
     <h3>Export pack</h3>
     <div class="field"><label for="packName">Pack name</label><input id="packName" type="text" maxlength="60" placeholder="the scenario's name" spellcheck="false"></div>
     <ul id="packModules" aria-label="Modules to put in the pack"></ul>
+    <label id="packFlatRow" hidden title="Players with MissionLab before 0.27 can then play it: each linked zone gets its own copy of its shape. Your scenario keeps its links."><input id="packFlat" type="checkbox"> Without links to places (each zone keeps its own copy of the shape)</label>
     <div class="row">
       <button class="btn" id="packAddModule" type="button">Add module file</button>
       <input id="packModuleFile" type="file" accept=".json,application/json" multiple hidden>
@@ -680,6 +1026,21 @@
     </div>
     <div id="packPreview" role="region" aria-label="What the pack holds"></div>
     <p class="hint" id="packMsg" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-history" id="historyBox" data-view="create">
+    <h2 id="h-history" class="vh">Undo history</h2>
+    <details id="histMore">
+      <summary>History <span id="histCount"></span></summary>
+      <p class="hint" id="histEmpty">Nothing to undo yet. Each change you make is listed here by name, newest first.</p>
+      <ol id="histList" aria-label="Changes on this page, newest first"></ol>
+      <p class="hint">Undo and Redo change this page only. A change the running game already has stays in the game: undoing it stages the reverse change for you to review and apply.</p>
+    </details>
+    <p class="hint" id="histNote" role="status"></p>
+    <div class="row">
+      <button class="btn" id="histUndo" type="button" title="Nothing to undo" disabled>Undo</button>
+      <button class="btn" id="histRedo" type="button" title="Nothing to redo" disabled>Redo</button>
+    </div>
   </section>
 
   <section aria-labelledby="h-save" id="saveBox">

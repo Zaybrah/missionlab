@@ -1,66 +1,39 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/Zaybrah/missionlab/blob/main/docs/scenario.schema.json",
- "title": "MissionLab scenario, missionlab-plan/1 and missionlab-plan/2",
- "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1 holds the scenario at the root. missionlab-plan/2 holds the same body under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. The v0.26 keys (sealed, placement, options, director, and scatter, within and fallback on enemies) never force missionlab-plan/2: an older version that ignores them plays the authored content. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger, place, placement, option and action ids are unique, every link points at a trigger or placement that exists, an hvt or a vehicle is never skipped, and every area is a sound shape. Keys that are not listed are ignored.",
+ "title": "MissionLab scenario, missionlab-plan/1, missionlab-plan/2 and missionlab-plan/3",
+ "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1, or a file that names no format, holds the scenario at the root. missionlab-plan/2 holds the same body ($defs/missionBody) under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. missionlab-plan/3 is the same envelope, written only when a zone or hold trigger links a named place (\"place\": the place's id) instead of carrying an area of its own, or when the mission has player goals (\"goals\", or an extraction with \"goals\": true); v0.26 reads plan/2 and refuses plan/3, so a link is never read as a circle and goals are never quietly left out. A mission record written by the Director holds the scenario it played under \"plan\", and only that is read. The v0.26 keys (sealed, placement, options, director, and scatter, within and fallback on enemies) never force missionlab-plan/2: an older version that ignores them plays the authored content. This schema checks the shape: types, allowed values, where the body sits for each version, that only zone and hold triggers in missionlab-plan/2 or /3 have an area, that only zone and hold triggers in missionlab-plan/3 link a place, never together with an area, and that only missionlab-plan/3 has goals. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger, place, placement, option, action and goal ids are unique, every link points at a trigger, placement, goal or painted place that exists, a goal does not wait for itself, an hvt or a vehicle is never skipped, and every area is a sound shape. Keys that are not listed are ignored.",
  "type": "object",
  "if": {
   "required": [
-   "schema"
+   "plan"
   ],
   "properties": {
-   "schema": {
-    "const": "missionlab-plan/2"
+   "plan": {
+    "type": "object"
    }
   }
  },
  "then": {
-  "required": [
-   "mission"
-  ]
- },
- "else": {
-  "required": [
-   "spawns"
-  ]
- },
- "allOf": [
-  {
-   "if": {
-    "required": [
-     "schema"
-    ],
-    "properties": {
-     "schema": {
-      "const": "missionlab-plan/1"
-     }
-    }
-   },
-   "then": {
-    "properties": {
-     "triggers": {
-      "items": {
-       "not": {
-        "required": [
-         "area"
-        ]
-       }
-      },
-      "description": "A shaped area needs missionlab-plan/2"
-     }
-    }
+  "properties": {
+   "plan": {
+    "$ref": "#/$defs/document"
    }
   }
- ],
+ },
+ "else": {
+  "$ref": "#/$defs/document"
+ },
  "properties": {
   "schema": {
    "type": "string",
-   "description": "The format. A file with a higher number is refused by this version",
-   "pattern": "^missionlab-plan/[12]$"
+   "description": "The format, missionlab-plan/1, /2 or /3 ($defs/document). A file with a higher number is refused by this version"
   },
   "mission": {
-   "$ref": "#",
-   "description": "missionlab-plan/2 only: the scenario itself, the same keys as a missionlab-plan/1 file without its schema key"
+   "description": "missionlab-plan/2 and /3 only: the scenario itself, the same keys as a missionlab-plan/1 file without its schema key. A missionlab-plan/1 file with a \"mission\" is refused"
+  },
+  "plan": {
+   "description": "A mission record only: the scenario it played, read in place of the record's own keys"
   },
   "name": {
    "type": "string",
@@ -143,9 +116,19 @@
      "items": {
       "$ref": "#/$defs/action"
      }
+    },
+    "pressure": {
+     "$ref": "#/$defs/pressure"
     }
    },
    "description": "The Game Master's budget and what it buys; the plugin enforces it for every way of asking"
+  },
+  "goals": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/goal"
+   },
+   "description": "missionlab-plan/3 only: player goals (ML-046), each inactive, then active, then succeeded or failed, driven by triggers"
   },
   "scene": {
    "type": "string",
@@ -220,6 +203,10 @@
     "after": {
      "type": "integer",
      "description": "The extraction stays shut until this trigger has fired"
+    },
+    "goals": {
+     "type": "boolean",
+     "description": "The extraction also stays shut until every required goal has succeeded"
     }
    },
    "description": "The extraction"
@@ -273,6 +260,155 @@
   }
  },
  "$defs": {
+  "document": {
+   "description": "The root rules, for a scenario file or the plan in a mission record: the format decides where the body sits",
+   "type": "object",
+   "properties": {
+    "schema": {
+     "type": "string",
+     "pattern": "^missionlab-plan/0*[123]$"
+    }
+   },
+   "if": {
+    "required": [
+     "schema"
+    ],
+    "properties": {
+     "schema": {
+      "type": "string",
+      "pattern": "^missionlab-plan/0*[23]$"
+     }
+    }
+   },
+   "then": {
+    "$ref": "#/$defs/envelope"
+   },
+   "else": {
+    "$ref": "#/$defs/plan1"
+   },
+   "allOf": [
+    {
+     "if": {
+      "required": [
+       "schema"
+      ],
+      "properties": {
+       "schema": {
+        "type": "string",
+        "pattern": "^missionlab-plan/0*2$"
+       }
+      }
+     },
+     "then": {
+      "properties": {
+       "mission": {
+        "properties": {
+         "triggers": {
+          "items": {
+           "not": {
+            "required": [
+             "place"
+            ]
+           }
+          },
+          "description": "A link to a named place needs missionlab-plan/3"
+         },
+         "goals": false
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  "envelope": {
+   "description": "missionlab-plan/2 and /3: the body under \"mission\", which names no format of its own. MissionLab reads nothing beside \"mission\"",
+   "required": [
+    "mission"
+   ],
+   "properties": {
+    "mission": {
+     "$ref": "#/$defs/missionBody",
+     "not": {
+      "required": [
+       "schema"
+      ]
+     }
+    }
+   }
+  },
+  "plan1": {
+   "description": "missionlab-plan/1, or a file that names no format: the body at the root, without a shaped area, without a link to a place and without \"mission\", which only missionlab-plan/2 and /3 read",
+   "$ref": "#/$defs/missionBody",
+   "not": {
+    "required": [
+     "mission"
+    ]
+   },
+   "properties": {
+    "triggers": {
+     "items": {
+      "not": {
+       "anyOf": [
+        {
+         "required": [
+          "area"
+         ]
+        },
+        {
+         "required": [
+          "place"
+         ]
+        }
+       ]
+      }
+     },
+     "description": "A shaped area needs missionlab-plan/2, a link to a place missionlab-plan/3"
+    },
+    "goals": false
+   }
+  },
+  "missionBody": {
+   "description": "The scenario itself: at the root in missionlab-plan/1, under \"mission\" in missionlab-plan/2 and /3. Each key's rule is written once, under the root's properties; tools/schema_check.py checks that this list names the same keys",
+   "type": "object",
+   "required": [
+    "spawns"
+   ],
+   "properties": {
+    "name": { "$ref": "#/properties/name" },
+    "id": { "$ref": "#/properties/id" },
+    "revision": { "$ref": "#/properties/revision" },
+    "squad": { "$ref": "#/properties/squad" },
+    "minutes": { "$ref": "#/properties/minutes" },
+    "mapPrint": { "$ref": "#/properties/mapPrint" },
+    "places": { "$ref": "#/properties/places" },
+    "sealed": { "$ref": "#/properties/sealed" },
+    "placement": { "$ref": "#/properties/placement" },
+    "options": { "$ref": "#/properties/options" },
+    "director": { "$ref": "#/properties/director" },
+    "goals": { "$ref": "#/properties/goals" },
+    "scene": { "$ref": "#/properties/scene" },
+    "navFile": { "$ref": "#/properties/navFile" },
+    "seed": { "$ref": "#/properties/seed" },
+    "notes": { "$ref": "#/properties/notes" },
+    "briefing": { "$ref": "#/properties/briefing" },
+    "gameMaster": { "$ref": "#/properties/gameMaster" },
+    "power": { "$ref": "#/properties/power" },
+    "skill": { "$ref": "#/properties/skill" },
+    "nvg": { "$ref": "#/properties/nvg" },
+    "respawn": { "$ref": "#/properties/respawn" },
+    "extraction": { "$ref": "#/properties/extraction" },
+    "insertion": { "$ref": "#/properties/insertion" },
+    "weather": { "$ref": "#/properties/weather" },
+    "objectives": { "$ref": "#/properties/objectives" },
+    "triggers": { "$ref": "#/properties/triggers" },
+    "doors": { "$ref": "#/properties/doors" },
+    "things": { "$ref": "#/properties/things" },
+    "spawns": { "$ref": "#/properties/spawns" },
+    "groups": { "$ref": "#/properties/groups" },
+    "requestedEnemies": { "$ref": "#/properties/requestedEnemies" }
+   }
+  },
   "vec3": {
    "type": "array",
    "minItems": 3,
@@ -540,10 +676,225 @@
     }
    }
   },
+  "pressure": {
+   "type": "object",
+   "required": [
+    "bands"
+   ],
+   "properties": {
+    "mode": {
+     "type": "string",
+     "enum": [
+      "off",
+      "preview",
+      "on"
+     ],
+     "description": "How the mission starts: off (absent) decides nothing, preview logs what it would play and fires nothing, on plays the cards by itself; the host can switch it during the session"
+    },
+    "bands": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 6,
+     "items": {
+      "$ref": "#/$defs/pressureBand"
+     },
+     "description": "Tried in order; the first whose conditions hold decides how much may be spent and how often"
+    },
+    "maxEnemies": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 500,
+     "description": "Living enemies the director never pushes past by playing a card; 0 (absent): no cap"
+    },
+    "rest": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 600,
+     "description": "Seconds without spending after a player goes down; 60 when absent"
+    }
+   },
+   "description": "ML-052, an experiment: an author-bounded pressure director that plays only this block's action cards, through the budget and their own placement rules. Older versions ignore it and play without pacing"
+  },
+  "pressureBand": {
+   "type": "object",
+   "required": [
+    "name"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "from": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 36000,
+     "description": "Seconds after the start before the band can apply; 0 when absent"
+    },
+    "goals": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Goal ids that must all be active; each must name a goal of the mission"
+    },
+    "minPlayers": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 16,
+     "description": "Living players the game sees, at least; 0 when absent"
+    },
+    "spend": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 1000,
+     "description": "Most points one decision may spend; the whole budget when absent"
+    },
+    "every": {
+     "type": "number",
+     "minimum": 10,
+     "maximum": 600,
+     "description": "Seconds between decisions while the band applies; 60 when absent"
+    }
+   }
+  },
+  "goal": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "succeed"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+     "description": "Unique among the goals; stable, so replays, run records and rehearsals can name it"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Shown to players; cleaned as messages are and cut to 80 characters"
+    },
+    "required": {
+     "type": "boolean",
+     "description": "false: optional, never holds the extraction up; absent: required"
+    },
+    "after": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Goals that must have succeeded before this one can become active"
+    },
+    "activate": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "A trigger that must also have fired before it becomes active; absent or 0: none"
+    },
+    "succeed": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "The trigger whose firing completes it"
+    },
+    "fail": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The trigger whose firing fails it; when both have fired by one look, it fails. Absent or 0: none"
+    },
+    "notify": {
+     "type": "boolean",
+     "description": "false: players see no \"New objective\", \"Objective complete\" or \"Objective failed\" message for it"
+    }
+   }
+  },
   "trigger": {
    "type": "object",
    "required": [
     "id"
+   ],
+   "allOf": [
+    {
+     "if": {
+      "required": [
+       "when"
+      ],
+      "properties": {
+       "when": {
+        "not": {
+         "enum": [
+          "zone",
+          "hold"
+         ]
+        }
+       }
+      }
+     },
+     "then": {
+      "not": {
+       "anyOf": [
+        {
+         "required": [
+          "area"
+         ]
+        },
+        {
+         "required": [
+          "place"
+         ]
+        }
+       ]
+      },
+      "description": "Only zone and hold triggers have an area or link a place"
+     }
+    },
+    {
+     "not": {
+      "required": [
+       "area",
+       "place"
+      ]
+     },
+     "description": "A trigger links a place or has an area of its own, not both"
+    },
+    {
+     "if": {
+      "properties": {
+       "when": {
+        "enum": [
+         "zone",
+         "hold",
+         "door"
+        ]
+       }
+      }
+     },
+     "then": {
+      "required": [
+       "pos"
+      ],
+      "description": "zone (also when \"when\" is absent), hold and door triggers need pos"
+     }
+    },
+    {
+     "if": {
+      "required": [
+       "when"
+      ],
+      "properties": {
+       "when": {
+        "const": "outcome"
+       }
+      }
+     },
+     "then": {
+      "required": [
+       "after",
+       "outcome"
+      ],
+      "description": "outcome triggers name the trigger they watch and the outcome they wait for"
+     }
+    }
    ],
    "properties": {
     "id": {
@@ -568,7 +919,8 @@
       "down",
       "all",
       "any",
-      "door"
+      "door",
+      "outcome"
      ]
     },
     "pos": {
@@ -581,7 +933,12 @@
     },
     "area": {
      "$ref": "#/$defs/area",
-     "description": "zone and hold, missionlab-plan/2 only: a shaped place that replaces the circle for who is inside; pos stays the anchor"
+     "description": "zone and hold, missionlab-plan/2 or /3: a shaped place that replaces the circle for who is inside; pos stays the anchor. Never together with place"
+    },
+    "place": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "zone and hold, missionlab-plan/3 only: the id of a named place with a painted area, whose shape the trigger uses instead of an area of its own (ML-040). The place must exist and be painted; renaming it keeps the link"
     },
     "facePlayer": {
      "type": "boolean",
@@ -597,7 +954,24 @@
     },
     "after": {
      "type": "integer",
-     "description": "after: the trigger it waits for; 0 means it is fired by hand"
+     "description": "after: the trigger it waits for; 0 means it is fired by hand. outcome: the trigger whose latest firing it watches (required, must exist)"
+    },
+    "outcome": {
+     "type": "string",
+     "description": "outcome: what the watched trigger's latest firing has to come to. applied: every action was seen to take; failed: an action failed or none of its enemies was made; partial: some of its enemies were made and some not; unconfirmed: the calls went through, nothing could be seen; timeout: no report at all within \"within\" seconds",
+     "enum": [
+      "applied",
+      "failed",
+      "partial",
+      "unconfirmed",
+      "timeout"
+     ]
+    },
+    "within": {
+     "type": "number",
+     "description": "outcome with timeout: seconds the watched firing has to be answered in. Absent means 30",
+     "minimum": 1,
+     "maximum": 3600
     },
     "hold": {
      "type": "number",

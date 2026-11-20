@@ -5,6 +5,7 @@
   python3 tools/package.py --check    make it, unpack it into a scratch folder and check what is inside
 
 The ZIP holds no game file: only the two plugins, the editor page with its 3D library, example scenarios and a short text.
+Nothing in it lands where a user keeps their own work, so unzipping a new version over an old one keeps that work.
 """
 import hashlib, os, re, sys, tempfile, zipfile
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,11 +38,24 @@ What is in here
   BepInEx/plugins/MissionLab/MissionLab.Director.dll   the mod
   BepInEx/plugins/MissionLab/MissionLab.Recon.dll      read-only helper that writes down what each map contains
   BepInEx/MissionLab/web/                              the editor page and its 3D library (three.js, MIT licence)
-  BepInEx/MissionLab/scenarios/examples/               example scenarios; move one up a folder to use it
+  BepInEx/MissionLab/examples/                         example scenarios; copy one into BepInEx/MissionLab/scenarios to use it
   BepInEx/MissionLab/modules/                          example encounter modules (Create > Modules > Insert)
 
-Remove
-  Delete BepInEx/plugins/MissionLab and BepInEx/MissionLab. Your own scenarios are in BepInEx/MissionLab/scenarios.
+Update
+  Unzip the new version over the old one and let it replace files. It replaces only the files listed above: the mod, the
+  page and the examples. Your scenarios, revisions, run records, replays, rehearsals, playlists, operations (with their
+  .prev.json copies), validations, agent proposals and recon are kept. An example you changed in
+  BepInEx/MissionLab/examples or BepInEx/MissionLab/modules is put back as shipped, so save your own copies under another name.
+
+Uninstall
+  Delete BepInEx/plugins/MissionLab. The mod no longer loads, and everything you made stays in BepInEx/MissionLab,
+  ready for a later install.
+
+Remove all MissionLab data as well (optional, cannot be undone)
+  First keep what you want: copy BepInEx/MissionLab somewhere else, or use "Export pack" on the page.
+  Then delete BepInEx/MissionLab. That erases your scenarios, modules, revisions, run records, replays, rehearsals,
+  playlists, operations, validations, agent proposals, recon notes, maps, missions and the page.
+  BepInEx/config/missionlab.director.cfg holds the settings; delete it too if you like.
 
 Problems
   BepInEx/LogOutput.log holds what the mod did in the last game start. The page has "Copy a report".
@@ -54,7 +68,7 @@ FILES = [
     ('BepInEx/MissionLab/web/three.LICENSE.txt', 'tools/editor/three.LICENSE.txt'),
 ]
 for name in sorted(os.listdir(os.path.join(HERE, 'examples'))):
-    if name.endswith('.json'): FILES.append(('BepInEx/MissionLab/scenarios/examples/' + name, 'examples/' + name))
+    if name.endswith('.json'): FILES.append(('BepInEx/MissionLab/examples/' + name, 'examples/' + name))
 for name in sorted(os.listdir(os.path.join(HERE, 'examples', 'modules'))):
     if name.endswith('.module.json'): FILES.append(('BepInEx/MissionLab/modules/' + name, 'examples/modules/' + name))
 out = os.path.join(HERE, 'dist', f'MissionLab-{version}.zip')
@@ -83,7 +97,36 @@ if '--check' in sys.argv:
             if low.endswith(('.mlgeo', '.bytes', '.assets', '.bundle')) or 'interop' in low or 'assembly-csharp' in low: problems.append('a game file is in the ZIP: ' + n)
             if n.startswith('/') or '..' in n: problems.append('unsafe path: ' + n)
         if 'MissionLab-README.txt' not in names: problems.append('the README is missing')
-        if not any(n.startswith('BepInEx/MissionLab/scenarios/examples/') for n in names): problems.append('no example scenario')
+        if not any(n.startswith('BepInEx/MissionLab/examples/') for n in names): problems.append('no example scenario')
+        # Nothing shipped may land where the plugin reads the user's own work, or an update would overwrite it.
+        for n in names:
+            if n.startswith(tuple('BepInEx/MissionLab/' + d + '/' for d in ('scenarios', 'revisions', 'runs', 'replays', 'rehearsals', 'playlists', 'operations', 'validations', 'proposals'))):
+                problems.append('the ZIP writes into a folder of user work: ' + n)
+    # Update simulation: a new ZIP unpacked over an install that holds authored work must leave that work byte for byte,
+    # and the documented uninstall (deleting the plugin folder) must leave it too.
+    import shutil
+    with tempfile.TemporaryDirectory() as game, zipfile.ZipFile(out) as z:
+        own = {
+            'BepInEx/MissionLab/scenarios/my_raid.json': b'{"name":"my raid","version":1}\n',
+            'BepInEx/MissionLab/revisions/my_raid/r1.json': b'{"revision":1}\n',
+            'BepInEx/MissionLab/runs/2026-11-19_my_raid.json': b'{"run":"kept"}\n',
+            'BepInEx/MissionLab/replays/2026-11-19_my_raid.json': b'{"replay":"kept"}\n',
+            'BepInEx/MissionLab/playlists/evening.json': b'{"playlist":"kept"}\n',
+            'BepInEx/MissionLab/operations/my_op.json': b'{"operation":"kept"}\n',
+            'BepInEx/MissionLab/operations/my_op.prev.json': b'{"operation":"previous"}\n',
+        }
+        for name, data in own.items():
+            os.makedirs(os.path.dirname(os.path.join(game, name)), exist_ok=True)
+            open(os.path.join(game, name), 'wb').write(data)
+        z.extractall(game)                               # first install
+        z.extractall(game)                               # the same ZIP again stands for an update over it
+        for name, data in own.items():
+            if open(os.path.join(game, name), 'rb').read() != data: problems.append('an update changed the user file ' + name)
+        shutil.rmtree(os.path.join(game, 'BepInEx/plugins/MissionLab'))
+        for name, data in own.items():
+            p = os.path.join(game, name)
+            if not os.path.exists(p) or open(p, 'rb').read() != data: problems.append('the uninstall lost the user file ' + name)
+        if not os.path.exists(os.path.join(game, 'BepInEx/MissionLab/web/index.html')): problems.append('the uninstall removed the page')
     print(f'{len(names)} files' + ('' if problems else ', all as expected, no game file among them'))
     for p in problems: print('PROBLEM: ' + p)
     sys.exit(1 if problems else 0)

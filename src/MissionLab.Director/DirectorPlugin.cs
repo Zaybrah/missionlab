@@ -21,7 +21,7 @@ namespace MissionLab
     {
         public const string Id = "missionlab.director";
         public const string DisplayName = "MissionLab Director (unofficial)";
-        public const string Version = "0.26.1";
+        public const string Version = "0.27.0";
 
         internal static ManualLogSource L;
 
@@ -39,8 +39,9 @@ namespace MissionLab
             else L.LogError(what + " failed " + g.Failures + " times in a row; paused for " + pause.ToString("0") + " s, then tried again. Last error: " + e.GetType().Name + ": " + e.Message);
             if (!was && g.Degraded && g == RulesGuard)
             {
-                // The mission's own rules have stopped: the host must see that, and the mod lets go of what it holds.
-                try { GameMaster.LetGo(); } catch { }
+                // The mission's own rules have stopped: the host must see that, and the mod lets go of everything it holds.
+                // Game Master mode is closed, not just paused, so the rules recovering later cannot take the keys again.
+                try { GameMaster.LetGo("the mission rules paused after an error"); } catch { }
                 Director.Banner = "MissionLab: the mission rules have stopped after an error. They are tried again shortly; see the page or the log.";
                 Director.BannerUntil = now + 30f;
             }
@@ -85,7 +86,7 @@ namespace MissionLab
             try { new Harmony(Id + ".input").PatchAll(typeof(InputBlockPatch)); InputHooked = true; L.LogInfo("the game's key binds are hooked: they stay silent while Game Master mode is open"); }
             catch (Exception e) { L.LogWarning("could not hook the game's key reader (" + e.Message + "); relying on the game's own input switch"); }
         }
-        private static bool _extractionHooked, _insertionHooked;
+        private static bool _extractionHooked, _insertionHooked, _extractedHooked;
         /// <summary>Hooked only when a scenario holds the extraction back, so other sessions never touch it.</summary>
         internal static void PatchExtraction()
         {
@@ -93,6 +94,18 @@ namespace MissionLab
             _extractionHooked = true;
             try { new Harmony(Id + ".extraction").PatchAll(typeof(ExtractionHoldPatch)); L.LogInfo("the game's extraction switch is hooked: it waits for the scenario's trigger"); }
             catch (Exception e) { L.LogWarning("could not hook the game's extraction switch (" + e.Message + "); the extraction is shut again whenever the game opens it early"); }
+        }
+
+        /// <summary>
+        /// Hooked for every mission the mod lays out. The game finishing the extraction is how a mission is won when no trigger
+        /// ends it, and the players it takes out lose their bodies as the dead do.
+        /// </summary>
+        internal static void PatchExtractionDone()
+        {
+            if (_extractedHooked) return;
+            _extractedHooked = true;
+            try { new Harmony(Id + ".extracted").PatchAll(typeof(ExtractionDonePatch)); L.LogInfo("the end of the game's extraction is hooked: a squad that extracts has won the mission"); }
+            catch (Exception e) { L.LogWarning("could not hook the end of the game's extraction (" + e.Message + "); players who extract are told apart from dead ones only while the game says it is extracting"); }
         }
 
         /// <summary>Hooked only when a scenario names the insertion.</summary>
@@ -199,6 +212,13 @@ namespace MissionLab
             GameMaster.ExtractionAsked = true;
             return false;
         }
+    }
+
+    /// <summary>The game finishes the extraction: the mission is won, and the players it takes out are not dead.</summary>
+    [HarmonyPatch(typeof(GameManagerNetwork), nameof(GameManagerNetwork.ServerCompleteExfil))]
+    internal static class ExtractionDonePatch
+    {
+        private static void Prefix() { try { GameMaster.GameExtracted(); } catch { } }
     }
 
     /// <summary>Just before the game puts the players on their insertion, everyone is given the scenario's.</summary>

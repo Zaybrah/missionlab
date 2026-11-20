@@ -62,6 +62,9 @@ namespace MissionLab.Core
         public float Minutes;                          // the author's estimate (0: not given)
         public List<string> Briefing = new List<string>();
         public List<string> Capabilities = new List<string>();
+        public List<CapabilityState> States = new List<CapabilityState>();   // each capability as the running build may claim it (CatalogueInfo.Check)
+        public List<Finding> Needs = new List<Finding>();                    // what the scenario needs that is missing or unproven here (Capabilities.Needs)
+        public MissionPlan Plan;                                             // the strict reader's plan; null when it refused the file
         public int Runs, Finished;                     // runs of this scenario on record; of those, used and seen to end
         public double? Measured;                       // median minutes of the finished runs; null when there is none
         public RunSummary LastRun;                     // the newest run on record, or null
@@ -98,6 +101,7 @@ namespace MissionLab.Core
                 e.NavFile = (plan.NavFile ?? "").Trim(); e.Scene = (plan.Scene ?? "").Trim();
                 e.Briefing = new List<string>(plan.Briefing); e.Enemies = plan.Spawns.Count;
                 e.Capabilities = MissionLab.Core.Capabilities.Of(plan);
+                e.Plan = plan;
                 if (plan.Options != null) e.Options = new List<OptionPlan>(plan.Options);
                 e.Usable = plan.Spawns.Count > 0;
                 if (!e.Usable) e.Why = "it has no enemies, so MissionLab leaves the game's own mission";
@@ -113,6 +117,22 @@ namespace MissionLab.Core
             }
             e.Measured = Median(times);
             return e;
+        }
+
+        /// <summary>
+        /// Judges the entry's capabilities against the capability list for the running build, and checks what the scenario
+        /// needs against what is known of its map (maps: facts from recon files; null or empty: nothing known). Only a known
+        /// incompatibility makes the entry unusable; a failing or experimental capability stays a choice, shown as such.
+        /// </summary>
+        public static void Check(CatalogueEntry e, CapabilityRegistry registry, string current, List<MapFacts> maps)
+        {
+            if (e == null) return;
+            e.States = MissionLab.Core.Capabilities.Judge(registry, e.Capabilities, current);
+            if (e.Plan == null) return;
+            e.Needs = MissionLab.Core.Capabilities.Needs(e.Plan, MapFacts.For(e.Plan, maps), registry, current);
+            if (e.Sealed) e.Needs = Unplaced(e.Needs);
+            Finding block = e.Needs.Find(f => f.Level == Finding.Error);
+            if (e.Usable && block != null) { e.Usable = false; e.Why = "it cannot run as written here: " + block.ToString(); }
         }
 
         /// <summary>The choice value for a file: its name without ".json".</summary>
@@ -241,10 +261,10 @@ namespace MissionLab.Core
 
         /// <summary>
         /// The entry as JSON for the page. compat: the compatibility table's word for its map ("" when the scenario names
-        /// no map file, so nothing can be judged). seen: capabilities seen working in the game; others are marked untested.
-        /// mapLabel: a readable name for the map ("" when unknown).
+        /// no map file, so nothing can be judged). Capabilities are written as Check judged them; without Check every one
+        /// is "unknown", never confirmed. mapLabel: a readable name for the map ("" when unknown).
         /// </summary>
-        public static void Write(CatalogueEntry e, StringBuilder sb, string compat, ICollection<string> seen, string mapLabel)
+        public static void Write(CatalogueEntry e, StringBuilder sb, string compat, string mapLabel)
         {
             string Q(string s) => "\"" + Guard.Esc(s ?? "") + "\"";
             sb.Append("{\"file\":").Append(Q(e.File)).Append(",\"value\":").Append(Q(e.Value))
@@ -272,9 +292,18 @@ namespace MissionLab.Core
                 sb.Append("]}");
             }
             sb.Append("],\"capabilities\":[");
-            for (int i = 0; i < e.Capabilities.Count; i++)
-                sb.Append(i > 0 ? "," : "").Append("{\"name\":").Append(Q(e.Capabilities[i])).Append(",\"tested\":").Append(seen != null && seen.Contains(e.Capabilities[i]) ? "true" : "false").Append('}');
-            sb.Append("],\"lastRun\":");
+            List<CapabilityState> states = e.States.Count == e.Capabilities.Count ? e.States : MissionLab.Core.Capabilities.Judge(null, e.Capabilities, "");
+            for (int i = 0; i < states.Count; i++)
+            {
+                CapabilityState c = states[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"name\":").Append(Q(c.Name)).Append(",\"id\":").Append(Q(c.Id)).Append(",\"label\":").Append(Q(c.Label))
+                  .Append(",\"status\":").Append(Q(c.Status)).Append(",\"shown\":").Append(Q(c.Shown)).Append(",\"confirmed\":").Append(c.Confirmed ? "true" : "false")
+                  .Append(",\"client\":").Append(c.Client ? "true" : "false").Append(",\"build\":").Append(Q(c.Build)).Append(",\"scope\":").Append(Q(c.Scope))
+                  .Append(",\"words\":").Append(Q(c.Words)).Append('}');
+            }
+            sb.Append("],\"needs\":");
+            WriteFindings(sb, e.Needs);
+            sb.Append(",\"lastRun\":");
             RunSummary r = e.LastRun;
             if (r == null) sb.Append("null");
             else

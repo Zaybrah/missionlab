@@ -1,0 +1,14 @@
+{
+ "schema": "missionlab-plan/3",
+ "mission": {
+  "triggers": [ { "id": 1, "when": "alert" } ],
+  "goals": [ { "id": "phone", "name": "Recover the phone", "succeed": 1 } ],
+  "director": { "budget": 10, "actions": [ { "id": "rear", "name": "Rear", "cost": 3, "fire": 1 } ],
+   "pressure": { "mode": "always", "bands": [
+    { "name": "Push", "from": -1, "goals": ["phone", "upper", 7], "minPlayers": 17, "spend": 1001, "every": 5 },
+    { "from": "soon", "goals": "phone", "minPlayers": 1.5, "spend": "all", "every": 601 },
+    3
+   ], "maxEnemies": -1, "rest": 601 } },
+  "spawns": [ { "pos": [0, 0, 0] } ]
+ }
+}

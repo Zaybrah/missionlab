@@ -1,0 +1,540 @@
+{
+  "schema": "missionlab-capabilities/1",
+  "about": "What MissionLab has been seen to do in the game, with the build, map, mode and who saw it. One source: the plugin carries this file inside MissionLab.Director.dll (tools/build.py), the editor page has it inlined (tools/editor/build.py), and the README Status table is made from it (python3 tools/status.py --write). Statuses: supported, experimental, failing, untested, unavailable. Evidence scope: solo (a modded host alone), two-player-host-log (two players, only the host's log and recording kept: never a client's word), co-op-client (seen on the screen of a friend who has no mod). Result: worked, failed, partial, not-seen. A build or date that was not written down is \"unrecorded\".",
+  "intro": [
+    "Every result below is from OPERATOR 0.09.5 with BepInEx 6.0.0-be.785 (IL2CPP), the only game version tried. Statuses: **supported** = seen to work in the game on the named build, map and mode; **experimental** = built and switched on, but not proven in the game (the effect was hardly noticed, or it is off by default until something else is seen); **failing** = tried in the game, and it did not work; **unavailable** = tried and the game does not do it, so the mod does not use it; **untested** = never run in that combination. \"Solo\" means a modded host alone; \"co-op\" means a modded host with a friend who has no mod; \"by the host's log\" means a run with two players of which only the host's log and recording were kept, which is never a client's word.",
+    "A status holds for the builds it names. The plugin and the editor show anything seen only on an older build as \"seen on <build>, not yet on <current>\", never as confirmed, and solo or host's-log evidence never as seen by a client. 0.24.1 to 0.26.0 have run once in the game (18 November, 0.26.0, solo; the rows below name what was seen); everything else they add is covered only by `./test.sh` and the editor tests. 0.26.1 ran once with two players (19 November); only the host's log and recording were kept, so nothing from that run is a client's word and it does not count as co-op here. Sources: `docs/findings.md` (what was seen, run by run) and `docs/backlog-status.md` (each ticket). `docs/coop-record.md` is the record to fill in for the next co-op run.",
+    "This table is made from `docs/capabilities.json` by `python3 tools/status.py --write`: change the file, not the table. The plugin and the editor read the same file."
+  ],
+  "capabilities": [
+    {
+      "id": "coop-client-join",
+      "label": "Client joins a modded host; scenario enemies, enemies spawned later and zone enemies appear for the client",
+      "status": "supported",
+      "qualifier": "co-op",
+      "where": "0.13.0, Clean House, co-op",
+      "summary": "Findings, co-op 0.13.0. Nothing added after 0.13 has been seen by a client",
+      "uses": [],
+      "evidence": [
+        { "build": "0.13.0", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "co-op-client", "result": "worked", "note": "one unmodded client joined; enemies from a scenario, enemies spawned later through ServerSpawnAI and zone spawns all appeared for it" }
+      ]
+    },
+    {
+      "id": "coop-everything-else",
+      "label": "Everything else in co-op on 0.14 to 0.26.1 (triggers, doors, messages, intel, extraction, waves, endings, live edits)",
+      "status": "untested",
+      "where": "0.26.1, Clean House, co-op",
+      "summary": "19 November, two players: triggers, the hold by everyone, messages, the held extraction and the squad's extraction all ran by the host's log; what the second player saw, and whether they had the mod, was not recorded. `docs/coop-record.md` lists every check",
+      "uses": [],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "triggers, the hold by everyone, messages, the held extraction and the squad's extraction ran by the host's log; what the second player saw was not recorded" }
+      ]
+    },
+    {
+      "id": "rejoin",
+      "label": "Rejoin or late join; a modded player who is not the host",
+      "status": "untested",
+      "where": "any",
+      "summary": "ML-011",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "generated-layouts",
+      "label": "Generated layouts",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "build not recorded (before 0.15), Suburb and Mexico Depot Day, solo",
+      "summary": "Findings: enemies on every planned point; Mexico Depot 31 of 31, patrols walking",
+      "uses": [],
+      "evidence": [
+        { "build": "unrecorded", "date": "unrecorded", "map": "Suburb", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "enemies on every planned point; a build before 0.15" },
+        { "build": "unrecorded", "date": "unrecorded", "map": "Mexico Depot Day", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "31 of 31 enemies placed, patrols walking; a build before 0.15" }
+      ]
+    },
+    {
+      "id": "generated-georgia",
+      "label": "Generated layouts on Georgia",
+      "status": "untested",
+      "where": "Georgia",
+      "summary": "Only the game's own target person is recorded there; an earlier note said layouts ran, with no build or record",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "other-maps",
+      "label": "Maps other than Suburb, Mexico Depot and Georgia",
+      "status": "untested",
+      "where": "any",
+      "summary": "Findings, \"Not yet verified\"",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "scenario-files",
+      "label": "Scenario files and patrol routes",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.15 to 0.24.0, Clean House, solo",
+      "summary": "Findings, runs 0.15.0 to 0.24.0; patrols walked their routes",
+      "uses": [],
+      "evidence": [
+        { "build": "0.15.0", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "first run of the feature test scenario" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "scenario laid out; patrols walked their routes" }
+      ]
+    },
+    {
+      "id": "lobby-picker",
+      "label": "The scenario picker in the lobby, the empty map",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "build not recorded, Clean House, solo",
+      "summary": "An earlier status note only; no run in the findings records them",
+      "uses": [],
+      "evidence": [
+        { "build": "unrecorded", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "an earlier status note only; no run in the findings records it" }
+      ]
+    },
+    {
+      "id": "refusal",
+      "label": "A scenario that cannot be finished is refused, the game's own mission runs",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.24.0, Clean House, solo",
+      "summary": "Two refused missions with the refusal test (ML-001)",
+      "uses": [],
+      "evidence": [
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "two missions with the refusal test, both refused with the reason; the game's own mission ran" }
+      ]
+    },
+    {
+      "id": "trigger-engine",
+      "label": "Trigger engine: time with repeat and cap, zone, hold, hold by everyone, alarm, door, enemies down, tagged down, intel, all-of, after, chance, fire by hand, countdown",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.24.0 and 0.26.0, Clean House by night, solo",
+      "summary": "Findings, 17 and 18 November; repeat fired at 60, 150 and 240 s and stopped",
+      "uses": ["chance", "door-trigger", "repeat"],
+      "evidence": [
+        { "build": "0.19.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "chance and either/or rolled differently in two missions" },
+        { "build": "0.22.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "repeat at 60, 150 and 240 s then stopped; the door trigger fired when the player opened the door; tagged enemies down" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "timer repeat, door, hold, alarm, enemies down, tagged down, intel, all-of, countdown and the failed ending" },
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "repeat again at 60, 150 and 240 s; the diagnostic: the 50% trigger sat out, \"everyone\" held 20 s, two triggers fired by hand" }
+      ]
+    },
+    {
+      "id": "messages",
+      "label": "Messages on screen, taking turns; briefing",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.24.0, Clean House, solo",
+      "summary": "Findings: messages took turns. Never confirmed on a client's screen",
+      "uses": ["messages"],
+      "evidence": [
+        { "build": "0.19.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the two trigger messages appeared on the host's screen" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "messages took turns" }
+      ]
+    },
+    {
+      "id": "shared-wave",
+      "label": "Shared respawn wave",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.24.0 and 0.26.0, Clean House, solo",
+      "summary": "18 November: two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later. Extracting players were counted as dead, and a wave announced on every screen as the mission was won (19 November, and after every success ending before); 0.26.2 stops that, not run yet. Two players dead at once: untested",
+      "uses": ["respawn"],
+      "evidence": [
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "death at 225.5 s, announced, one player back at 235.6 s" },
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "two waves, back after 20.2 s each; the third death, with no wave left, let the game end the mission 27 s later" },
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "partial", "note": "the extracting squad was counted as dead and a wave announced on every screen as the mission was won" }
+      ]
+    },
+    {
+      "id": "respawn-trigger",
+      "label": "Respawn by trigger (`\"respawn\": true`)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.22.0, Clean House, solo",
+      "summary": "The dead host was back within a second",
+      "uses": [],
+      "evidence": [
+        { "build": "0.22.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the dead host was back within a second" }
+      ]
+    },
+    {
+      "id": "failed-ending",
+      "label": "Failed ending (red message, back to the lobby without a result screen)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.22.0, 0.24.0 and 0.26.1, Clean House, solo",
+      "summary": "Findings. The game's own fail call does not end a mission while a player lives: unavailable, not used. 0.26.1: the trigger's red message and \"Mission failed.\" go out together",
+      "uses": [],
+      "evidence": [
+        { "build": "0.22.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "countdown lines, \"Out of time.\" and the failed ending" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the failed ending" },
+        { "build": "0.26.1", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "\"Too late\" ended the sealed mission as failed; both red messages went out at once" }
+      ]
+    },
+    {
+      "id": "success-ending",
+      "label": "Success ending",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.17.0, 0.26.0 and 0.26.1, Clean House, solo",
+      "summary": "The mission ends 2.5 to 2.7 s after the call. 0.26.1: the ending waited 11 s for the two messages fired with it. The game's own extraction: two players extracted on 19 November, recorded as \"over\"; 0.26.2 records it as a success, not run yet",
+      "uses": ["endings"],
+      "evidence": [
+        { "build": "0.17.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "ServerCompleteExfil ended the mission 2.5 s later" },
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "success in 241 s; two messages fired with the ending were most likely lost" },
+        { "build": "0.26.1", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the ending waited 11 s for the two messages fired with it" },
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "partial", "note": "two players extracted through the game's own extraction; the run record said \"over\", not \"success\"" }
+      ]
+    },
+    {
+      "id": "extraction-hold",
+      "label": "Extraction held shut until a trigger (`extraction.after`, a trigger's `\"extraction\": \"open\"`)",
+      "status": "supported",
+      "qualifier": "solo and by the host's log",
+      "where": "0.15.2 to 0.26.1, Clean House, solo and two players",
+      "summary": "Not a row before 0.27; taken from the findings. 18 November: \"two down\" and the phone opened the extraction. 19 November: held until trigger 5, then the squad extracted (host's log). Opened by the fallback \"set on each extraction zone\" in every run. What a client sees: untested",
+      "uses": ["extraction-hold"],
+      "evidence": [
+        { "build": "0.15.2", "date": "unrecorded", "map": "Clean House by day", "mode": "PvE raid", "scope": "solo", "result": "partial", "note": "the chain trigger opened the extraction on the host; nobody walked to it" },
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the diagnostic's \"two down\" opened the extraction" },
+        { "build": "0.26.1", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "taking the phone opened the extraction" },
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "held until trigger 5; both players extracted on the street" }
+      ]
+    },
+    {
+      "id": "doors",
+      "label": "Door locked or unlocked at the start and by a trigger",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.15.0 to 0.24.0, Clean House, solo",
+      "summary": "Findings: our doors hold after the game's own roll",
+      "uses": ["doors"],
+      "evidence": [
+        { "build": "0.15.0", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "a door set in the OnStartServer hook holds after the game's own roll" },
+        { "build": "0.17.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the intel trigger changed its door" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "doors locked and unlocked by triggers" }
+      ]
+    },
+    {
+      "id": "door-open",
+      "label": "Door that stands open",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.26.0, Clean House by night, solo",
+      "summary": "18 November: opened by the third way (turning it by hand) 5 s after the trigger, seen by the plugin; a client's view: untested",
+      "uses": [],
+      "evidence": [
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "CMD_SetDoorClosed(false) unlatched the door but did not swing it" },
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "opened by the third way, turning it by hand, 5 s after the trigger; seen by the plugin (IsOpenEnoughForAI)" }
+      ]
+    },
+    {
+      "id": "fresh-movement",
+      "label": "Calling enemies (`rally`), hunters, Game Master orders to fresh enemies",
+      "status": "failing",
+      "where": "0.26.1, Clean House, solo",
+      "summary": "18 November: two hunters had no path and moved 3.9 m in 90 s after all three ways. 0.22.0: a Game Master order moved two enemies after a fight (ML-003)",
+      "uses": ["hunt", "rally"],
+      "evidence": [
+        { "build": "0.22.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "partial", "note": "a Game Master order moved two enemies, both after a fight; a call by trigger moved nobody" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "a call moved nobody in 45 s; a hunter 52 m away stood still for 30 s" },
+        { "build": "0.26.1", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "two fresh hunters had no path and moved 3.9 m in 90 s, 80 and 85 m short after all three ways" }
+      ]
+    },
+    {
+      "id": "moved-intel",
+      "label": "Moved intel (`objectives` in a scenario)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.26.0, Clean House by night, solo",
+      "summary": "18 November: the phone was moved upstairs at the start, picked up there, and fired its trigger. How an unmodded client sees it: untested",
+      "uses": ["intel-move"],
+      "evidence": [
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the phone was moved upstairs at the start, picked up there, and fired its trigger" }
+      ]
+    },
+    {
+      "id": "random-intel",
+      "label": "Random layouts laying the intel elsewhere (`RandomIntel`)",
+      "status": "experimental",
+      "qualifier": "off by default",
+      "where": "0.24.3",
+      "summary": "Off until moved intel is seen on an unmodded client. The rest of `RandomExtras` (waves, ambush, locked doors) stays on",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "target-person",
+      "label": "Target person placement (`hvt`, `MoveTarget`)",
+      "status": "untested",
+      "where": "any",
+      "summary": "Only the game's own target was seen, on Georgia",
+      "uses": ["hvt"],
+      "evidence": []
+    },
+    {
+      "id": "insertion",
+      "label": "Insertion chosen by the scenario",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.15.2, Clean House, solo",
+      "summary": "The host started on Alpha 2. A client's insertion: untested",
+      "uses": ["insertion"],
+      "evidence": [
+        { "build": "0.15.2", "date": "unrecorded", "map": "Clean House by day", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the host started on Alpha 2's spot" }
+      ]
+    },
+    {
+      "id": "placed-weapons",
+      "label": "Placed weapons",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.19.0, Clean House by night, solo",
+      "summary": "Picked up and used",
+      "uses": ["things"],
+      "evidence": [
+        { "build": "0.19.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "an AKM and an AK-74M lay where they were put and could be picked up and used" },
+        { "build": "0.20.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "a rifle lay at its spot from the start; a hold placed its weapon" }
+      ]
+    },
+    {
+      "id": "placed-explosives",
+      "label": "Placed grenades and landmines",
+      "status": "untested",
+      "where": "0.17.0, Clean House, solo",
+      "summary": "Placed without error but not seen",
+      "uses": [],
+      "evidence": [
+        { "build": "0.17.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "not-seen", "note": "two flashbangs and a landmine placed without error; neither seen on the ground nor going off" }
+      ]
+    },
+    {
+      "id": "sides-power-vehicles",
+      "label": "Two sides, lights out, suicide bomber type, gun truck (with the plugin's fallback)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.15.0 to 0.20.0, Clean House, solo",
+      "summary": "Findings",
+      "uses": ["power", "teams", "vehicles"],
+      "evidence": [
+        { "build": "0.15.0", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the suicide bomber noticed the player at about 50 m, ran to them and blew up" },
+        { "build": "0.17.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "\"lights out\" made the house go dark; the gun truck came from the game's own spawner" },
+        { "build": "0.19.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "two sides fought; the gun truck fallback placed the truck both times" },
+        { "build": "0.20.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "enemies brought by a trigger were put on team 4 and fought the other side" }
+      ]
+    },
+    {
+      "id": "skill-nvg",
+      "label": "Skill and night vision",
+      "status": "experimental",
+      "where": "0.21.0 and 0.22.0, Clean House, solo",
+      "summary": "Applied by the log; the difference was hardly noticed in play",
+      "uses": [],
+      "evidence": [
+        { "build": "0.21.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "partial", "note": "skill applied by the log; one enemy more or less sharp was not noticed in play" },
+        { "build": "0.22.0", "date": "2026-11-16", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "partial", "note": "recruits for all: the player thought enemies were slower and missed more" }
+      ]
+    },
+    {
+      "id": "weather",
+      "label": "Weather and time of day",
+      "status": "unavailable",
+      "where": "Suburb, Mexico Depot, Georgia",
+      "summary": "The game has no weather object on these maps",
+      "uses": ["weather"],
+      "evidence": [
+        { "build": "unrecorded", "date": "unrecorded", "map": "Suburb, Mexico Depot and Georgia", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "VectorTimeOfDay.singleton is null on these maps: no weather there" }
+      ]
+    },
+    {
+      "id": "noise",
+      "label": "Noise to alert enemies (`HeardTarget`, `ShotFired`)",
+      "status": "unavailable",
+      "where": "0.19.0 and 0.20.0, Clean House, solo",
+      "summary": "Nobody reacted; replaced by patrol orders",
+      "uses": [],
+      "evidence": [
+        { "build": "0.19.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "HeardTarget: no enemy changed state or moved in the 12 s after it" },
+        { "build": "0.20.0", "date": "unrecorded", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "failed", "note": "ShotFired: four enemies 21 to 28 m away kept their state and distance" }
+      ]
+    },
+    {
+      "id": "game-master",
+      "label": "Game Master mode in the game and in the browser, recordings",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.15 to 0.24.0, Clean House, solo",
+      "summary": "Findings, every run",
+      "uses": [],
+      "evidence": [
+        { "build": "0.15.0", "date": "unrecorded", "map": "Clean House", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the recording was written: 61 moments, 5 events" },
+        { "build": "0.24.0", "date": "2026-11-17", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "Game Master and recordings, every run" }
+      ]
+    },
+    {
+      "id": "tell-players",
+      "label": "Notice to other players that the host runs MissionLab (`TellPlayers`)",
+      "status": "untested",
+      "qualifier": "co-op",
+      "where": "co-op",
+      "summary": "Uses the message call that works solo; never seen by a client. 19 November: sent with 2 players in, by the host's log",
+      "uses": [],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "the notice was sent with 2 players in, by the host's log; what the second player saw was not recorded" }
+      ]
+    },
+    {
+      "id": "other-modes",
+      "label": "PvP, wave survival and other modes left alone",
+      "status": "untested",
+      "where": "any",
+      "summary": "Not tried in the game",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "scenario-contract",
+      "label": "Scenario contract, run records, recording identities, readiness check, release ZIP",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.26.0, Clean House, solo",
+      "summary": "18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game",
+      "uses": [],
+      "evidence": [
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "readiness all OK, catalogue right, run records and semantics 4 recordings written" }
+      ]
+    },
+    {
+      "id": "places",
+      "label": "Named places (`places`: labels, and painted rooms that zone and hold triggers can link to)",
+      "status": "untested",
+      "where": "any",
+      "summary": "Not a row before 0.27. A place labels a spot or a painted room for logs, recordings and explanations; from 0.27 a zone or hold trigger may link to a painted place (missionlab-plan/3) and uses its shape, resolved when the file is read. No run on record names or links one",
+      "uses": ["places"],
+      "evidence": []
+    },
+    {
+      "id": "objectives",
+      "label": "Mission objectives (`goals`: required and optional, notices, extraction waiting for them)",
+      "status": "untested",
+      "where": "any",
+      "summary": "New in 0.27 (missionlab-plan/3). Objectives are driven by triggers; the plugin shows 'New objective', 'Objective complete' and 'Objective failed' through the same on-screen message as trigger messages, and can hold the extraction until every required objective is done. No run on record has one; a client's view of the notices is unseen",
+      "uses": ["goals"],
+      "evidence": []
+    },
+    {
+      "id": "outcome-branches",
+      "label": "Branches on observed outcomes (`when: \"outcome\"`: applied, failed, partial, unconfirmed, timeout)",
+      "status": "untested",
+      "where": "any",
+      "summary": "New in 0.27. A trigger waits for what the host saw of another trigger's latest firing; only enemies made by the spawner count as seen to take, and messages, doors and calls are never more than unconfirmed. A late result is shown but never moves the branch, and nothing is retried. No run on record has one",
+      "uses": ["outcomes"],
+      "evidence": []
+    },
+    {
+      "id": "pressure-director",
+      "label": "Pressure director, an experiment (`director.pressure`: bands, caps, preview, rest)",
+      "status": "experimental",
+      "where": "any",
+      "summary": "New in 0.27, a spike. Spends the Game Master budget on the author's own cards within authored bands, never past the budget, the living-enemy cap or a card's placement rule, and rests after a casualty; preview logs without firing. Placement checks are an approximation. Covered only by the tests: no playtest has compared it with the director off",
+      "uses": ["pressure"],
+      "evidence": []
+    },
+    {
+      "id": "agent-drafts",
+      "label": "Draft proposals from coding agents (`/api/agent`, `tools/agent/`)",
+      "status": "untested",
+      "where": "any",
+      "summary": "New in 0.27. Proposals are checked by the strict reader, Completion and the capability list on a copy and stored under proposals/; they never touch scenario files or the running mission until the author applies one as a draft. No run on record has used it",
+      "uses": [],
+      "evidence": []
+    },
+    {
+      "id": "painted-areas",
+      "label": "Painted trigger areas",
+      "status": "supported",
+      "qualifier": "offline on recorded movement; hold by everyone run with two players",
+      "where": "0.26.1, Clean House by night",
+      "summary": "18 November: the house painted on the real map and all 8,564 recorded player positions (15–18 November) played through the plugin's own rules: entered and left only at the doors, floors and stairs right, hold not reset by the stairs, basement left out. 19 November: the painted upstairs hold by everyone counted both players and fired 60 s after the second went up (host's log). A shape sent live in a mission: untested",
+      "uses": ["areas"],
+      "evidence": [
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "offline replay of recorded play", "scope": "solo", "result": "worked", "note": "8,564 recorded player positions played through the plugin's own rules: entered and left only at the doors, floors and stairs right" },
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "the painted upstairs hold by everyone counted both players and fired 60 s after the second went up" }
+      ]
+    },
+    {
+      "id": "sealed",
+      "label": "Sealed missions",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.26.1, Clean House by night, solo",
+      "summary": "18 November: played to its failed ending; the host reported the page view as expected (the logs cannot show what the page drew). 19 November: the sealed Two-Man Job played with two players to its extraction",
+      "uses": ["sealed"],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "played to its failed ending; the host reported the page view as expected" },
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "the sealed Two-Man Job played with two players to its extraction" }
+      ]
+    },
+    {
+      "id": "views-inspector",
+      "label": "Play, Create and Direct views and the trigger inspector (0.25)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.26.0, Clean House",
+      "summary": "18 November: the inspector followed every trigger of the diagnostic. Until 0.27 this row also held options, scatter, cards and packs",
+      "uses": [],
+      "evidence": [
+        { "build": "0.26.0", "date": "2026-11-18", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "the inspector followed every trigger of the diagnostic" }
+      ]
+    },
+    {
+      "id": "options",
+      "label": "Host options before the mission (0.26)",
+      "status": "supported",
+      "qualifier": "by the host's log",
+      "where": "0.26.1, Clean House by night, two players",
+      "summary": "19 November (two players): the picks applied at the start (Standard, Regulars, Two, 25 minutes)",
+      "uses": ["options"],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "the picks applied at the start: Standard, Regulars, Two, 25 minutes" }
+      ]
+    },
+    {
+      "id": "scatter",
+      "label": "Constrained scatter (0.26)",
+      "status": "supported",
+      "qualifier": "by the host's log",
+      "where": "0.26.1, Clean House by night, two players",
+      "summary": "19 November (two players): scatter moved 5 of 5 enemies",
+      "uses": ["scatter"],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "scatter moved all 5 enemies that could move" }
+      ]
+    },
+    {
+      "id": "cards",
+      "label": "Game Master budget and action cards (`director`, 0.26)",
+      "status": "supported",
+      "qualifier": "by the host's log",
+      "where": "0.26.1, Clean House by night, two players",
+      "summary": "19 November (two players): both cards were spent (the breaker reported the lights off; the street patrol appeared)",
+      "uses": ["director"],
+      "evidence": [
+        { "build": "0.26.1", "date": "2026-11-19", "map": "Clean House by night", "mode": "PvE raid", "scope": "two-player-host-log", "result": "worked", "note": "\"Cut the lights\": the breaker answered off; \"Send a street patrol\": one enemy appeared 0.04 s later" }
+      ]
+    },
+    {
+      "id": "packs",
+      "label": "Scenario packs (0.26)",
+      "status": "untested",
+      "where": "any",
+      "summary": "Covered only by the tests; not installed in a game yet",
+      "uses": [],
+      "evidence": []
+    }
+  ]
+}

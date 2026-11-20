@@ -7,10 +7,16 @@
 // Every event is an assumption the author injects. Nothing here predicts spotting, pathfinding, physics, networking or combat.
 const REHEARSAL_SCHEMA = 'missionlab-rehearsal/1';
 const RH_PHASES = ['off', 'circle', 'waiting', 'holding', 'counting', 'fired', 'cooling', 'exhausted'];
-const RH_EVENTS = { players: 'Players stand', alert: 'Alarm', intel: 'Intel taken', down: 'Enemies down', door: 'Door opened', fire: 'Fired by hand' };
-const RH_CHECKS = { fired: 'Check: fired', notFired: 'Check: not fired', phase: 'Check: phase', extraction: 'Check: extraction', enemies: 'Check: enemies' };
+const RH_EVENTS = { players: 'Players stand', alert: 'Alarm', intel: 'Intel taken', down: 'Enemies down', door: 'Door opened', fire: 'Fired by hand', outcome: 'Outcome reported' };
+// What a step may report for the latest firing of a trigger (ML-047). A rehearsal never assumes an outcome by itself: an
+// outcome trigger waits until a row reports one, and "timeout" is not reported but judged on the rehearsal's clock.
+const RH_OUTCOMES = ['applied', 'failed', 'partial', 'unconfirmed'];
+const RH_CHECKS = { fired: 'Check: fired', notFired: 'Check: not fired', phase: 'Check: phase', goal: 'Check: objective', extraction: 'Check: extraction', enemies: 'Check: enemies' };
+// An objective's states as Core's GoalBook names them (ML-046); a check expects one of them at its moment.
+const RH_GOALS = ['inactive', 'active', 'succeeded', 'failed'];
 const RH_OFFLINE = 'Running needs the game: start OPERATOR with MissionLab and open http://localhost:8765. On its own this page checks the rows and saves the test as a file.';
-state.rehearse = { rows: [], name: '', players: 2, roll: 0, pin: null, picking: null, focus: null, down: null, answer: null, failed: new Set(), saved: [], listedFor: null, choices: '' };
+state.rehearse = { rows: [], name: '', players: 2, roll: 0, pin: null, picking: null, focus: null, down: null, answer: null, failed: new Set(), saved: [], listedFor: null, choices: '',
+  sources: null, prev: null, answerKey: '', answerSources: null, divergence: null, report: null, cursor: -1 };   // the run before (same steps), for the first difference (ML-043)
 
 // ----- pure parts: rows to a script, the script as text, a script back to rows, the answer as a report
 
@@ -24,8 +30,10 @@ function rehearseStep(row) {
     case 'down': return { at, event: 'down', ...(row.tag ? { tag: row.tag } : {}), ...(row.count > 0 ? { count: row.count | 0 } : {}) };
     case 'door': return isVec(row.pos) ? { at, event: 'door', pos: r3(row.pos) } : null;
     case 'fire': return row.id > 0 ? { at, fire: row.id } : null;
+    case 'outcome': return row.id > 0 && RH_OUTCOMES.includes(row.result) ? { at, outcome: { trigger: row.id, result: row.result } } : null;
     case 'fired': case 'notFired': return row.id > 0 ? { at, expect: { [row.kind]: [row.id] } } : null;
     case 'phase': return row.id > 0 && RH_PHASES.includes(row.phase) ? { at, expect: { phase: { [row.id]: row.phase } } } : null;
+    case 'goal': return typeof row.goal === 'string' && GOAL_ID.test(row.goal) && RH_GOALS.includes(row.state) ? { at, expect: { goals: { [row.goal]: row.state } } } : null;
     case 'extraction': return { at, expect: { extraction: row.value === 'open' ? 'open' : 'held' } };
     case 'enemies': return { at, expect: { enemies: Math.max(0, row.count | 0) } };
   }
@@ -53,6 +61,7 @@ function rehearseText(s) {
       if (st.event === 'door') o += ',"pos":' + p(isVec(st.pos) ? st.pos : [0, 0, 0]);
     }
     if (st.fire > 0) o += ',"fire":' + (st.fire | 0);
+    if (st.outcome && st.outcome.trigger > 0) o += ',"outcome":{"trigger":' + (st.outcome.trigger | 0) + ',"result":' + q(String(st.outcome.result || '')) + '}';
     const x = st.expect;
     if (x) {
       const parts = [];
@@ -60,6 +69,9 @@ function rehearseText(s) {
       if (Array.isArray(x.notFired) && x.notFired.length) parts.push('"notFired":[' + x.notFired.join(',') + ']');
       const ids = x.phase ? Object.keys(x.phase).map(Number).sort((a, b) => a - b) : [];
       if (ids.length) parts.push('"phase":{' + ids.map(id => q(String(id)) + ':' + q(x.phase[id])).join(',') + '}');
+      // Goal ids in ordinal order, as Rehearsal.Write takes them from its sorted dictionary.
+      const goals = x.goals && typeof x.goals === 'object' ? Object.keys(x.goals).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) : [];
+      if (goals.length) parts.push('"goals":{' + goals.map(id => q(id) + ':' + q(x.goals[id])).join(',') + '}');
       if (x.extraction) parts.push('"extraction":' + q(x.extraction));
       if (Number.isInteger(x.enemies) && x.enemies >= 0) parts.push('"enemies":' + x.enemies);
       o += ',"expect":{' + parts.join(',') + '}';
@@ -86,18 +98,22 @@ function rehearseRows(s) {
     else if (st.event === 'down') rows.push({ at, kind: 'down', tag: typeof st.tag === 'string' ? st.tag : '', count: Number.isInteger(st.count) ? st.count : 0 });
     else if (st.event === 'door') rows.push({ at, kind: 'door', pos: isVec(st.pos) ? st.pos.slice(0, 3) : null });
     if (Number.isInteger(st.fire) && st.fire > 0) rows.push({ at, kind: 'fire', id: st.fire });
+    if (st.outcome && typeof st.outcome === 'object' && Number.isInteger(st.outcome.trigger) && st.outcome.trigger > 0) rows.push({ at, kind: 'outcome', id: st.outcome.trigger, result: typeof st.outcome.result === 'string' ? st.outcome.result : '' });
     const x = st.expect;
     if (!x || typeof x !== 'object') continue;
     for (const id of Array.isArray(x.fired) ? x.fired : []) rows.push({ at, kind: 'fired', id });
     for (const id of Array.isArray(x.notFired) ? x.notFired : []) rows.push({ at, kind: 'notFired', id });
     if (x.phase && typeof x.phase === 'object') for (const k of Object.keys(x.phase)) rows.push({ at, kind: 'phase', id: +k, phase: x.phase[k] });
+    if (x.goals && typeof x.goals === 'object') for (const k of Object.keys(x.goals)) rows.push({ at, kind: 'goal', goal: k, state: x.goals[k] });
     if (x.extraction === 'open' || x.extraction === 'held') rows.push({ at, kind: 'extraction', value: x.extraction });
     if (Number.isInteger(x.enemies)) rows.push({ at, kind: 'enemies', count: x.enemies });
   }
   return rows;
 }
-// What stops a trace from being run or saved, row by row (numbers count from 1). ids: the scenario's trigger numbers.
-function rehearseProblems(rows, ids) {
+// What stops a trace from being run or saved, row by row (numbers count from 1). ids: the scenario's trigger numbers;
+// goals: its objective ids (the page's, when not given).
+function rehearseProblems(rows, ids, goals) {
+  const goalIds = Array.isArray(goals) ? goals : state.goals.map(g => g.id);
   const out = [], has = id => ids.includes(id);
   if (!rows.length) out.push({ row: 0, text: 'Add at least one row.' });
   rows.forEach((row, i) => {
@@ -105,8 +121,11 @@ function rehearseProblems(rows, ids) {
     if (!(typeof row.at === 'number' && isFinite(row.at)) || row.at < 0 || row.at > 86400) bad('the time is from 0 to 86400 seconds.');
     if (row.kind === 'players' && !Array.isArray(row.players)) bad('place the players: click the map or choose a place, or choose Nobody alive.');
     if (row.kind === 'door' && !isVec(row.pos)) bad('choose the door that is opened.');
-    if (['fire', 'fired', 'notFired', 'phase'].includes(row.kind) && !has(row.id)) bad(row.id > 0 ? 'there is no trigger ' + row.id + ' in this scenario.' : 'choose a trigger.');
+    if (['fire', 'fired', 'notFired', 'phase', 'outcome'].includes(row.kind) && !has(row.id)) bad(row.id > 0 ? 'there is no trigger ' + row.id + ' in this scenario.' : 'choose a trigger.');
+    if (row.kind === 'outcome' && !RH_OUTCOMES.includes(row.result)) bad('choose the outcome reported.');
     if (row.kind === 'phase' && !RH_PHASES.includes(row.phase)) bad('choose a phase.');
+    if (row.kind === 'goal' && !goalIds.includes(row.goal)) bad(row.goal ? 'there is no objective "' + row.goal + '" in this scenario.' : 'choose an objective.');
+    if (row.kind === 'goal' && !RH_GOALS.includes(row.state)) bad('choose the objective\'s state.');
   });
   return out;
 }
@@ -148,6 +167,104 @@ function rehearseRerunReport(list) {
   const title = !list.length ? 'No tests are kept for this scenario yet.' : passed === list.length ? 'All ' + list.length + ' kept tests pass.' : (list.length - passed) + ' of ' + list.length + ' kept tests fail.';
   return { title, lines };
 }
+// ----- the answer moment by moment (ML-043): Core sends, for every time at which a step happens, each trigger's phase just
+// before the step and once the engine has looked, and how many living players stand inside each zone or hold.
+const rhLooks = a => (a && Array.isArray(a.looks) ? a.looks.filter(l => l && typeof l.at === 'number') : []);
+// The moment at a time, or null (an older plugin sends no moments).
+function rehearseLook(a, at) { return rhLooks(a).find(l => Math.abs(l.at - at) < 0.005) || null; }
+// What a moment changed, in words. name(id) names a trigger. { changed: ['trigger 1: waiting → fired (1 of 1 inside)'], same: ['trigger 2 waiting'] }
+function rehearseLookWords(look, name) {
+  const out = { changed: [], same: [] };
+  if (!look) return out;
+  const before = look.before || {}, after = look.after || {}, inside = look.inside || {};
+  const ids = [...new Set([...Object.keys(before), ...Object.keys(after)])].map(Number).sort((p, q) => p - q);
+  for (const id of ids) {
+    const b = before[id], f = after[id], m = /^(\d+)\/(\d+)$/.exec(inside[id] || '');
+    const who = m ? ' (' + m[1] + ' of ' + m[2] + (m[2] === '1' ? ' living player' : ' living players') + ' inside)' : '';
+    if (b !== f) out.changed.push(name(id) + ': ' + (b || '?') + ' → ' + (f || '?') + who);
+    else out.same.push(name(id) + ' ' + (f || '?') + who);
+  }
+  return out;
+}
+// The same for the objectives (ML-046), from the goal states just before the moment and once the goals were looked at.
+// name(id) names an objective. An older plugin, or a scenario without objectives, sends none: both lists are then empty.
+function rehearseGoalWords(look, name) {
+  const out = { changed: [], same: [] };
+  if (!look || !look.goalsAfter || typeof look.goalsAfter !== 'object') return out;
+  const before = look.goalsBefore || {}, after = look.goalsAfter;
+  const ids = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0));
+  for (const id of ids) {
+    if (before[id] !== after[id]) out.changed.push(name(id) + ': ' + (before[id] || '?') + ' → ' + (after[id] || '?'));
+    else out.same.push(name(id) + ' ' + (after[id] || '?'));
+  }
+  return out;
+}
+// Every objective transition of an answer ({id, from, to, at}), in the order they happened; [] from an older plugin.
+const rehearseGoalEvents = a => (a && Array.isArray(a.goals) ? a.goals.filter(e => e && typeof e.id === 'string' && typeof e.at === 'number') : []);
+// An objective changed state at this moment.
+const rhGoalMoved = (a, look, at) => rehearseGoalEvents(a).some(e => Math.abs(e.at - at) < 0.005) ||
+  !!(look && look.goalsAfter && Object.keys(look.goalsAfter).some(id => (look.goalsBefore || {})[id] !== look.goalsAfter[id]));
+// The steps of an answer worth stopping at: checks, injected events and moves after which a trigger's phase, an objective's
+// state or the number of players inside changed. Plain moves that change nothing are passed over. Indexes into a.steps.
+function rehearseEvents(a) {
+  const steps = a && Array.isArray(a.steps) ? a.steps : [], looks = rhLooks(a), out = [];
+  const moved = /: (?:\d+ living players? stands?|no player is alive)/;
+  steps.forEach((x, i) => {
+    if (x.expected || !moved.test(String(x.what || ''))) { out.push(i); return; }
+    const k = looks.findIndex(l => Math.abs(l.at - x.at) < 0.005), l = looks[k];
+    if (rhGoalMoved(a, l, x.at)) { out.push(i); return; }
+    if (!l) { out.push(i); return; }
+    const was = k > 0 ? looks[k - 1].inside || {} : {};
+    const ids = Object.keys(l.after || {});
+    if (ids.some(id => (l.before || {})[id] !== l.after[id] || (k > 0 && (l.inside || {})[id] !== was[id]))) out.push(i);
+  });
+  return out;
+}
+// Two runs of one script compare only when the steps, players and roll are the same; the name and fingerprint are not.
+const rehearseKey = s => JSON.stringify([s.players, s.roll || 0, s.steps]);
+// Where two answers to the same script first part ways (before and after an edit to a trigger or an area): the earliest
+// moment at which a trigger's phase or an objective's state after the look differs, or the earliest step whose result
+// differs, whichever comes first. null when they agree. { at, index (into later.steps), step (its number), text }.
+// goalName(id) names an objective.
+function rehearseDivergence(earlier, later, name, goalName) {
+  name = name || (id => 'trigger ' + id);
+  goalName = goalName || (id => 'objective ' + id);
+  const secs = t => String(Math.round(t * 100) / 100) + ' s';
+  const sa = earlier && Array.isArray(earlier.steps) ? earlier.steps : [], sb = later && Array.isArray(later.steps) ? later.steps : [];
+  const number = x => { const m = /^step (\d+) /.exec(String(x && x.what || '')); return m ? +m[1] : 0; };
+  let look = null;
+  const la = rhLooks(earlier), lb = rhLooks(later);
+  const times = [...new Set([...la.map(l => l.at), ...lb.map(l => l.at)])].sort((p, q) => p - q);
+  for (const t of times) {
+    const a = la.find(l => Math.abs(l.at - t) < 0.005), b = lb.find(l => Math.abs(l.at - t) < 0.005);
+    if (!a || !b) { look = { at: t, what: 'only ' + (a ? 'the earlier' : 'the later') + ' run has a moment here' }; break; }
+    const ids = [...new Set([...Object.keys(a.after || {}), ...Object.keys(b.after || {})])].map(Number).sort((p, q) => p - q);
+    const id = ids.find(k => (a.after || {})[k] !== (b.after || {})[k]);
+    if (id !== undefined) { look = { at: t, what: name(id) + ' was ' + ((a.after || {})[id] || 'not there') + ', now ' + ((b.after || {})[id] || 'not there') }; break; }
+    const ga = a.goalsAfter || {}, gb = b.goalsAfter || {};
+    const goal = [...new Set([...Object.keys(ga), ...Object.keys(gb)])].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0)).find(k => ga[k] !== gb[k]);
+    if (goal !== undefined) { look = { at: t, what: goalName(goal) + ' was ' + (ga[goal] || 'not there') + ', now ' + (gb[goal] || 'not there') }; break; }
+  }
+  let step = -1;
+  for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+    const a = sa[i], b = sb[i];
+    if (!a || !b || a.what !== b.what || !!a.ok !== !!b.ok || a.actual !== b.actual) { step = i; break; }
+  }
+  const stepAt = step >= 0 ? num((sb[step] || sa[step]).at, 0) : Infinity;
+  if (!look && step < 0) return null;
+  if (look && look.at <= stepAt) {
+    let index = sb.findIndex(x => Math.abs(num(x.at, -1) - look.at) < 0.005);
+    if (index < 0) index = Math.max(0, sb.findIndex(x => num(x.at, 0) > look.at));
+    const n = number(sb[index]);
+    return { at: look.at, index, step: n, text: 'First difference at ' + secs(look.at) + (n ? ' (step ' + n + ')' : '') + ': ' + look.what + '.' };
+  }
+  const a = sa[step], b = sb[step], n = number(b || a);
+  const said = x => (!x ? 'no such step' : (x.ok ? 'as expected' : 'not as expected') + (x.actual ? ' (' + x.actual + ')' : ''));
+  return { at: stepAt, index: b ? step : Math.max(0, sb.length - 1), step: n, text: 'First difference at ' + secs(stepAt) + ': ' + String((b || a).what) + '; before: ' + said(a) + '; now: ' + said(b) + '.' };
+}
+// What a rehearsal models and what it does not, said beside every result.
+const RH_MODELS = 'Modelled: which triggers fire and when, their phases, the objectives, the extraction and the enemy count, by the same rules the game runs. ' +
+  'Not modelled: combat, navigation (test players walk the straight lines drawn, through walls if drawn so) and client presentation (messages, sounds, what players see).';
 // ----- the panel
 const rhTriggers = () => state.zones.filter(z => z.id > 0).slice().sort((a, b) => a.id - b.id);
 const rhTriggerLabel = z => z.id + ': ' + (z.name || trigText(z).replace(/ \(trigger \d+\)$/, ''));
@@ -241,9 +358,21 @@ function rhRender() {
         break;
       }
       case 'fire': case 'fired': case 'notFired': what.append(trig('id', 'Trigger')); break;
+      case 'outcome':
+        what.append(trig('id', 'Trigger whose latest firing gets the outcome'), rhSelect([['', 'choose an outcome'], ...RH_OUTCOMES.map(w => [w, w])], row.result || '', v => { row.result = v; rhEdited(); }, 'Outcome reported'),
+          rhEl('span', '', 'for its latest firing at that moment'));
+        break;
       case 'phase':
         what.append(trig('id', 'Trigger'), rhSelect([['', 'choose a phase'], ...RH_PHASES.map(p => [p, p])], row.phase || '', v => { row.phase = v; rhEdited(); }, 'Phase'));
         break;
+      case 'goal': {
+        const goals = state.goals.map(g => [g.id, g.name + ' (' + g.id + ')']);
+        if (row.goal && !state.goals.some(g => g.id === row.goal)) goals.push([row.goal, row.goal + ' (not in this scenario)']);
+        what.append(rhSelect([['', 'choose an objective'], ...goals], row.goal || '', v => { row.goal = v; rhEdited(); }, 'Objective'),
+          rhSelect([['', 'choose a state'], ...RH_GOALS.map(s => [s, s])], row.state || '', v => { row.state = v; rhEdited(); }, 'State of the objective'));
+        if (!state.goals.length) what.append(rhEl('span', '', 'This scenario has no objectives: add them on the Mission tab.'));
+        break;
+      }
       case 'extraction': what.append(rhSelect([['held', 'held'], ['open', 'open']], row.value === 'open' ? 'open' : 'held', v => { row.value = v; rhEdited(); }, 'Extraction')); break;
       case 'enemies': what.append(rhNumber(row.count | 0, 0, 10000, 1, v => { row.count = Math.max(0, v | 0); rhEdited(); }, 'Enemies in the mission'), rhEl('span', '', 'people in the mission by then (gun trucks are not counted)')); break;
     }
@@ -252,24 +381,25 @@ function rhRender() {
   });
   rhProblemsShow();
   const offline = !live.on;
-  $('rhRun').disabled = offline; $('rhRerun').disabled = offline;
+  $('rhRun').disabled = offline; $('rhRerun').disabled = offline; $('rhExport').hidden = !offline;
   $('rhRun').title = offline ? RH_OFFLINE : 'Plays the trace in the plugin with the same trigger rules the game uses.';
   $('rhSave').textContent = offline ? 'Download test' : 'Save as test';
   r.choices = rhChoicesKey();
 }
 function rhProblemsShow() {
-  const r = state.rehearse, found = rehearseProblems(r.rows, rhTriggers().map(z => z.id));
+  const r = state.rehearse, found = rehearseProblems(r.rows, rhTriggers().map(z => z.id)).concat(walkProblems(state.walk, r.rows));
   const checks = r.rows.some(row => row.kind in RH_CHECKS);
   $('rhProblems').textContent = found.length ? found.map(f => f.text).join(' ') : r.rows.length && !checks ? 'This trace checks nothing yet: add a Check row.' : '';
   return found;
 }
-// What the rows' choices depend on; when it changes (a trigger, door, place or tag was edited) the rows are drawn again.
-const rhChoicesKey = () => JSON.stringify([state.zones.map(z => [z.id, z.name, z.when, z.item]), state.doors.length, state.places.map(p => [p.id, p.name]), tagsOf(), state.objectives.length, live.on]);
+// What the rows' choices depend on; when it changes (a trigger, door, place, tag or objective was edited) the rows are drawn again.
+const rhChoicesKey = () => JSON.stringify([state.zones.map(z => [z.id, z.name, z.when, z.item]), state.doors.length, state.places.map(p => [p.id, p.name]), tagsOf(), state.objectives.length, state.goals.map(g => [g.id, g.name]), live.on]);
 function rhRefresh() { const r = state.rehearse; if (r.choices !== rhChoicesKey()) rhRender(); if (live.on && r.listedFor !== state.scenarioId) rhList(); }
 
 // ----- placing players by clicking the 2D map: one click per player, as many as the Players field says
 function rhStartPicking(row) {
   const r = state.rehearse;
+  walkStopPick();
   if (state.mode === '3d') return say('Switch to the 2D map to place players by clicking.');
   r.picking = row; r.focus = row; row.players = [];
   say('Click the map where player 1 of ' + r.players + ' stands. Esc stops.');
@@ -320,47 +450,130 @@ async function rhCall(path, body) {
   return { status: res.status, data };
 }
 // The script for the scenario text given. A test opened from a file or the game keeps the fingerprint it was written for,
-// so a run says when the scenario has changed since; a new trace is written for the scenario as it is now.
+// so a run says when the scenario has changed since; a new trace is written for the scenario as it is now. The test
+// players' paths (29j-walk.js) are sampled into it; r.sources says which row, if any, each step came from.
 function rhScript(text) {
   const r = state.rehearse, pin = r.pin || { scenario: textHash(text), revision: state.revision };   // textHash: ScenarioFile.Hash (31a-stage.js)
-  return rehearseScript(r.rows, { name: r.name.trim(), scenario: pin.scenario, revision: pin.revision, players: r.players, roll: r.roll });
+  const w = walkScript(state.walk, r.rows, { name: r.name.trim(), scenario: pin.scenario, revision: pin.revision, players: r.players, roll: r.roll });
+  r.sources = w.sources;
+  return w.script;
 }
 function rhReady() {
   const found = rhProblemsShow();
   if (found.length) { $('rhStatus').textContent = 'Not yet: ' + found[0].text; return false; }
   return true;
 }
+function rhDownload(name, text) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 async function rhRun() {
   const r = state.rehearse;
-  if (!live.on) { $('rhStatus').textContent = RH_OFFLINE; return; }
   if (!rhReady()) return;
-  const scenario = scenarioText(), script = rehearseText(rhScript(scenario));
+  if (!live.on) { rhExport(); return; }
+  const scenario = scenarioText(), s = rhScript(scenario), script = rehearseText(s), key = rehearseKey(s), sources = r.sources;
   $('rhStatus').textContent = 'Asked the game to rehearse it...';
   try {
     const { status, data } = await rhCall('/api/rehearse', { scenario, script });
     if (status !== 200 || !data) throw new Error((data && data.error) || 'status ' + status);
-    r.answer = data; $('rhStatus').textContent = '';
+    // The run before is kept only when it played the same steps: then the two can be compared after an edit.
+    r.prev = r.answer && r.answerKey === key ? r.answer : null;
+    r.answer = data; r.answerKey = key; r.answerSources = sources; r.cursor = -1; $('rhStatus').textContent = '';
     rhShow();
   } catch (e) { $('rhStatus').textContent = 'The game did not rehearse it (' + e.message + '). Is OPERATOR with MissionLab still running?'; }
 }
-function rhShow() {
-  const r = state.rehearse, rep = rehearseReport(r.answer), box = $('rhResult');
+// Offline nothing can be run: the trace is downloaded as it would be sent, and the result says plainly that it did not run.
+function rhExport() {
+  const r = state.rehearse, script = rehearseText(rhScript(scenarioText()));
+  const name = fileName().replace(/\.json$/, '') + '.' + rhStem(r.name.trim() || 'walkthrough') + '.trace.rehearsal.json';
+  rhDownload(name, script);
+  r.answer = null; r.prev = null; r.answerKey = ''; r.answerSources = null; r.divergence = null; r.failed.clear(); r.cursor = -1;
+  r.report = { level: 'not-run', title: 'Not run: this page is not connected to the game, so nothing was rehearsed and nothing passed or failed. The trace was exported as ' + name +
+    '; open the page from the game (http://localhost:8765) and press Run there.' };
+  const box = $('rhResult');
   box.textContent = '';
-  r.failed = new Set(rep.failedRows);
+  box.append(rhEl('p', 'notrun', r.report.title), rhEl('p', 'models', RH_MODELS));
+  $('rhStatus').textContent = '';
+  rhRender();
+}
+const rhTriggerName = id => { const z = state.zones.find(q => q.id === id); return z ? 'trigger ' + rhTriggerLabel(z) : 'trigger ' + id; };
+const rhGoalName = id => { const g = state.goals.find(q => q.id === id); return 'objective "' + (g ? g.name : id) + '"'; };
+function rhShow() {
+  const r = state.rehearse, a = r.answer, rep = rehearseReport(a), box = $('rhResult'), src = r.answerSources;
+  box.textContent = '';
+  // "step N" is row N of a plain trace; the steps the test players' paths add belong to no row.
+  r.failed = new Set(rep.failedRows.map(n => (src ? (src[n - 1] && src[n - 1].row) || 0 : n)).filter(n => n > 0));
+  r.report = { level: rep.level, title: rep.title };
+  if (!(r.cursor < rep.steps.length)) r.cursor = -1;
   box.append(rhEl('p', rep.level === 'passed' ? 'ok' : 'bad', rep.title));
   for (const n of rep.notes) box.append(rhEl('p', '', n));
   if (rep.assumptions) box.append(rhEl('p', 'assume', 'Assumed: ' + rep.assumptions));
+  box.append(rhEl('p', 'models', RH_MODELS));
+  r.divergence = r.prev ? rehearseDivergence(r.prev, a, rhTriggerName, rhGoalName) : null;
+  if (r.prev) {
+    const p = rhEl('p', 'diverge', r.divergence ? r.divergence.text : 'The same results as the run before, step for step.');
+    if (r.divergence) { const go = rhEl('button', 'btn', 'Show it'); go.type = 'button'; go.addEventListener('click', () => rhPick(r.divergence.index)); p.append(' ', go); }
+    box.append(p);
+  }
+  // Every objective transition, in the order it happened; each goes to its moment.
+  const turns = rehearseGoalEvents(a);
+  if (turns.length) {
+    box.append(rhEl('p', 'sub', 'Objectives, as they changed:'));
+    const ul = rhEl('ul', 'goals');
+    for (const e of turns) {
+      const li = rhEl('li'), go = rhEl('button', 'btn', String(Math.round(e.at * 100) / 100) + ' s: ' + rhGoalName(e.id) + ': ' + e.from + ' → ' + e.to); go.type = 'button';
+      const i = rep.steps.findIndex(x => Math.abs(num(x.at, -1) - e.at) < 0.005);
+      go.disabled = i < 0; go.addEventListener('click', () => rhPick(i));
+      li.append(go); ul.append(li);
+    }
+    box.append(ul);
+  } else if (Array.isArray(a && a.goals)) box.append(rhEl('p', 'got', 'No objective changed state.'));
   if (rep.steps.length) {
+    const events = rehearseEvents(a), firstBad = rep.steps.findIndex(x => x.check && !x.ok), nav = rhEl('div', 'row');
+    const button = (text, label, fn, off) => { const b = rhEl('button', 'btn', text); b.type = 'button'; b.setAttribute('aria-label', label); b.disabled = !!off; b.addEventListener('click', fn); nav.append(b); };
+    button('◀ Previous event', 'Previous event', () => { const i = events.filter(k => k < r.cursor).pop(); if (i !== undefined) rhPick(i); }, !events.length);
+    button('Next event ▶', 'Next event', () => { const i = events.find(k => k > r.cursor); if (i !== undefined) rhPick(i); }, !events.length);
+    button('First failed check', 'Jump to the first failed check', () => rhPick(firstBad), firstBad < 0);
+    const detail = rhEl('div', 'detail'); detail.id = 'rhDetail';
+    box.append(nav, detail);
     const ol = rhEl('ol'); ol.id = 'rhSteps';
-    for (const x of rep.steps) {
-      const li = rhEl('li'), body = rhEl('span', '', x.what);
+    rep.steps.forEach((x, i) => {
+      const li = rhEl('li', i === r.cursor ? 'sel' : ''), body = rhEl('span', '', x.what);
       if (x.detail) { body.append(document.createElement('br'), rhEl('span', 'got', x.detail)); }
       li.append(rhEl('span', 'mark ' + (x.ok ? 'ok' : 'bad'), x.check ? (x.ok ? '✓' : '✗') : '·'), body);
+      li.addEventListener('click', () => rhPick(i));
       ol.appendChild(li);
-    }
+      if (i === r.cursor) setTimeout(() => li.scrollIntoView({ block: 'nearest' }), 0);
+    });
     box.appendChild(ol);
+    rhDetailShow(detail, rep);
   }
   rhRender();
+}
+// The selected step: what it did or found, and every trigger just before and just after its moment.
+function rhDetailShow(el, rep) {
+  const r = state.rehearse, x = rep.steps[r.cursor];
+  el.textContent = '';
+  if (!x) { el.append(rhEl('p', 'hint', 'Choose a step, or use Next event, to see the triggers just before and just after it.')); return; }
+  el.append(rhEl('p', '', x.what), ...(x.detail ? [rhEl('p', 'got', x.detail)] : []));
+  const look = rehearseLook(r.answer, x.at);
+  if (!look) { el.append(rhEl('p', 'hint', 'The game sent no before and after state for this moment; a MissionLab older than this page does not.')); return; }
+  const w = rehearseLookWords(look, rhTriggerName);
+  el.append(rhEl('p', '', w.changed.length ? 'Changed at this moment: ' + w.changed.join('; ') + '.' : 'No trigger changed phase at this moment.'));
+  if (w.same.length) el.append(rhEl('p', 'got', 'Unchanged: ' + w.same.join('; ') + '.'));
+  const g = rehearseGoalWords(look, rhGoalName);
+  if (g.changed.length) el.append(rhEl('p', '', 'Objectives changed at this moment: ' + g.changed.join('; ') + '.'));
+  if (g.same.length) el.append(rhEl('p', 'got', 'Objectives unchanged: ' + g.same.join('; ') + '.'));
+  const at = walkAt(state.walk, x.at);
+  if (at.length) el.append(rhEl('p', 'got', 'Test players then: ' + at.map(p => 'T' + (p.k + 1) + ' ' + rhWhere(p.pos) + ' at ' + p.pos[1].toFixed(1) + ' m').join('; ') + '.'));
+}
+function rhPick(i) {
+  const r = state.rehearse, rep = rehearseReport(r.answer), x = rep.steps[i];
+  if (!x) return;
+  r.cursor = i; state.walk.at = x.at;
+  const m = /^step (\d+) /.exec(x.what), n = m ? +m[1] : 0, src = r.answerSources, row = src ? (src[n - 1] && src[n - 1].row) || 0 : n;
+  if (row > 0 && r.rows[row - 1]) r.focus = r.rows[row - 1];
+  rhShow(); invalidate();
 }
 function rhPinShow() {
   const r = state.rehearse, el = $('rhPin');
@@ -379,8 +592,7 @@ async function rhSave() {
   rhPinShow();
   if (!live.on) {
     const name = fileName().replace(/\.json$/, '') + '.' + rhStem(r.name) + '.rehearsal.json';
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([script], { type: 'application/json' })); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    rhDownload(name, script);
     $('rhStatus').textContent = 'Downloaded as ' + name + ', written for revision ' + state.revision + '. Keep it beside the scenario file; to run it, open the page from the game.';
     return;
   }
@@ -458,22 +670,27 @@ function rhLoad(text, from) {
   if (!o || typeof o !== 'object' || typeof o.schema !== 'string' || !o.schema.startsWith('missionlab-rehearsal/')) { $('rhStatus').textContent = from + ' is not a MissionLab rehearsal; nothing was loaded.'; return; }
   if (o.schema !== REHEARSAL_SCHEMA) { $('rhStatus').textContent = from + ' was written by a newer MissionLab (' + o.schema + '); this page reads ' + REHEARSAL_SCHEMA + '. Nothing was loaded.'; return; }
   rhStopPicking();
+  const walked = state.walk.players.length;    // the paths belonged to the trace this file replaces
+  walkClear();
   r.rows = rehearseRows(o); rhSort();
   r.name = typeof o.name === 'string' ? o.name : '';
   r.players = Number.isInteger(o.players) && o.players >= 1 && o.players <= 16 ? o.players : 1;
   r.roll = Number.isInteger(o.roll) ? o.roll : 0;
   r.pin = { scenario: typeof o.scenario === 'string' ? o.scenario : '', revision: Number.isInteger(o.revision) ? o.revision : 0 };
-  r.answer = null; r.failed.clear(); r.focus = null; $('rhResult').textContent = '';
+  r.answer = null; r.prev = null; r.answerKey = ''; r.answerSources = null; r.divergence = null; r.report = null; r.cursor = -1;
+  r.failed.clear(); r.focus = null; $('rhResult').textContent = '';
   $('rhName').value = r.name; $('rhPlayers').value = String(r.players); $('rhRoll').value = String(r.roll);
-  $('rhStatus').textContent = 'Opened ' + from + ' (' + r.rows.length + ' rows).';
+  $('rhStatus').textContent = 'Opened ' + from + ' (' + r.rows.length + ' rows).' + (walked ? ' The test players\' paths of the trace before were cleared with it.' : '') +
+    (r.rows.some(row => row.kind === 'players') ? ' To edit its player places as paths, press "Turn player rows into paths" under Walk it through.' : '');
   rhPinShow(); rhRender(); invalidate();
 }
 
 $('rhAddBtn').addEventListener('click', () => {
   const r = state.rehearse, kind = $('rhAdd').value, last = r.rows.length ? num(r.rows[r.rows.length - 1].at, 0) : 0;
-  const first = rhTriggers()[0], intel = state.zones.find(z => z.when === 'intel' && z.item);
-  const row = { at: last, kind, ...({ players: { players: null }, intel: { item: intel ? intel.item : '' }, down: { tag: '', count: 1 }, door: { pos: null }, fire: { id: first ? first.id : 0 },
-    fired: { id: first ? first.id : 0 }, notFired: { id: first ? first.id : 0 }, phase: { id: first ? first.id : 0, phase: 'waiting' }, extraction: { value: 'held' }, enemies: { count: 0 } }[kind] || {}) };
+  const first = rhTriggers()[0], intel = state.zones.find(z => z.when === 'intel' && z.item), goal = state.goals[0];
+  const row = { at: last, kind, ...({ players: { players: null }, intel: { item: intel ? intel.item : '' }, down: { tag: '', count: 1 }, door: { pos: null }, fire: { id: first ? first.id : 0 }, outcome: { id: first ? first.id : 0, result: 'applied' },
+    fired: { id: first ? first.id : 0 }, notFired: { id: first ? first.id : 0 }, phase: { id: first ? first.id : 0, phase: 'waiting' }, goal: { goal: goal ? goal.id : '', state: 'succeeded' },
+    extraction: { value: 'held' }, enemies: { count: 0 } }[kind] || {}) };
   r.rows.push(row); r.focus = row;
   rhEdited(); rhRender();
   if (kind === 'players') rhStartPicking(row);
@@ -482,14 +699,20 @@ $('rhName').addEventListener('input', () => { state.rehearse.name = $('rhName').
 $('rhPlayers').addEventListener('change', () => { const v = Math.round(Number($('rhPlayers').value)); state.rehearse.players = v >= 1 && v <= 16 ? v : 1; $('rhPlayers').value = String(state.rehearse.players); rhEdited(); });
 $('rhRoll').addEventListener('change', () => { const v = Math.trunc(Number($('rhRoll').value)); state.rehearse.roll = isFinite(v) ? v : 0; $('rhRoll').value = String(state.rehearse.roll); rhEdited(); });
 $('rhRun').addEventListener('click', rhRun);
+$('rhExport').addEventListener('click', () => { if (rhReady()) rhExport(); });
 $('rhSave').addEventListener('click', rhSave);
 $('rhRerun').addEventListener('click', rhRerun);
 $('rhOpen').addEventListener('click', () => $('rhFile').click());
 $('rhFile').addEventListener('change', async ev => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (f) rhLoad(await f.text(), f.name); });
 $('rhClear').addEventListener('click', () => {
   const r = state.rehearse;
-  rhStopPicking(); r.rows = []; r.pin = null; r.answer = null; r.failed.clear(); r.focus = null; r.name = ''; $('rhName').value = '';
+  rhStopPicking(); walkClear(); r.rows = []; r.pin = null; r.answer = null; r.prev = null; r.answerKey = ''; r.answerSources = null; r.divergence = null; r.report = null; r.cursor = -1;
+  r.failed.clear(); r.focus = null; r.name = ''; $('rhName').value = '';
   $('rhResult').textContent = ''; $('rhStatus').textContent = ''; rhPinShow(); rhRender(); invalidate();
 });
 $('rhBox').addEventListener('pointerenter', rhRefresh);
 $('rhBox').addEventListener('focusin', rhRefresh);
+
+expose({ rhRun, rhExport, rhScript, rhShow, rhPick, rehearseLook, rehearseLookWords, rehearseEvents, rehearseKey, rehearseDivergence });   // the result view (ML-043), for automated tests
+expose({ rehearseStep, rehearseGoalWords, rehearseGoalEvents, RH_GOALS });   // objective checks and transitions (ML-046), for automated tests
+expose({ RH_OUTCOMES });   // outcome rows (ML-047), for automated tests

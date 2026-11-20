@@ -36,11 +36,19 @@ scanner reads every `*.json` there. Two small examples are in `examples/modules/
 |---|---|---|
 | `door` | a door trigger's `pos`; a trigger's `doors[].pos` | one of the map's doors (its hinge); `hint` is where it was, relative |
 | `objective` | an intel trigger's `item` | an intel item name, any item (`""`) or `"all"`; `hint` is the old name |
-| `place` | `place` on a zone or hold trigger that was exactly a named place | a named place: the trigger takes its anchor and shape |
+| `place` | `place` on a zone or hold trigger that was exactly a named place, or was linked to one (`link`) | a named place: the trigger takes its anchor and shape; with `link`, a painted place it then links to |
 | `trigger` | `after`, `of`, an enemy's `trigger` | another trigger of the mission |
 | `extraction` | `trigger` names the module trigger the extraction waited for | yes or no; optional |
 
 - `required` defaults to true, and to false for `extraction`. `ref` is 1 to 32 letters, digits, `_` or `-`.
+- `link: true` (place bindings only, ML-040) marks a zone or hold that was *linked* to its place (`"place": id` in the
+  scenario) rather than holding a copy of the place's shape. `hint` is the place's name, and the trigger still carries the
+  shape as its `area`, relative to the anchor. On insert the author picks a painted place of this map, and the copy links
+  to it (its anchor and shape become the place's, and the scenario is written as `missionlab-plan/3`); point places are
+  not offered. Or the author chooses "Keep the module's own shape (not linked)": the copy keeps the module's area, moved
+  and turned with it. Either way inserting never moves or reshapes a place. Without `link`, or with any value but
+  `true`, it is an ordinary place binding: the trigger takes a copy of the chosen place's shape (a point place moves only
+  its anchor) and is not linked. Core `ModuleFile` does not look at `link`; only the editor acts on it.
 
 ## Inserting
 

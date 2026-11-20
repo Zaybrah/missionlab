@@ -393,7 +393,7 @@ Console.WriteLine("files");
             Check("invalid/" + name + " is refused with the listed places", got == want && notRead == null, "got  " + got + "\n        want " + want);
             Check("invalid/" + name + " is left as it was", File.ReadAllText(file) == before);
         }
-        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "extraction_chance_defect.json" })
+        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "all_fields_v27.json", "extraction_chance_defect.json" })
             Check(good + " passes the strict reader", !ScenarioFile.Blocks(ScenarioFile.Read(Fixture(good), out MissionPlan ok)) && ok != null, string.Join(" | ", ScenarioFile.Read(Fixture(good), out _).Select(f => f.ToString())));
         var legacy = ScenarioFile.Read(Fixture("legacy_minimal.json"), out MissionPlan oldPlan);
         Check("a file without a format line is read, with a note", oldPlan != null && legacy.Count == 1 && legacy[0].Level == Finding.Note && legacy[0].Code == "no-version");
@@ -430,7 +430,7 @@ Console.WriteLine("files");
                     }
             }
         }
-        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson(), Plan(Fixture("all_fields_v26.json")).ToJson() };
+        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson(), Plan(Fixture("all_fields_v26.json")).ToJson(), Plan(Fixture("all_fields_v27.json")).ToJson() };
         foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json")) written.Add(Plan(File.ReadAllText(file)).ToJson());
         foreach (string text in written)
         {
@@ -541,6 +541,74 @@ DebriefTests.Run(Check);
 // ---------------------------------------------------------------- Game Master save: authored fields carried, revision plus one (ML-008)
 Console.WriteLine("game master save");
 SaveTests.Run(Check);
+
+// ---------------------------------------------------------------- completion and the engine agree on circles (ML-029)
+Console.WriteLine("completion and engine circles");
+Ml029Tests.Run(Check);
+
+// ---------------------------------------------------------------- Game Master gives every kind of input back in one release (ML-030)
+Console.WriteLine("game master input ownership");
+Ml030Tests.Run(Check);
+
+// ---------------------------------------------------------------- repeating a generated setup from its recorded inputs (ML-031)
+Console.WriteLine("repeat of a generated setup");
+Ml031Tests.Run(Check);
+
+// ---------------------------------------------------------------- the structural schema and the strict readers agree (ML-034)
+Console.WriteLine("schema and strict reading");
+Ml034Tests.Run(Check);
+
+// ---------------------------------------------------------------- walk orders: accepted, path, progress and their endings (ML-035)
+Console.WriteLine("walk order outcomes");
+Ml035Tests.Run(Check);
+
+// ---------------------------------------------------------------- one capability and verification registry (ML-036)
+Console.WriteLine("capability registry");
+Ml036Tests.Run(Check);
+
+// ---------------------------------------------------------------- walkthroughs as saved rehearsals: doors, holes, stairs, two players (ML-043)
+Console.WriteLine("walkthrough rehearsals");
+Ml043Tests.Run(Check);
+
+// ---------------------------------------------------------------- rehearsal answers name the trigger each check is about (ML-042)
+Console.WriteLine("rehearsal trigger ids");
+Ml042Tests.Run(Check);
+
+// ---------------------------------------------------------------- squad-session playlist: pinned entries, one advance per run (ML-049)
+Console.WriteLine("session playlist");
+Ml049Tests.Run(Check);
+
+// ---------------------------------------------------------------- one validation run: coverage, budget, cancel, counterexamples, stale reports (ML-048)
+Console.WriteLine("mission validation matrix");
+Ml048Tests.Run(Check);
+
+// ---------------------------------------------------------------- the intel-raid recipe's example and its walkthrough (ML-044)
+Console.WriteLine("intel raid recipe example");
+Ml044Tests.Run(Check);
+
+// ---------------------------------------------------------------- triggers linked to named places, plan/3 and flattened export (ML-040)
+Console.WriteLine("place links");
+Ml040Tests.Run(Check);
+
+// ---------------------------------------------------------------- explicit mission objectives: one transition each, failure wins a tie (ML-046)
+Console.WriteLine("mission objectives");
+Ml046Tests.Run(Check);
+
+// ---------------------------------------------------------------- branches on observed outcomes: invocations, late results, timeouts (ML-047)
+Console.WriteLine("outcome branches");
+Ml047Tests.Run(Check);
+
+// ---------------------------------------------------------------- branching operations: branches on results and objectives, one advance per run, atomic saves (ML-051)
+Console.WriteLine("branching operations");
+Ml051Tests.Run(Check);
+
+// ---------------------------------------------------------------- pressure director: bands, caps, preview, rest, refunds (ML-052)
+Console.WriteLine("pressure director");
+Ml052Tests.Run(Check);
+
+// ---------------------------------------------------------------- draft proposals from coding agents: copies, stale refusals, capabilities (ML-053)
+Console.WriteLine("agent draft proposals");
+Ml053Tests.Run(Check);
 
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;

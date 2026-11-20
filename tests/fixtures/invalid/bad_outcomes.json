@@ -1,0 +1,13 @@
+{
+ "schema": "missionlab-plan/1",
+ "triggers": [
+  { "id": 1, "name": "Reinforcements", "when": "time", "delay": 60 },
+  { "id": 2, "when": "outcome", "outcome": "applied" },
+  { "id": 3, "when": "outcome", "after": 9, "outcome": "failed" },
+  { "id": 4, "when": "outcome", "after": 1, "outcome": "done" },
+  { "id": 5, "when": "outcome", "after": 1, "outcome": "timeout", "within": 0 },
+  { "id": 6, "when": "outcome", "after": 1, "outcome": 5, "within": "ten" },
+  { "id": 7, "when": "outcome", "after": 1 }
+ ],
+ "spawns": [ { "pos": [0, 0, 0], "trigger": 1 } ]
+}

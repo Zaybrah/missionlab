@@ -15,12 +15,15 @@ const r3 = p => [r2(p[0]), r2(p[1]), r2(p[2])];
 const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
 function fileName() { return (state.title.trim().toLowerCase().replace(/\.json$/, '').replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'scenario') + '.json'; }
 // The file's key order is the plugin's ToJson order, so the two write alike. A plan with a shaped trigger area goes into the
-// missionlab-plan/2 envelope: older MissionLab versions then refuse it rather than read the shape as its anchor circle.
+// missionlab-plan/2 envelope: older MissionLab versions then refuse it rather than read the shape as its anchor circle. A plan
+// with a trigger linked to a named place (ML-040), or with objectives or an extraction that waits for them (ML-046), is
+// missionlab-plan/3 in the same envelope, which v0.26 refuses as newer instead of playing without them.
 function scenarioObject() {
   if (!state.scenarioId) state.scenarioId = newScenarioId();
   const print = state.map && !state.map.isExample && state.map.print ? state.map.print : state.mapPrint;
   const triggers = zonesOut(), places = placesOut(), settings = settingsOut();
   delete settings.briefing;      // written near the top, where the plugin writes it
+  if (!settings.goals.length) delete settings.goals;      // settingsOut always lists them, for the undo history
   const body = {
     name: state.title.trim(),
     id: state.scenarioId,
@@ -45,6 +48,7 @@ function scenarioObject() {
     ...settings,
     spawns: state.enemies.map(spawnOf),
   };
+  if (triggers.some(t => t.place) || settings.goals || (settings.extraction && settings.extraction.goals)) return { schema: 'missionlab-plan/3', mission: body };
   if (triggers.some(t => t.area)) return { schema: 'missionlab-plan/2', mission: body };
   return { schema: 'missionlab-plan/1', ...body };
 }
@@ -66,7 +70,7 @@ function spawnOf(e) {
     detectionRange: r2(e.detectionRange), hearingRange: r2(e.hearingRange), fov: r2(e.fov),
     wanderDistance: Math.round(e.wanderDistance), patrolWaitSeconds: r2(e.patrolWaitSeconds), fixed: !!e.fixed,
     prone: !!e.prone, type: e.type || '', trigger: state.zones.some(z => z.id === e.trigger) ? e.trigger : 0, hvt: !!e.hvt, ...(e.vehicle ? { vehicle: true } : {}),
-    ...(e.chance < 100 ? { chance: e.chance } : {}), ...(e.chance < 100 && e.lot ? { lot: e.lot } : {}), ...(e.either ? { either: e.either, option: e.option || 1 } : {}), ...(e.team ? { team: e.team } : {}),
+    ...(e.chance < 100 ? { chance: e.chance } : {}), ...(e.lot > 0 ? { lot: e.lot } : {}), ...(e.either ? { either: e.either, option: e.option || 1 } : {}), ...(e.team ? { team: e.team } : {}),
     ...(e.minPlayers > 1 ? { minPlayers: e.minPlayers } : {}), ...(e.skill ? { skill: e.skill } : {}), ...(e.nvg ? { nvg: true } : {}), ...(e.tag ? { tag: e.tag } : {}),
     ...(e.scatter > 0 ? { scatter: r2(e.scatter) } : {}), ...(e.within > 0 ? { within: e.within } : {}), ...(e.fallback === 'skip' ? { fallback: 'skip' } : {}),
     patrol: e.role === 'Patrol' && !e.fixed ? e.patrol.map(r3) : [],
@@ -85,10 +89,31 @@ const optionsIn = list => (Array.isArray(list) ? list : []).filter(o => o && typ
     return { name: typeof c.name === 'string' ? c.name : '', lots: wholes(d.lots), triggers: wholes(d.triggers).filter(id => state.zones.some(z => z.id === id)), respawnTimes: Number.isInteger(c.respawnTimes) ? c.respawnTimes : -1, skill: c.skill === 'recruit' || c.skill === 'veteran' ? c.skill : '' }; }) }));
 const directorOut = () => { const d = state.director;
   return { budget: d.budget, ...(d.regen > 0 ? { regen: d.regen } : {}), actions: d.actions.map(a => ({ id: a.id, name: a.name, cost: a.cost, ...(a.cooldown > 0 ? { cooldown: r2(a.cooldown) } : {}), fire: a.fire,
-    ...(a.minDistance > 0 ? { minDistance: r2(a.minDistance) } : {}), ...(a.unseen ? { unseen: true } : {}), ...(a.fallback === 'cancel' ? { fallback: 'cancel' } : {}) })) }; };
+    ...(a.minDistance > 0 ? { minDistance: r2(a.minDistance) } : {}), ...(a.unseen ? { unseen: true } : {}), ...(a.fallback === 'cancel' ? { fallback: 'cancel' } : {}) })),
+    ...(d.pressure ? { pressure: pressureOut(d.pressure) } : {}) }; };
 const directorIn = d => (d && typeof d === 'object' && !Array.isArray(d) ? { budget: num(d.budget, 0) | 0, regen: num(d.regen, 0) | 0,
   actions: (Array.isArray(d.actions) ? d.actions : []).filter(a => a && typeof a.id === 'string' && state.zones.some(z => z.id === a.fire)).map(a => ({ id: a.id, name: typeof a.name === 'string' ? a.name : '', cost: num(a.cost, 0) | 0, cooldown: num(a.cooldown, 0),
-    fire: num(a.fire, 0) | 0, minDistance: num(a.minDistance, 0), unseen: a.unseen === true, fallback: a.fallback === 'cancel' ? 'cancel' : 'wait' })) } : null);
+    fire: num(a.fire, 0) | 0, minDistance: num(a.minDistance, 0), unseen: a.unseen === true, fallback: a.fallback === 'cancel' ? 'cancel' : 'wait' })), pressure: pressureIn(d.pressure) } : null);
+// The pressure director's bounds (ML-052), inside the director block: { mode, bands: [{ name, from, goals, minPlayers, spend
+// (-1: the whole budget), every }], maxEnemies, rest }. Written in the plugin's PressureJson key order, defaults left out;
+// read as its lenient reader reads them: values clamped, at most six bands, a band naming a goal the plan lacks left out,
+// and no bounds at all without a band. Older versions ignore the key and play without pacing, so the format stays as it is.
+const PRESSURE_MODES = ['off', 'preview', 'on'];
+const pressureOut = p => ({ ...(p.mode === 'preview' || p.mode === 'on' ? { mode: p.mode } : {}),
+  bands: p.bands.map(b => ({ name: b.name, ...(b.from > 0 ? { from: r2(b.from) } : {}), ...(b.goals.length ? { goals: b.goals.slice() } : {}), ...(b.minPlayers > 0 ? { minPlayers: b.minPlayers } : {}),
+    ...(b.spend >= 0 ? { spend: b.spend } : {}), ...(b.every !== 60 ? { every: r2(b.every) } : {}) })),
+  ...(p.maxEnemies > 0 ? { maxEnemies: p.maxEnemies } : {}), ...(p.rest !== 60 ? { rest: r2(p.rest) } : {}) });
+function pressureIn(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const bands = (Array.isArray(p.bands) ? p.bands : []).filter(b => b && typeof b === 'object' && !Array.isArray(b)).slice(0, 6).map(b => ({
+    name: typeof b.name === 'string' ? b.name.trim() : '', from: clamp(num(b.from, 0), 0, 36000),
+    goals: (Array.isArray(b.goals) ? b.goals : []).filter((g, k, all) => typeof g === 'string' && all.indexOf(g) === k),
+    minPlayers: Math.trunc(clamp(num(b.minPlayers, 0), 0, 16)), spend: typeof b.spend === 'number' && isFinite(b.spend) ? Math.trunc(clamp(b.spend, 0, 1000)) : -1,
+    every: clamp(num(b.every, 60), 10, 600) })).filter(b => b.goals.every(g => state.goals.some(q => q.id === g)));
+  if (!bands.length) return null;
+  return { mode: p.mode === 'preview' || p.mode === 'on' ? p.mode : 'off', bands, maxEnemies: Math.trunc(clamp(num(p.maxEnemies, 0), 0, 500)), rest: clamp(num(p.rest, 60), 0, 600) };
+}
 // A file only names the items somebody moved; the game goes on choosing the place of the others itself.
 const objectivesOut = forFile => state.objectives.filter(o => !forFile || o.moved !== false).map(o => ({ name: o.name, pos: r3(o.pos), yaw: r2(o.yaw || 0) }));
 const objectivesIn = list => (Array.isArray(list) ? list : []).filter(o => o && typeof o.name === 'string' && o.name && isVec(o.pos)).map(o => ({ name: o.name, label: typeof o.label === 'string' && o.label ? o.label : o.name.replace(/_\d+$/, ''), pos: o.pos.slice(0, 3), yaw: num(o.yaw, 0), obtained: !!o.obtained,
@@ -131,10 +156,51 @@ function setDoorWishes(wishes) {
   applyDoorWishes(wishes); state.door = -1;
 }
 function setKnownDoors(list) { const wishes = doorsOut(); state.doors = list; applyDoorWishes(wishes); state.door = -1; }
-// Settings for the whole mission. Only what somebody set is written.
+// Objectives (ML-046): what the players are asked to do, each passing from inactive to active to succeeded or failed through
+// triggers that have fired. Distinct from intel items (state.objectives), which are things on the map. A goal on the page:
+// { id, name, required, after: [goal ids], activate, succeed, fail (trigger numbers, 0: none), notify }. extractionGoals:
+// the extraction stays shut until every required objective has succeeded. The plugin's GoalBook plays them.
+state.goals = [];
+state.extractionGoals = false;
+const GOAL_ID = /^[a-z0-9][a-z0-9-]{0,31}$/, GOAL_NAME = 80;
+// A name as players see it: cleaned as the plugin cleans messages (line breaks and tabs become spaces), at most 80 characters.
+const goalName = t => String(t === undefined || t === null ? '' : t).replace(/[\r\n\t]/g, ' ').trim().slice(0, GOAL_NAME);
+// In the plugin's ToJson key order, each default left out. References are written as they stand, even to a trigger that is
+// gone: the file rules then refuse it and the mission check names it, rather than the objective quietly changing meaning.
+const goalsOut = () => state.goals.map(g => {
+  const after = g.after.filter((a, k, all) => a !== g.id && all.indexOf(a) === k && state.goals.some(q => q.id === a));
+  return { id: g.id, name: goalName(g.name), ...(g.required === false ? { required: false } : {}), ...(after.length ? { after } : {}), ...(g.activate > 0 ? { activate: g.activate } : {}),
+    succeed: g.succeed | 0, ...(g.fail > 0 ? { fail: g.fail } : {}), ...(g.notify === false ? { notify: false } : {}) };
+});
+// As the plugin's lenient reader takes them: a goal without a usable id, name or succeed trigger is left out, and "after"
+// keeps only other goals of the list, each once. The order is kept: it breaks ties when goals are evaluated.
+function goalsIn(list) {
+  const out = [], ids = new Set();
+  for (const g of Array.isArray(list) ? list : []) {
+    if (!g || typeof g !== 'object' || Array.isArray(g) || typeof g.id !== 'string' || !GOAL_ID.test(g.id) || ids.has(g.id)) continue;
+    const name = goalName(typeof g.name === 'string' ? g.name : ''), succeed = Number.isInteger(g.succeed) ? g.succeed : 0;
+    if (!name || succeed <= 0) continue;
+    ids.add(g.id);
+    out.push({ id: g.id, name, required: g.required !== false, after: Array.isArray(g.after) ? g.after.filter(a => typeof a === 'string') : [],
+      activate: Number.isInteger(g.activate) && g.activate > 0 ? g.activate : 0, succeed, fail: Number.isInteger(g.fail) && g.fail > 0 ? g.fail : 0, notify: g.notify !== false });
+  }
+  for (const g of out) g.after = g.after.filter((a, k, all) => a !== g.id && ids.has(a) && all.indexOf(a) === k);
+  return out;
+}
+// The goals and the extraction's wait for them, read together: from a file (loadScenario), an undo snapshot (which always
+// carries "goals") or the game's state while a mission runs ("goalPlan", applyLive in 32-replay.js). settingsIn reads them
+// only where a list is given, so the live settings it also takes never wipe them.
+function goalsRead(root) {
+  const ex = root && root.extraction;
+  state.goals = goalsIn(root && root.goals);
+  state.extractionGoals = !!(ex && typeof ex === 'object' && ex.goals === true);
+}
+// Settings for the whole mission. Only what somebody set is written; "goals" is always there (scenarioObject leaves an
+// empty list out of the file), so an undo step restores the objectives with the rest.
 function settingsOut() {
-  const o = {}, w = {};
-  if (state.extractionAfter && state.zones.some(z => z.id === state.extractionAfter)) o.extraction = { after: state.extractionAfter };
+  const o = { goals: goalsOut() }, w = {};
+  const after = state.extractionAfter && state.zones.some(z => z.id === state.extractionAfter) ? state.extractionAfter : 0;
+  if (after || state.extractionGoals) o.extraction = { ...(after ? { after } : {}), ...(state.extractionGoals ? { goals: true } : {}) };
   if (state.insertion) o.insertion = state.insertion;
   if (state.power) o.power = state.power;
   if (state.allSkill) o.skill = state.allSkill;
@@ -151,6 +217,7 @@ function settingsOut() {
 function settingsIn(root) {
   const ex = root && root.extraction, w = (root && root.weather) || {};
   state.extractionAfter = ex && typeof ex === 'object' ? Math.max(0, num(ex.after, 0) | 0) : 0;
+  if (root && Array.isArray(root.goals)) goalsRead(root);
   state.insertion = root && typeof root.insertion === 'string' ? root.insertion : '';
   state.power = root && (root.power === 'off' || root.power === 'on') ? root.power : '';
   state.briefing = briefingIn(root && root.briefing);
@@ -159,7 +226,9 @@ function settingsIn(root) {
   state.respawnAfter = num(rs.after, 0) > 0 ? Math.max(3, Math.min(600, num(rs.after, 0))) : 0; state.respawnTimes = Math.max(0, Math.min(50, num(rs.times, 0) | 0));
   state.weather = { hour: Number.isFinite(w.hour) ? Math.max(0, Math.min(24, w.hour)) : null, rain: tri(w.rain), sandstorm: tri(w.sandstorm) };
 }
-const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
+const WHENS = ['zone', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door', 'outcome'];
+// What an outcome trigger (ML-047) may wait to hear about the latest firing of the trigger it watches, and its default window.
+const OUTCOMES = ['applied', 'failed', 'partial', 'unconfirmed', 'timeout'], OUTCOME_WITHIN = 30;
 const cleanTag = t => String(t || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 24);
 const tagsOf = () => [...new Set(state.enemies.map(e => e.tag).filter(Boolean))].sort();
 // Which known door a door trigger points at: its place in the list, or '' when none is near enough.
@@ -173,7 +242,8 @@ const briefingIn = list => (Array.isArray(list) ? list : []).map(cleanMessage).f
 const zonesOut = () => state.zones.map(z => {
   const o = { id: z.id, name: z.name || '', when: z.when || 'zone' };
   // An area with no parts left (painted, then all erased) is a plain circle: {"parts":[]} would be refused as bad-area.
-  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.area && z.area.parts && z.area.parts.length) o.area = areaWrite(z.area); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } if (z.everyone) o.everyone = true; }
+  // A zone linked to a named place writes the link only: the place carries the shape (MissionPlan.TriggersJson).
+  if (o.when === 'zone') { o.pos = r3(z.pos); o.radius = r2(z.radius); if (z.place > 0) o.place = z.place; else if (z.area && z.area.parts && z.area.parts.length) o.area = areaWrite(z.area); if (z.hold > 0) { o.when = 'hold'; o.hold = r2(z.hold); } if (z.everyone) o.everyone = true; }
   if (o.when === 'door' && isVec(z.pos)) o.pos = r3(z.pos);
   if (o.when === 'down') { o.count = Math.max(0, z.count | 0); if (z.tag) o.tag = z.tag; }
   if (o.when === 'all' || o.when === 'any') o.of = (z.of || []).filter(id => id !== z.id && state.zones.some(q => q.id === id));
@@ -185,7 +255,9 @@ const zonesOut = () => state.zones.map(z => {
   if (z.hunt) o.hunt = true;
   if (z.respawn) o.respawn = true;
   if (o.when === 'intel') o.item = z.item || '';
-  if (o.when === 'after') o.after = z.after | 0;
+  if (o.when === 'after' || o.when === 'outcome') o.after = z.after | 0;
+  // The outcome and its window sit right after "after", as MissionPlan.TriggersJson writes them; 30 s is not written.
+  if (o.when === 'outcome') { o.outcome = z.outcome; if (z.within !== OUTCOME_WITHIN) o.within = r2(z.within); }
   if (z.delay > 0) o.delay = r2(z.delay);
   o.facePlayer = z.facePlayer !== false;
   const doors = (z.doors || []).filter(d => d.locked != null || d.open != null).map(d => ({ name: d.name || '', pos: r3(d.pos), ...(d.locked != null ? { locked: d.locked } : {}), ...(d.open != null ? { open: d.open } : {}) }));
@@ -196,11 +268,11 @@ const zonesOut = () => state.zones.map(z => {
   if (z.end === 'success' || z.end === 'failed') o.end = z.end;
   return o;
 });
-const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, area: null, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false, hunt: false, respawn: false }, more || {});
+const newTrigger = (id, when, more) => Object.assign({ id, name: '', when, pos: null, radius: 12, area: null, place: 0, facePlayer: true, delay: 0, item: '', after: 0, doors: [], opensExtraction: false, power: '', message: '', end: '', hold: 0, count: 0, of: [], chance: 100, warn: false, everyone: false, tag: '', repeat: 0, times: 0, rally: 0, red: false, hunt: false, respawn: false, outcome: 'applied', within: OUTCOME_WITHIN }, more || {});
 const cleanMessage = t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 // What a trigger waits for, in a few words.
 const trigTitle = z => (z.when === 'zone' ? 'Zone ' : 'Trigger ') + z.id;
-const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'door' ? 'When a door is opened' : z.when === 'down' ? 'When enemies are down' : z.when === 'all' ? 'When all of these have fired' : z.when === 'any' ? 'When one of these has fired' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : 'After another trigger') + ' (trigger ' + z.id + ')';
+const trigText = z => z.when === 'zone' ? (z.hold > 0 ? 'When players hold zone ' : 'When players reach zone ') + z.id : (z.when === 'door' ? 'When a door is opened' : z.when === 'down' ? 'When enemies are down' : z.when === 'all' ? 'When all of these have fired' : z.when === 'any' ? 'When one of these has fired' : z.when === 'alert' ? 'When the enemy is alerted' : z.when === 'intel' ? 'When intel is picked up' : z.when === 'time' ? 'After a set time' : z.when === 'outcome' ? 'When another trigger\'s action is seen' : 'After another trigger') + ' (trigger ' + z.id + ')';
 const trigTag = id => { const z = state.zones.find(q => q.id === id); return (z && z.when !== 'zone' ? 'trigger ' : 'zone ') + id; };
 // A file from before there were other kinds has only zones; a zone needs a place, the other kinds do not.
 const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id > 0 && (isVec(z.pos) || (WHENS.includes(z.when) && z.when !== 'zone'))).map(z => newTrigger(z.id | 0, WHENS.includes(z.when) ? z.when : 'zone', {
@@ -208,10 +280,31 @@ const zonesIn = list => (Array.isArray(list) ? list : []).filter(z => z && z.id 
   of: (Array.isArray(z.of) ? z.of : []).map(v => v | 0).filter(v => v > 0), chance: Math.max(1, Math.min(100, Math.round(num(z.chance, 100)))), warn: z.warn === true,
   everyone: z.everyone === true, tag: cleanTag(z.tag), repeat: Math.max(0, Math.min(3600, num(z.repeat, 0))), times: Math.max(0, Math.min(100, num(z.times, 0) | 0)), rally: Math.max(0, Math.min(300, num(z.rally, 0))), red: z.red === true, hunt: z.hunt === true, respawn: z.respawn === true,
   name: typeof z.name === 'string' ? z.name : '', pos: isVec(z.pos) ? z.pos.slice(0, 3) : null, radius: Math.max(1, num(z.radius, 10)), facePlayer: z.facePlayer !== false,
-  area: (z.when === 'zone' || z.when === 'hold' || !WHENS.includes(z.when)) && z.area ? areaRead(z.area) : null,
+  area: (z.when === 'zone' || z.when === 'hold' || !WHENS.includes(z.when)) ? (num(z.place, 0) > 0 ? placeAreaCopy(num(z.place, 0) | 0) : z.area ? areaRead(z.area) : null) : null,
+  place: (z.when === 'zone' || z.when === 'hold' || !WHENS.includes(z.when)) ? Math.max(0, num(z.place, 0) | 0) : 0,
   delay: Math.max(0, Math.min(7200, num(z.delay, 0))), item: typeof z.item === 'string' ? z.item : '', after: num(z.after, 0) | 0, opensExtraction: z.extraction === 'open',
+  outcome: OUTCOMES.includes(z.outcome) ? z.outcome : 'applied', within: Math.max(1, Math.min(3600, num(z.within, OUTCOME_WITHIN))),
   power: z.power === 'off' || z.power === 'on' ? z.power : '', message: cleanMessage(z.message), end: z.end === 'success' || z.end === 'failed' ? z.end : '',
   doors: (Array.isArray(z.doors) ? z.doors : []).filter(d => d && isVec(d.pos) && (tri(d.locked) !== null || tri(d.open) !== null)).map(d => ({ name: typeof d.name === 'string' ? d.name : '', pos: d.pos.slice(0, 3), locked: tri(d.locked), open: tri(d.open) })) }));
+// A zone linked to a named place (ML-040) keeps the link and a copy of the place's painted area, so drawing, membership,
+// rehearsal and the mission check go on reading z.area alone. The copy is made again whenever the place changes
+// (placeLinksResolve, called by 29b-places.js), so every linked zone always has its place's one shape.
+function placeAreaCopy(id) {
+  const p = id > 0 ? state.places.find(q => q.id === id) : null;
+  if (!p || !p.area || !Array.isArray(p.area.parts) || !p.area.parts.length) return null;
+  const a = areaRead(areaWrite(p.area));
+  if (a) areaPrepare(a);
+  return a;
+}
+// Gives every linked zone its place's shape again. A link to a place that is gone or a point keeps what it had: the mission
+// check names it, and the file rules refuse it, so it is never saved as a valid mission.
+function placeLinksResolve() {
+  for (const z of state.zones) {
+    if (!(z.place > 0)) continue;
+    const a = placeAreaCopy(z.place);
+    if (a && (!z.area || !z.area.parts || areaSignature(a) !== areaSignature(z.area))) z.area = a;
+  }
+}
 function enemyOf(s, i) {
   if (!s || !isVec(s.pos)) throw new Error('Enemy ' + (i + 1) + ' has no "pos": [x, y, z].');
   const role = ROLES.find(r => r.toLowerCase() === String(s.role || 'Guard').toLowerCase());
@@ -282,23 +375,44 @@ function syncLayers() {
   row('Shapes without a visible model (often invisible walls)', bare, !hidden.unmodelled, on => { hidden.unmodelled = !on; });
 }
 // One enemy per line, so a file with many enemies stays readable; the same layout inside the plan/2 envelope.
-function scenarioText() {
-  const o = scenarioObject(), body = o.mission || o, spawns = body.spawns, pad = o.mission ? '  ' : ' ', mark = 'MISSIONLAB_SPAWNS_GO_HERE';
+// obj: a scenario object to lay out instead of the page's own (the flattened export).
+function scenarioText(obj) {
+  const o = obj && typeof obj === 'object' ? obj : scenarioObject(), body = o.mission || o, spawns = body.spawns, pad = o.mission ? '  ' : ' ', mark = 'MISSIONLAB_SPAWNS_GO_HERE';
   body.spawns = mark;
   const list = spawns.length ? '[\n' + spawns.map(s => pad + ' ' + JSON.stringify(s)).join(',\n') + '\n' + pad + ']' : '[]';
   return JSON.stringify(o, null, 1).replace('"' + mark + '"', () => list) + '\n';
 }
+// The page's scenario with every link to a named place replaced by its own copy of the exact shape the zone uses, where the
+// link stood: what MissionPlan.Flatten writes, missionlab-plan/2, for versions that cannot read links (ML-040). Objectives
+// have no older form, so a plan with them stays missionlab-plan/3 (ML-046).
+function scenarioFlatObject() {
+  const o = scenarioObject(), body = o.mission || o;
+  if (!body.triggers.some(t => t.place)) return o;
+  body.triggers = body.triggers.map(t => {
+    if (!t.place) return t;
+    const z = state.zones.find(q => q.id === t.id), out = {};
+    for (const k of Object.keys(t)) {
+      if (k !== 'place') out[k] = t[k];
+      else if (z && z.area && z.area.parts && z.area.parts.length) out.area = areaWrite(z.area);
+    }
+    return out;
+  });
+  if (body.goals || (body.extraction && body.extraction.goals)) return { schema: 'missionlab-plan/3', mission: body };
+  return body.triggers.some(t => t.area) ? { schema: 'missionlab-plan/2', mission: body } : { schema: 'missionlab-plan/1', ...body };
+}
 const isVec = p => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every(v => typeof v === 'number' && isFinite(v));
-// The scenario file's contract, missionlab-plan/1 and /2, as the plugin reads it (ScenarioFile.cs holds the same rules, and
+// The scenario file's contract, missionlab-plan/1, /2 and /3, as the plugin reads it (ScenarioFile.cs holds the same rules, and
 // tests/fixtures/invalid holds files both must judge alike). Returns findings: level, a short fixed code, the place in the
 // file and a sentence. Nothing is quietly dropped or bent into shape: an error means the file is not loaded.
-// plan/2 carries the plan/1 body under "mission"; it is written only when a trigger has a shaped area.
-const PLAN_VERSION = 2, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door'];
+// plan/2 carries the plan/1 body under "mission"; it is written only when a trigger has a shaped area. plan/3 is the same
+// envelope, written only when a zone or hold links a named place ("place": its id) instead of carrying an area (ML-040), or
+// when the plan has objectives ("goals") or an extraction that waits for them (ML-046).
+const PLAN_VERSION = 3, PLAN_KINDS = ['zone', 'hold', 'alert', 'intel', 'time', 'after', 'down', 'all', 'any', 'door', 'outcome'];
 const SPAWN_FIELDS = ['n:yaw', 'n:detectionRange', 'n:hearingRange', 'n:fov', 'n:wanderDistance', 'n:patrolWaitSeconds', 'n:chance', 'n:scatter', 'i:group', 'i:trigger', 'i:lot', 'i:either', 'i:option', 'i:team', 'i:minPlayers', 'i:within',
   'b:indoor', 'b:defensive', 'b:fixed', 'b:prone', 'b:hvt', 'b:vehicle', 'b:nvg', 's:role', 's:type', 's:skill', 's:tag', 's:fallback'];
 const NAME_ID = /^[A-Za-z0-9_-]{1,32}$/;
-const TRIGGER_FIELDS = ['n:radius', 'n:delay', 'n:hold', 'n:chance', 'n:repeat', 'n:rally', 'i:count', 'i:times', 'i:after', 'b:facePlayer', 'b:warn', 'b:everyone', 'b:red', 'b:hunt', 'b:respawn',
-  's:name', 's:when', 's:item', 's:message', 's:power', 's:end', 's:extraction', 's:tag'];
+const TRIGGER_FIELDS = ['n:radius', 'n:delay', 'n:hold', 'n:chance', 'n:repeat', 'n:rally', 'i:count', 'i:times', 'i:after', 'i:place', 'b:facePlayer', 'b:warn', 'b:everyone', 'b:red', 'b:hunt', 'b:respawn',
+  's:name', 's:when', 's:item', 's:message', 's:power', 's:end', 's:extraction', 's:tag', 'n:within', 's:outcome'];
 const THING_FIELDS = ['s:name', 'n:yaw', 'n:chance', 'i:trigger'], DOOR_FIELDS = ['s:name', 'b:locked', 'b:enemiesCanOpen', 'b:open', 'n:chance'];
 // Takes the parsed file, or its text: text that is not JSON gets the plugin's not-json finding.
 function scenarioProblems(obj) {
@@ -325,17 +439,28 @@ function scenarioProblems(obj) {
   if (!isObj(root)) { bad('wrong-type', '', 'a scenario is a JSON object'); return found; }
   if (!has(root, 'schema')) note('no-version', 'schema', 'the file names no format; it is read as missionlab-plan/1');
   else {
+    // Only digits after the slash, as the plugin reads it; a number too big to hold is still a newer format.
     const sv = typeof root.schema === 'string' ? root.schema : '', m = /^missionlab-plan\/(\d+)$/.exec(sv), v = m ? +m[1] : 0;
     if (v <= 0) { bad('unknown-format', 'schema', '"' + sv + '" is not a MissionLab scenario format'); return found; }
-    if (v > PLAN_VERSION) { bad('future-version', 'schema', 'this file is missionlab-plan/' + v + '; this version of MissionLab reads missionlab-plan/' + PLAN_VERSION + '. Update MissionLab to use it. The file was not changed'); return found; }
+    if (v > PLAN_VERSION) { bad('future-version', 'schema', 'this file is ' + sv + '; this version of MissionLab reads missionlab-plan/' + PLAN_VERSION + '. Update MissionLab to use it. The file was not changed'); return found; }
     version = v;
   }
-  // In plan/2 the body sits under "mission"; every other place named below is relative to it.
+  // In plan/2 and /3 the body sits under "mission"; every other place named below is relative to it.
   if (version >= 2) {
-    if (!isObj(root.mission)) { bad('wrong-type', 'mission', 'a missionlab-plan/2 file keeps its plan in "mission", an object'); return found; }
+    if (!isObj(root.mission)) { bad('wrong-type', 'mission', 'a missionlab-plan/' + version + ' file keeps its plan in "mission", an object'); return found; }
+    // The file's own "schema" is the format; a second one inside would leave it unclear which version the body is.
+    if (has(root.mission, 'schema')) { bad('unknown-format', 'mission.schema', 'the scenario under "mission" names no format of its own: the file\'s "schema" says which format it is'); return found; }
     root = root.mission;
+  } else if (has(root, 'mission')) {
+    // planBody reads an object under "mission" whatever the version, so in a plan/1 file the checks below would look at the
+    // root while something else is loaded. Any "mission" there is refused, which is simpler to say.
+    bad('wrong-type', 'mission', '"mission" holds the scenario only in a missionlab-plan/2 or /3 file; this file is read as missionlab-plan/1, with the scenario at the root');
+    return found;
   }
   const ids = new Set(), link = (o, at) => { if (has(o, 'trigger') && whole(o.trigger) && o.trigger !== 0 && !ids.has(o.trigger)) bad('missing-ref', at + '.trigger', 'there is no trigger ' + o.trigger); };
+  // Named places a zone or hold may link, collected first like the trigger numbers: id, and whether it is painted.
+  const placeShaped = new Map();
+  if (Array.isArray(root.places)) for (const p of root.places) if (isObj(p) && has(p, 'id') && whole(p.id) && p.id >= 1 && !placeShaped.has(p.id)) placeShaped.set(p.id, has(p, 'area'));
   if (has(root, 'triggers')) {
     if (!Array.isArray(root.triggers)) bad('wrong-type', 'triggers', '"triggers" is a list');
     else {
@@ -356,9 +481,23 @@ function scenarioProblems(obj) {
           else if (version < 2) bad('bad-area', at + '.area', 'a shaped area needs missionlab-plan/2: save the file again with this MissionLab');
           else areaProblems(t.area, at, bad);
         }
-        if (when === 'after' && has(t, 'after') && whole(t.after)) {
+        if (has(t, 'place') && whole(t.place)) {
+          if (when !== 'zone' && when !== 'hold') bad('bad-area', at + '.place', 'only zone and hold triggers link a place');
+          else if (version < 3) bad('bad-area', at + '.place', 'a link to a place needs missionlab-plan/3: save the file again with this MissionLab');
+          else if (has(t, 'area')) bad('bad-area', at + '.place', 'a trigger links a place or has an area of its own, not both');
+          else if (!placeShaped.has(t.place)) bad('missing-ref', at + '.place', 'there is no place ' + t.place);
+          else if (!placeShaped.get(t.place)) bad('bad-area', at + '.place', 'place ' + t.place + ' is a point: only a place with a painted area can be linked');
+        }
+        // An outcome trigger (ML-047) must name the trigger it watches; 0 names none, so it is a missing reference there.
+        if (when === 'outcome' && !has(t, 'after')) bad('missing-field', at + '.after', 'an outcome trigger needs "after": the trigger whose action it waits to see');
+        if ((when === 'after' || when === 'outcome') && has(t, 'after') && whole(t.after)) {
           if (t.after !== 0 && t.after === me) bad('self-ref', at + '.after', 'the trigger waits for itself');
-          else if (t.after !== 0 && !ids.has(t.after)) bad('missing-ref', at + '.after', 'there is no trigger ' + t.after);
+          else if ((t.after !== 0 || when === 'outcome') && !ids.has(t.after)) bad('missing-ref', at + '.after', 'there is no trigger ' + t.after);
+        }
+        if (when === 'outcome') {
+          if (!has(t, 'outcome')) bad('missing-field', at + '.outcome', 'an outcome trigger needs "outcome": one of ' + OUTCOMES.join(', '));
+          else value(t, at, 'outcome', OUTCOMES);
+          if (typeof t.within === 'number' && (t.within < 1 || t.within > 3600)) bad('out-of-range', at + '.within', 'an outcome trigger waits 1 to 3600 seconds');
         }
         if ((when === 'all' || when === 'any') && has(t, 'of')) {
           if (!Array.isArray(t.of)) bad('wrong-type', at + '.of', '"of" is a list of trigger numbers');
@@ -384,7 +523,48 @@ function scenarioProblems(obj) {
   });
   if (has(root, 'extraction')) {
     if (!isObj(root.extraction)) bad('wrong-type', 'extraction', '"extraction" is an object');
-    else if (has(root.extraction, 'after')) { const a = root.extraction.after; if (!whole(a)) bad('wrong-type', 'extraction.after', 'a trigger number is a whole number'); else if (a !== 0 && !ids.has(a)) bad('missing-ref', 'extraction.after', 'there is no trigger ' + a); }
+    else {
+      if (has(root.extraction, 'after')) { const a = root.extraction.after; if (!whole(a)) bad('wrong-type', 'extraction.after', 'a trigger number is a whole number'); else if (a !== 0 && !ids.has(a)) bad('missing-ref', 'extraction.after', 'there is no trigger ' + a); }
+      typed(root.extraction, 'extraction', 'b:goals');
+    }
+  }
+  // Objectives (ML-046), read field by field in the order id, name, required, after, activate, succeed, fail, notify, as
+  // ScenarioFile.cs reads them. An older format refuses them whole: a version without objectives would play on without them.
+  if (has(root, 'goals')) {
+    if (version < 3) bad('unknown-format', 'goals', 'objectives need missionlab-plan/3: save the file again with this MissionLab');
+    else if (!Array.isArray(root.goals)) bad('wrong-type', 'goals', '"goals" is a list of objectives');
+    else {
+      // Ids are collected first, so "after" may name a goal further down the list.
+      const known = new Set(), seen = new Set();
+      for (const g of root.goals) if (isObj(g) && typeof g.id === 'string' && GOAL_ID.test(g.id)) known.add(g.id);
+      const trigger = (g, at, key) => { if (typed(g, at, 'i:' + key) && g[key] !== 0 && !ids.has(g[key])) bad('missing-ref', at + '.' + key, 'there is no trigger ' + g[key]); };
+      root.goals.forEach((g, i) => {
+        const at = 'goals[' + i + ']';
+        if (!isObj(g)) return bad('wrong-type', at, 'an objective is an object');
+        if (!has(g, 'id')) bad('missing-field', at + '.id', 'an objective needs an "id"');
+        else if (typeof g.id !== 'string') bad('wrong-type', at + '.id', '"id" must be text');
+        else if (!GOAL_ID.test(g.id)) bad('bad-id', at + '.id', 'an objective id is 1 to 32 lower-case letters, digits or "-", starting with a letter or digit');
+        else { if (seen.has(g.id)) bad('duplicate-id', at + '.id', 'objective "' + g.id + '" is used twice'); seen.add(g.id); }
+        if (!has(g, 'name')) bad('missing-field', at + '.name', 'an objective needs a "name": players see it');
+        else if (typeof g.name !== 'string') bad('wrong-type', at + '.name', '"name" must be text');
+        else if (!goalName(g.name)) bad('missing-field', at + '.name', 'an objective needs a "name": players see it');
+        typed(g, at, 'b:required');
+        if (has(g, 'after')) {
+          if (!Array.isArray(g.after)) bad('wrong-type', at + '.after', '"after" is a list of objective ids');
+          else g.after.forEach((one, j) => {
+            const op = at + '.after[' + j + ']';
+            if (typeof one !== 'string') bad('wrong-type', op, 'an objective id is text');
+            else if (typeof g.id === 'string' && one === g.id) bad('self-ref', op, 'the objective waits for itself');
+            else if (!known.has(one)) bad('missing-ref', op, 'there is no objective "' + one + '"');
+          });
+        }
+        trigger(g, at, 'activate');
+        if (!has(g, 'succeed')) bad('missing-field', at + '.succeed', 'an objective needs "succeed": the trigger that completes it');
+        else if (typed(g, at, 'i:succeed') && (g.succeed <= 0 || !ids.has(g.succeed))) bad('missing-ref', at + '.succeed', 'there is no trigger ' + g.succeed);
+        trigger(g, at, 'fail');
+        typed(g, at, 'b:notify');
+      });
+    }
   }
   if (has(root, 'things')) {
     if (!Array.isArray(root.things)) bad('wrong-type', 'things', '"things" is a list');
@@ -492,6 +672,40 @@ function scenarioProblems(obj) {
           });
         }
       }
+      // The pressure director's bounds (ML-052), field by field in the order ScenarioFile.Pressure reads them.
+      if (has(d, 'pressure')) {
+        const p = d.pressure, at = 'director.pressure';
+        if (!isObj(p)) bad('wrong-type', at, '"pressure" is an object: {"mode": "off", "preview" or "on", "bands": [...], "maxEnemies": enemies, "rest": seconds}');
+        else {
+          if (typed(p, at, 's:mode')) value(p, at, 'mode', PRESSURE_MODES);
+          // The objective ids a band may name, collected as the objectives' own check collects them.
+          const known = new Set(Array.isArray(root.goals) ? root.goals.filter(g => isObj(g) && typeof g.id === 'string' && GOAL_ID.test(g.id)).map(g => g.id) : []);
+          if (!has(p, 'bands')) bad('missing-field', at + '.bands', 'the pressure director needs "bands": 1 to 6 bands');
+          else if (!Array.isArray(p.bands)) bad('wrong-type', at + '.bands', '"bands" is a list');
+          else {
+            if (p.bands.length < 1 || p.bands.length > 6) bad('out-of-range', at + '.bands', 'the pressure director has 1 to 6 bands');
+            p.bands.forEach((b, i) => {
+              const one = at + '.bands[' + i + ']';
+              if (!isObj(b)) return bad('wrong-type', one, 'a band is an object');
+              named(b, one, 'a band');
+              if (typed(b, one, 'n:from') && (b.from < 0 || b.from > 36000)) bad('out-of-range', one + '.from', 'a band starts 0 to 36000 seconds after the start');
+              if (has(b, 'goals')) {
+                if (!Array.isArray(b.goals)) bad('wrong-type', one + '.goals', '"goals" is a list of objective ids');
+                else b.goals.forEach((g, j) => {
+                  const gat = one + '.goals[' + j + ']';
+                  if (typeof g !== 'string') bad('wrong-type', gat, 'an objective id is text');
+                  else if (!known.has(g)) bad('missing-ref', gat, 'there is no objective "' + g + '"');
+                });
+              }
+              if (typed(b, one, 'i:minPlayers') && (b.minPlayers < 0 || b.minPlayers > 16)) bad('out-of-range', one + '.minPlayers', 'a band needs 0 to 16 living players');
+              if (typed(b, one, 'i:spend') && (b.spend < 0 || b.spend > 1000)) bad('out-of-range', one + '.spend', 'a band spends 0 to 1000 points a decision');
+              if (typed(b, one, 'n:every') && (b.every < 10 || b.every > 600)) bad('out-of-range', one + '.every', 'a band decides every 10 to 600 seconds');
+            });
+          }
+          if (typed(p, at, 'i:maxEnemies') && (p.maxEnemies < 0 || p.maxEnemies > 500)) bad('out-of-range', at + '.maxEnemies', 'the cap is 0 (none) to 500 living enemies');
+          if (typed(p, at, 'n:rest') && (p.rest < 0 || p.rest > 600)) bad('out-of-range', at + '.rest', 'the rest after a casualty is 0 to 600 seconds');
+        }
+      }
     }
   }
   types(root, '', ['s:name', 's:scene', 's:navFile', 's:insertion', 's:power', 's:skill', 'b:nvg', 'b:gameMaster', 'i:seed', 's:id', 'i:revision', 'n:minutes', 's:mapPrint', 'b:sealed']);
@@ -519,7 +733,9 @@ function capabilitiesOf(obj) {
   const root = planBody(obj) || {}, list = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
   const trigs = list(root.triggers), spawns = list(root.spawns), things = list(root.things), doors = list(root.doors), w = root.weather;
   const found = new Set(), add = (name, yes) => { if (yes) found.add(name); };
-  add('areas', trigs.some(t => (t.when === 'zone' || t.when === 'hold' || t.when === undefined) && t.area && Array.isArray(t.area.parts) && t.area.parts.length));
+  // A zone linked to a painted place has that place's area once read (MissionPlan.ResolveLinks), so it counts as one.
+  const linkedArea = t => Number.isInteger(t.place) && t.place > 0 && list(root.places).some(p => p && p.id === t.place && p.area && Array.isArray(p.area.parts) && p.area.parts.length);
+  add('areas', trigs.some(t => (t.when === 'zone' || t.when === 'hold' || t.when === undefined) && ((t.area && Array.isArray(t.area.parts) && t.area.parts.length) || linkedArea(t))));
   add('doors', doors.length > 0 || trigs.some(t => list(t.doors).length));
   add('door-trigger', trigs.some(t => t.when === 'door'));
   add('things', things.length > 0);
@@ -532,7 +748,7 @@ function capabilitiesOf(obj) {
   add('endings', trigs.some(t => t.end === 'success' || t.end === 'failed'));
   add('hunt', trigs.some(t => t.hunt === true));
   add('rally', trigs.some(t => num(t.rally, 0) > 0));
-  add('extraction-hold', (root.extraction && num(root.extraction.after, 0) !== 0) || trigs.some(t => t.extraction === 'open'));
+  add('extraction-hold', (root.extraction && (num(root.extraction.after, 0) !== 0 || root.extraction.goals === true)) || trigs.some(t => t.extraction === 'open'));
   add('vehicles', spawns.some(s => s.vehicle === true));
   add('hvt', spawns.some(s => s.hvt === true));
   add('teams', spawns.some(s => num(s.team, 0) > 0));
@@ -544,6 +760,12 @@ function capabilitiesOf(obj) {
   add('options', list(root.options).length > 0);
   add('scatter', spawns.some(s => num(s.scatter, 0) > 0));
   add('director', !!(root.director && typeof root.director === 'object' && !Array.isArray(root.director)));
+  // Any pressure bounds the plugin would keep (a band that names only goals of the plan), whatever the authored mode: the host
+  // can switch an "off" director on during the session (ML-052).
+  const pr = root.director && typeof root.director === 'object' ? root.director.pressure : null, goalIds = list(root.goals).map(g => g.id);
+  add('pressure', !!(pr && typeof pr === 'object' && !Array.isArray(pr) && list(pr.bands).slice(0, 6).some(b => !Array.isArray(b.goals) || b.goals.every(g => typeof g !== 'string' || goalIds.includes(g)))));
+  add('goals', list(root.goals).length > 0);
+  add('outcomes', trigs.some(t => t.when === 'outcome'));
   return [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 // Accepts a scenario (missionlab-plan/1 or /2), or a mission record written by the Director (the plan sits under "plan").
@@ -554,17 +776,19 @@ function loadScenario(obj, name) {
     state.refused = { name, errors: wrong };
     return name + ' was not loaded: ' + wrong.length + (wrong.length === 1 ? ' problem' : ' problems') + '. First: ' + (wrong[0].path ? wrong[0].path + ': ' : '') + wrong[0].text + '. The file was not changed; the Mission tab lists them all.';
   }
-  state.refused = null; state.readNotes = found.filter(f => f.level === 'note').map(f => name + ': ' + f.text + '. Saving writes the current format; Undo brings back what was here before.');
+  state.refused = null; state.readNotes = found.filter(f => f.level === 'note').map(f => name + ': ' + f.text + '. Saving writes the current format; the file itself stays as it is.');
   const record = !!(obj && obj.plan && typeof obj.plan === 'object');
   const root = planBody(obj);
   const list = [];
   root.spawns.forEach((s, i) => list.push(enemyOf(s, i)));
-  pushUndo();
+  const replaced = historyReplaced(name);      // the steps so far belong to the scenario that was here (ML-045)
   state.zones = zonesIn(root.triggers); state.objectives = objectivesIn(root.objectives); setDoorWishes(root.doors); settingsIn(root);
+  goalsRead(root);              // a file without objectives clears the page's (settingsIn reads them only where a list is given)
   state.things = thingsIn(root.things); state.thing = -1;
   state.enemies = list; state.selected = list.length ? 0 : -1;
   state.title = (typeof root.name === 'string' && root.name.trim()) || name.replace(/\.json$/i, '');
   state.places = placesIn(root.places);
+  placeLinksResolve();          // the zones were read before the places: linked zones take their place's shape now
   state.scenarioId = typeof root.id === 'string' ? root.id : '';
   state.revision = Number.isInteger(root.revision) && root.revision > 0 ? root.revision : 0;
   state.squadRange = Array.isArray(root.squad) && root.squad.length === 2 ? [root.squad[0], root.squad[1]] : null;
@@ -579,7 +803,7 @@ function loadScenario(obj, name) {
   if (nav) state.navFile = nav;
   if (state.map && state.map.isExample) { state.map = null; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; }
   state.example = false;
-  return list.length + ' enemies loaded from ' + name + '.';
+  return list.length + ' enemies loaded from ' + name + '.' + (replaced ? ' ' + replaced : '');
 }
 // A recon file from the MissionLab Recon plugin: insertion points and the game's own spawn points.
 function loadRecon(obj, name) {
@@ -591,6 +815,7 @@ function loadRecon(obj, name) {
   const sceneName = (obj.operations && obj.operations.currentScene) || obj.scene || '';
   if (typeof sceneName === 'string' && sceneName && Array.isArray(obj.doors)) state.night = /night/i.test(sceneName);
   state.infils = pts;
+  state.reconFacts = reconFacts(obj, name);     // intel items and target points of this map, for the scenario's needs (ML-036)
   const spawns = (obj.raid || {}).botSpawnPoints;
   state.authored = (Array.isArray(spawns) ? spawns : []).filter(s => s && isVec(s.pos)).map(s => s.pos.slice(0, 3));
   const doors = doorsIn(obj.doors);
@@ -617,7 +842,7 @@ async function openFiles(files) {
         const tris = await readMapFile(buf);
         const wasExample = state.example;
         state.map = makeMap(tris, f.name, false); state.map.print = mapPrintOf(buf); state.navFile = f.name; state.example = false;
-        if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; undoStack.length = 0; }
+        if (wasExample) { state.enemies = []; state.selected = -1; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1; historyReset('You opened the map ' + f.name + ' in place of the example.'); }
         state.ceiling = Infinity; view3d.dropMap(); fit();
         notes.push(f.name + ': ' + state.map.n.toLocaleString('en') + ' walkable triangles.');
       } else {
@@ -630,7 +855,8 @@ async function openFiles(files) {
           if (!live.on && obj.plan && Array.isArray(obj.plan.spawns) && obj.plan.spawns.length) { loadScenario(obj.plan, f.name); if (!state.map) fit(); }
           notes.push(loadReplay(obj, f.name));
         }
-        else if (obj && (Array.isArray(obj.spawns) || (obj.plan && Array.isArray(obj.plan.spawns)) || (typeof obj.schema === 'string' && /^missionlab-plan\//.test(obj.schema)))) { notes.push(loadScenario(obj, f.name)); if (!state.refused && !obj.plan) markSaved(f.name); if (!state.map) fit(); }
+        // A mission record of a shaped mission holds a missionlab-plan/2 envelope under "plan", with its spawns one level down.
+        else if (obj && (Array.isArray(obj.spawns) || (obj.plan && (Array.isArray(obj.plan.spawns) || (typeof obj.plan.schema === 'string' && /^missionlab-plan\//.test(obj.plan.schema)))) || (typeof obj.schema === 'string' && /^missionlab-plan\//.test(obj.schema)))) { notes.push(loadScenario(obj, f.name)); if (!state.refused && !obj.plan) markSaved(f.name); if (!state.map) fit(); }
         else if (obj && (obj.infiltration || obj.raid)) notes.push(loadRecon(obj, f.name));
         else throw new Error('It is not a scenario, a mission record, a replay or a recon file.');
       }

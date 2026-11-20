@@ -121,7 +121,9 @@ function semanticDiff(beforeObj, afterObj, ctx) {
     const parts = [];
     if (a.when !== b.when) parts.push('now waits for ' + (STAGE_WHEN[b.when] || b.when) + ' (was ' + (STAGE_WHEN[a.when] || a.when) + ')');
     if (isVec(a.pos) && isVec(b.pos)) { const d = Math.hypot(b.pos[0] - a.pos[0], b.pos[1] - a.pos[1], b.pos[2] - a.pos[2]); if (d >= 0.05) parts.push('moved ' + stageM(d) + ' m, now ' + where(b.pos)); }
-    if (!stageSame(a.area || null, b.area || null)) parts.push(!a.area ? 'now has a painted area' : !b.area ? 'back to a circle' : 'its painted area changed');
+    const placeName = id => { const p = B.places.find(q => (q.id | 0) === id) || A.places.find(q => (q.id | 0) === id); return p ? 'place "' + p.name + '"' : 'place ' + id; };
+    if ((a.place | 0) !== (b.place | 0)) parts.push(b.place ? 'now uses the shape of ' + placeName(b.place | 0) + (a.place ? ' (was ' + placeName(a.place | 0) + ')' : '') : 'no longer linked to ' + placeName(a.place | 0) + (b.area ? '; it keeps its own copy of the shape' : '; back to a circle'));
+    else if (!stageSame(a.area || null, b.area || null)) parts.push(!a.area ? 'now has a painted area' : !b.area ? 'back to a circle' : 'its painted area changed');
     if ((a.after | 0) !== (b.after | 0)) parts.push(b.after ? 'now waits for ' + trigName(b.after) : 'no longer waits for another trigger');
     if (!stageSame(a.of || [], b.of || [])) parts.push('waits for triggers ' + stageWord(b.of || []) + ' (was ' + stageWord(a.of || []) + ')');
     if (!stageSame(a.doors || [], b.doors || [])) parts.push('its door actions changed (' + (b.doors || []).length + ' doors)');
@@ -176,7 +178,16 @@ function semanticDiff(beforeObj, afterObj, ctx) {
   for (const [n, b] of oB) { const a = oA.get(n); if (!a) add('intel', 'intel:' + n, 'Intel "' + n + '" placed ' + where(b.pos)); else if (isVec(a.pos) && isVec(b.pos) && Math.hypot(b.pos[0] - a.pos[0], b.pos[1] - a.pos[1], b.pos[2] - a.pos[2]) >= 0.05) add('intel', 'intel:' + n, 'Intel "' + n + '" moved to ' + where(b.pos).replace(/^(in|at) /, '')); }
   for (const n of oA.keys()) if (!oB.has(n)) add('intel', 'intel:' + n, 'Intel "' + n + '" back where the game puts it');
   const pA = new Map(A.places.map(p => [p.id | 0, p])), pB = new Map(B.places.map(p => [p.id | 0, p]));
-  for (const [id, b] of pB) { const a = pA.get(id); if (!a) add('place', 'place:' + id, 'Place "' + b.name + '" added'); else if (!stageSame(a, b)) add('place', 'place:' + id, 'Place "' + b.name + '"' + (a.name !== b.name ? ' (was "' + a.name + '")' : '') + ' changed'); }
+  // A linked place is one change however many zones use it (ML-040): the line names them, since each of them counts again.
+  const usersOf = id => B.triggers.filter(t => (t.place | 0) === id && tA.has(t.id | 0) && (tA.get(t.id | 0).place | 0) === id).map(t => trigName(t.id | 0));
+  for (const [id, b] of pB) {
+    const a = pA.get(id);
+    if (!a) { add('place', 'place:' + id, 'Place "' + b.name + '" added'); continue; }
+    if (stageSame(a, b)) continue;
+    const reshaped = !stageSame(a.area || null, b.area || null), users = reshaped ? usersOf(id) : [];
+    add('place', 'place:' + id, 'Place "' + b.name + '"' + (a.name !== b.name ? ' (was "' + a.name + '")' : '') + ' changed'
+      + (users.length ? ': its new shape applies to ' + stageWord(users) + ' at once; a hold under way there starts again, and what has fired stays fired' : ''));
+  }
   for (const [id, a] of pA) if (!pB.has(id)) add('place', 'place:' + id, 'Place "' + a.name + '" removed');
 
   out.sort((p, q) => STAGE_KIND_ORDER.indexOf(p.kind) - STAGE_KIND_ORDER.indexOf(q.kind));      // stable: the order within a kind stays
@@ -234,7 +245,7 @@ function stageSnapshot() {
 }
 function stageBody() {
   const snap = stageSnapshot();
-  return { spawnNow: $('spawnNow').checked === true, triggers: snap.triggers, objectives: snap.objectives, doors: snap.doors, things: snap.things, settings: snap.settings, markers: snap.markers.map(m => { const o = Object.assign({}, m); delete o.live; return o; }) };
+  return { spawnNow: $('spawnNow').checked === true, triggers: snap.triggers, objectives: snap.objectives, doors: snap.doors, things: snap.things, settings: snap.settings, places: snap.places, markers: snap.markers.map(m => { const o = Object.assign({}, m); delete o.live; return o; }) };
 }
 function stageCurrentProblems() {
   let obj = null, checks = [];
@@ -584,5 +595,5 @@ function stageSyncRevisions() {
 $('revSave').addEventListener('click', () => saveRevision());
 $('revLoad').addEventListener('click', () => { stage.diff = null; listRevisions(); });
 $('revBack').addEventListener('click', backToMine);
-$('revRepeat').addEventListener('click', () => { const run = stage.separate && stage.separate.run; if (!run) return; api('/api/repeat', { file: run.file }).then(s => { live.rev = null; live.runsFor = null; say('The next mission you host repeats that run: same roll. It needs the same scenario and number of players to come out the same.'); return applyLive(s); }).catch(e => say(liveTrouble(e))); });
+$('revRepeat').addEventListener('click', () => { const run = stage.separate && stage.separate.run; if (!run) return; api('/api/repeat', { file: run.file }).then(s => { live.rev = null; live.runsFor = null; say('The next mission you host repeats that run: same roll. A generated layout is first checked against the map and settings it was made with; if anything differs, or the record is older, unreadable or refused, the game\'s own mission runs unchanged and the reason shows here. Choose "A new roll" to play a new setup instead. A scenario needs the same file and number of players to come out the same.'); return applyLive(s); }).catch(e => say(liveTrouble(e))); });
 stageSync(); stageSyncRevisions();

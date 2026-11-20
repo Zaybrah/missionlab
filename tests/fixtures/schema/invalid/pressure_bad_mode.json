@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/1", "triggers": [ { "id": 1, "when": "alert" } ], "director": { "budget": 5, "actions": [ { "id": "rear", "name": "Rear", "cost": 1, "fire": 1 } ], "pressure": { "mode": "auto", "bands": [ { "name": "All" } ] } }, "spawns": [ { "pos": [0, 0, 0] } ] }

@@ -1,0 +1,141 @@
+{
+ "schema": "missionlab-plan/3",
+ "mission": {
+  "name": "Clean House: objectives",
+  "id": "sc-cleanhouse-objectives",
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+   "A small mission for the objective notices (ML-046) and the co-op record's row 8 (docs/coop-record.md). Written as missionlab-plan/3 because it has goals; versions before 0.27 refuse it. Objectives as a whole are untested in the game (docs/capabilities.json, 'objectives'): nothing here has been seen on a screen yet, the host's or a client's.",
+   "Goals: 'Recover the phone' (required, active from the start, done by trigger 1 'Phone taken'); 'Secure the upper floor' (required, becomes active when the phone goal succeeds, done by trigger 2 'Upstairs held', everyone alive inside the painted upstairs for 30 s in one go); 'Take down the officer' (optional, active from the start, done by trigger 3 'Officer down'). Goals active from the start get no 'New objective' notice: the briefing names them. 'Secure the upper floor' is announced with 'New objective' when it becomes active; every goal says 'Objective complete' when done.",
+   "Extraction: held until trigger 1 has fired and every required goal has succeeded (\"goals\": true). The optional officer never holds it up.",
+   "The phone stays where the game puts it (an intel mission of Clean House). Only the cell phone fires trigger 1; the sim cards do not.",
+   "Failure: trigger 4 'Out of time' ends the mission as failed 15 minutes after the start, told at five minutes, one minute and ten seconds left. Everyone dead also ends it, as in the game. No respawn.",
+   "Upstairs outline as in clean_house_two_man_job.json: every recorded player position upstairs lies inside it, and the hold by everyone counted two players on 19 November (host's log). Enemies: five standing guards in the house, one of them the officer upstairs; nobody is moved by an order, so nothing here uses hunters or calling enemies (failing)."
+  ],
+  "briefing": [
+   "Clean House. Objectives: recover the phone (required); take down the officer upstairs (optional bonus).",
+   "Once you hold the phone, a second objective follows: hold the upstairs together.",
+   "The way out opens when both required objectives are done. Fifteen minutes."
+  ],
+  "triggers": [
+   {
+    "id": 1,
+    "name": "Phone taken",
+    "when": "intel",
+    "item": "Cell Phone",
+    "facePlayer": true,
+    "message": "Phone secured."
+   },
+   {
+    "id": 2,
+    "name": "Upstairs held",
+    "when": "hold",
+    "pos": [-21.5, 3.68, -2.0],
+    "radius": 10,
+    "area": {
+     "parts": [
+      {
+       "floor": [3.18, 6.28],
+       "outline": [
+        [-26.2, -19.9],
+        [-18.2, -19.9],
+        [-18.2, 2.6],
+        [-13.8, 2.6],
+        [-13.8, 10.4],
+        [-26.2, 10.4]
+       ]
+      }
+     ]
+    },
+    "hold": 30,
+    "everyone": true,
+    "facePlayer": true,
+    "message": "Upstairs held."
+   },
+   {
+    "id": 3,
+    "name": "Officer down",
+    "when": "down",
+    "tag": "officer",
+    "count": 0,
+    "facePlayer": true
+   },
+   {
+    "id": 4,
+    "name": "Out of time",
+    "when": "time",
+    "delay": 900,
+    "facePlayer": true,
+    "warn": true,
+    "red": true,
+    "message": "Out of time.",
+    "end": "failed"
+   }
+  ],
+  "goals": [
+   {
+    "id": "phone",
+    "name": "Recover the phone",
+    "succeed": 1
+   },
+   {
+    "id": "upper",
+    "name": "Secure the upper floor",
+    "after": [
+     "phone"
+    ],
+    "succeed": 2
+   },
+   {
+    "id": "officer",
+    "name": "Take down the officer",
+    "required": false,
+    "succeed": 3
+   }
+  ],
+  "extraction": {
+   "after": 1,
+   "goals": true
+  },
+  "spawns": [
+   {
+    "pos": [-15.0, 0.65, -6.0],
+    "role": "Guard",
+    "yaw": 90,
+    "indoor": true,
+    "defensive": true
+   },
+   {
+    "pos": [-18.0, 0.69, -17.0],
+    "role": "Guard",
+    "yaw": 180,
+    "indoor": true,
+    "defensive": false
+   },
+   {
+    "pos": [-19.0, 3.68, 4.0],
+    "role": "Guard",
+    "yaw": 180,
+    "indoor": true,
+    "defensive": true,
+    "tag": "officer"
+   },
+   {
+    "pos": [-24.0, 3.68, -15.0],
+    "role": "Guard",
+    "yaw": 0,
+    "indoor": true,
+    "defensive": true
+   },
+   {
+    "pos": [-21.0, -2.32, 6.0],
+    "role": "Guard",
+    "yaw": 180,
+    "indoor": true,
+    "defensive": true
+   }
+  ]
+ }
+}

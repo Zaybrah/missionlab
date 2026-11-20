@@ -24,6 +24,9 @@
  "envelope_without_mission.json": ["wrong-type mission"],
  "area_in_plan1.json": ["bad-area triggers[0].area"],
  "area_on_alert.json": ["bad-area triggers[0].area"],
+ "mission_in_plan1.json": ["wrong-type mission"],
+ "schema_in_mission.json": ["unknown-format mission.schema"],
+ "signed_version.json": ["unknown-format schema"],
  "bad_area.json": [
   "bad-area triggers[0].area.parts[0].floor", "bad-area triggers[0].area.parts[1].outline", "bad-area triggers[0].area.parts[2].outline",
   "bad-area triggers[0].area.parts[3].outline", "bad-area triggers[0].area.parts[4].outline", "bad-area triggers[0].area.parts[5].holes[0]",
@@ -66,5 +69,38 @@
   "missing-ref director.actions[4].fire",
   "wrong-type director.actions[5]",
   "wrong-type sealed"
+ ],
+ "dangling_place_link.json": ["missing-ref triggers[0].place"],
+ "place_in_plan2.json": ["bad-area triggers[0].place"],
+ "bad_place_links.json": [
+  "bad-area triggers[0].place", "bad-area triggers[1].place", "bad-area triggers[2].place", "wrong-type triggers[3].place",
+  "missing-ref triggers[4].place"
+ ],
+ "goals_in_plan2.json": ["unknown-format goals"],
+ "bad_goals.json": [
+  "wrong-type extraction.goals",
+  "missing-field goals[0].id",
+  "bad-id goals[1].id",
+  "duplicate-id goals[3].id", "missing-field goals[3].name", "self-ref goals[3].after[0]", "missing-ref goals[3].after[1]",
+  "missing-ref goals[4].activate", "missing-field goals[4].succeed", "missing-ref goals[4].fail",
+  "missing-ref goals[5].succeed",
+  "wrong-type goals[6].name", "wrong-type goals[6].required", "wrong-type goals[6].after", "wrong-type goals[6].activate",
+  "wrong-type goals[6].succeed", "wrong-type goals[6].fail", "wrong-type goals[6].notify",
+  "wrong-type goals[7]",
+  "wrong-type goals[8].id"
+ ],
+ "bad_outcomes.json": [
+  "missing-field triggers[1].after", "missing-ref triggers[2].after", "unknown-value triggers[3].outcome", "out-of-range triggers[4].within",
+  "wrong-type triggers[5].within", "wrong-type triggers[5].outcome",
+  "missing-field triggers[6].outcome"
+ ],
+ "bad_pressure.json": [
+  "unknown-value director.pressure.mode",
+  "out-of-range director.pressure.bands[0].from", "missing-ref director.pressure.bands[0].goals[1]", "wrong-type director.pressure.bands[0].goals[2]",
+  "out-of-range director.pressure.bands[0].minPlayers", "out-of-range director.pressure.bands[0].spend", "out-of-range director.pressure.bands[0].every",
+  "missing-field director.pressure.bands[1].name", "wrong-type director.pressure.bands[1].from", "wrong-type director.pressure.bands[1].goals",
+  "wrong-type director.pressure.bands[1].minPlayers", "wrong-type director.pressure.bands[1].spend", "out-of-range director.pressure.bands[1].every",
+  "wrong-type director.pressure.bands[2]",
+  "out-of-range director.pressure.maxEnemies", "out-of-range director.pressure.rest"
  ]
 }

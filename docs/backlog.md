@@ -952,3 +952,711 @@ All source links below refer to the reviewed v0.23 commit. The code findings are
 [S15]: https://github.com/Zaybrah/missionlab/blob/581c31634b922ae82a10e8a6e67114be396fc97e/src/MissionLab.Core/Generator.cs
 [S16]: https://github.com/Zaybrah/missionlab/blob/581c31634b922ae82a10e8a6e67114be396fc97e/src/MissionLab.Director/RandomExtras.cs
 
+
+## v0.27 milestone
+
+Added 20 November 2026 from the review of main at [7e54eb7](https://github.com/Zaybrah/missionlab/commit/7e54eb7e900a8fcbf90d285a1c74e2003ee83505) (Director and editor 0.26.1), dated 18 November 2026. The next release candidate is 0.27.0. These 26 tickets, ML-028 to ML-053, continue the numbering above; ML-001 to ML-027 are not reopened, only extended. They comprise 12 stabilisation and release tasks, six authoring improvements, four mission-design and session features and four optional later candidates.
+
+The aims: a dependable first session (install, play one supported mission with an unmodded friend, edit, save, restart, play the saved result); a complete house-authoring workflow (paint the rooms and floors once, reuse them, walk through and verify the boundaries); understandable mission logic (dependencies, outcomes, the first failed expectation); and repeatable squad sessions without accounts or arbitrary game-state restoration.
+
+The release gate is the actual supported workflow on one exact candidate, not a larger test count. If a capability stays failing, it comes out of the proven starter path and is labelled accordingly (ML-035, ML-037).
+
+**Priority and effort for these tickets.** P0, P1 and P2 as above; a deliberately reduced supported scope can close a P0 gate where a game capability proves unavailable. **S**, **M** as above; **L**: a new model or workflow spanning authoring, serialisation and execution; **Spike**: a bounded experiment ending with observed evidence and a proceed, change or defer decision. Effort is relative, not a calendar estimate. "Depends on" names completion dependencies: design, fixtures and acceptance-session preparation can start earlier. All boxes start unchecked; ticking one needs the evidence it names.
+
+**Order.** Start ML-028 first; ML-029 to ML-034 can then proceed largely independently. Run ML-035 with a fallback for the starter mission, then finish ML-036, ML-038, the co-op session ML-037 and the release package ML-039. For authoring, the connected path comes first: paint once, reuse the area, work on the right floor, walk through and verify, save and play (ML-045, ML-043, ML-040, ML-041, then ML-044; ML-042 read-only in parallel). Objectives and outcome branches follow once validation and execution agree. ML-050 to ML-053 are chosen after observing real use.
+
+Source: `missionlab-next-implementation-backlog.md` (18 November 2026). Its links point at commit 7e54eb7.
+
+### v0.27 A Stabilization and release
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-028 | Restore a trustworthy test entry point | P0 | S |
+| ML-029 | Align completion validation with trigger execution | P0 | M |
+| ML-030 | Release Game Master controls completely after a failure | P0 | S–M |
+| ML-031 | Repeat generated setups using the recorded inputs | P1 | M |
+| ML-032 | Make area gestures commit or cancel as one change | P0 | S–M |
+| ML-033 | Preserve user content during removal and updates | P0 | S |
+| ML-034 | Align structural schema validation with strict loading | P1 | S–M |
+| ML-035 | Resolve the fresh-enemy movement capability | P0 | Spike, then M–L if feasible |
+| ML-036 | Use one capability and verification registry | P1 | M |
+| ML-037 | Prove one complete host and unmodded-client workflow | P0 | M |
+| ML-038 | Add a small real-browser regression suite | P1 | M |
+| ML-039 | Ship a verified installation and first-edit path | P0 | M |
+
+### v0.27 B Authoring improvements
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-040 | Link triggers to reusable named room areas | P1 | M–L |
+| ML-041 | Organize the map by building room and floor | P1 | M |
+| ML-042 | Show the mission as a visual dependency graph | P1 | M for viewing; L for editing later |
+| ML-043 | Turn a map walkthrough into a saved mission test | P1 | M–L |
+| ML-044 | Guide authors through making a complete mission | P1 | M for the first recipe |
+| ML-045 | Add named undo and redo for mixed-object edits | P1 | M–L |
+
+### v0.27 C Mission design and squad sessions
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-046 | Make mission objectives explicit | P1 | M–L |
+| ML-047 | Allow branches to wait for observed action outcomes | P1 | M–L |
+| ML-048 | Run a unified mission validation matrix | P1 | M |
+| ML-049 | Save a squad-session playlist and presets | P2 | S–M |
+
+### v0.27 D Optional later candidates
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-050 | Assist wall tracing and suggest bounded rooms | P2 | M for snapping; L for room suggestions |
+| ML-051 | Build branching operations across missions | P2 | M–L |
+| ML-052 | Experiment with an author-bounded pressure director | P2 | Spike, then L if useful |
+| ML-053 | Expose a local draft-authoring API for coding agents | P2 | M |
+
+## v0.27 A Stabilization and release
+
+### ML-028 Restore a trustworthy test entry point
+
+**Priority:** P0 · **Effort:** S  
+**Depends on:** None  
+**Builds on:** ML-010 and ML-012
+
+The committed shell scripts are not executable, while CI invokes ./test.sh directly. This prevents the existing regression gate from starting on a clean Linux checkout.
+
+**Implement**
+
+- Commit executable flags for test.sh and build.sh, or consistently invoke the scripts through Bash in CI and documentation.
+- Run the existing asset-free C# and editor suites on the exact candidate commit. Mandatory CI checks must not silently become successful skipped checks when a prerequisite is absent.
+
+**Done when**
+
+- [ ] A clean Linux checkout executes the documented test command without manual chmod.
+- [ ] The workflow runs the C# suite, editor build consistency check and JavaScript suite, including the C# round-trip leg.
+- [ ] The actual workflow completes successfully on the candidate SHA; an older green commit is not accepted as current evidence.
+- [ ] The Windows build path documented for users remains accurate. Use the real workflow run as verification rather than adding a test that merely checks a file mode.
+
+**Current source:** [CI workflow](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/.github/workflows/test.yml#L6-L18)
+
+### ML-029 Align completion validation with trigger execution
+
+**Priority:** P0 · **Effort:** M  
+**Depends on:** ML-028  
+**Builds on:** ML-001 and ML-004
+
+Completion can accept an any dependency with an external reachable branch while the engine disables the same trigger as cyclic. Extraction can then remain held behind a trigger the engine never runs.
+
+**Implement**
+
+- Use one cycle classification or otherwise explicitly align the completion checker and runtime policy.
+- Keep the present policy that cyclic triggers are disabled for the first correction; supporting externally activated cycles is a separate design decision.
+- Preserve intentional Game Master endings and independent reachable extraction-opening alternatives.
+
+**Done when**
+
+- [ ] A fixture with 1:any[2,3], 2:after 1, 3:time 0 and extraction.after=1 is rejected before applying the mission under the existing cycle policy.
+- [ ] Permuting the trigger list does not change validation or execution outcomes.
+- [ ] An independent reachable trigger that opens extraction remains a valid alternative.
+- [ ] One regression case executes both Completion and the actual TriggerEngine against the same resolved scenario, including optional branches and a repeating prerequisite.
+
+**Current source:** [Completion reachability](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/Completion.cs#L45-L99) · [Trigger cycle detection and execution](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/TriggerEngine.cs#L153-L220)
+
+### ML-030 Release Game Master controls completely after a failure
+
+**Priority:** P0 · **Effort:** S–M  
+**Depends on:** ML-028  
+**Builds on:** ML-005
+
+LetGo clears camera/input state but leaves the active flag used by the Harmony input-block hook. The intended control release can therefore fail during rules backoff.
+
+**Implement**
+
+- Make one release operation clear every form of input ownership and close the active Game Master interaction.
+- Use that operation for guard degradation and mission cleanup. A recovered guard must not silently take input again.
+
+**Done when**
+
+- [ ] With Game Master open and key blocking enabled, failures before its key handler enter backoff and restore normal game input.
+- [ ] The Harmony hook permits the game's keys during the paused interval, and the mod-opened camera is released.
+- [ ] Retrying the rules subsystem does not recapture controls; explicitly reopening Game Master still works.
+- [ ] A focused automated ownership/hook test and a controlled game test record the same behavior. Other healthy subsystems remain usable.
+
+**Current source:** [Game Master input ownership and release](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/GameMaster.cs#L127-L252) · [Input hook and guarded update](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/DirectorPlugin.cs#L218-L262)
+
+### ML-031 Repeat generated setups using the recorded inputs
+
+**Priority:** P1 · **Effort:** M  
+**Depends on:** ML-028  
+**Builds on:** ML-008
+
+The generated-layout path ignores the selected run's recorded roll and chooses the configured or a new seed. The later comparison detects the resulting mismatch after the new setup has already been applied.
+
+**Implement**
+
+- Give a selected generated run's recorded seed precedence over the current random-seed setting.
+- Record and check the generator inputs needed to reproduce the setup, including map fingerprint, enemy count, relevant extras/settings and generator/plugin version.
+- Define repeat as reproducing the effective setup. Player actions, AI decisions and physics are outside that promise.
+
+**Done when**
+
+- [ ] A generated run made with configured seed 0 repeats the same effective positions and random extras under unchanged inputs.
+- [ ] A conflicting current configured seed does not override the explicitly selected run.
+- [ ] Changed map data or missing legacy inputs are reported before applying a purported exact repeat; proceeding as a new setup is a separate choice.
+- [ ] Refused/unreadable run records do not start a different mission under a repeat label. Authored-scenario repeats retain their existing behavior.
+
+**Current source:** [Generated seed selection and run comparison](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/Director.cs#L320-L428)
+
+### ML-032 Make area gestures commit or cancel as one change
+
+**Priority:** P0 · **Effort:** S–M  
+**Depends on:** ML-028  
+**Builds on:** ML-027 and ML-014
+
+Cancelling a vertex or whole-area drag can keep the modified geometry, skip change notification and leave the cached containment data stale.
+
+**Implement**
+
+- Keep a pre-gesture snapshot or separate draft geometry. Centralize commit and cancel for corner, midpoint and whole-area drags.
+- Use the same cancellation path for Escape, pointercancel, tool changes and leaving painting mode.
+- On a successful commit, rebuild geometry caches and notify draft/live staging once.
+
+**Done when**
+
+- [ ] Every cancellation route restores geometry and anchor position exactly, with no new completed undo entry or pending live edit.
+- [ ] Cached and freshly calculated membership agree after cancel and after commit, including the reproduced moved-corner case.
+- [ ] A completed drag creates one undoable change; undo restores all spatial state together.
+- [ ] Actual pointer/key-event tests cover midpoint insertion, a whole-area move, Escape and pointercancel, alongside a normal pointerup control.
+
+**Current source:** [Area gesture mutation and cancellation](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/27a-paint.js#L608-L665) · [Area union, height and cached membership](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/21a-area.js#L1-L78)
+
+### ML-033 Preserve user content during removal and updates
+
+**Priority:** P0 · **Effort:** S  
+**Depends on:** None  
+**Builds on:** ML-012
+
+The package's generated removal instructions delete the directory containing authored scenarios and recordings. The repository README already gives the safer plugin-only removal path.
+
+**Implement**
+
+- Make ordinary uninstall remove the plugin directory while preserving scenarios, modules, revisions, run records and replays.
+- Describe optional complete data removal separately and name the content it erases.
+- Check the documented update path against an installation containing authored content.
+
+**Done when**
+
+- [ ] The README inside a generated ZIP gives the same data-preserving instructions as the main README.
+- [ ] Following ordinary uninstall in a disposable installation stops the mod loading while retaining authored content.
+- [ ] Installing an update over a disposable existing installation preserves a custom scenario and its revisions.
+- [ ] Optional data removal is explicit and includes an export/backup step. Verify the packaged instructions directly; no brittle prose-string test is needed.
+
+**Current source:** [Package content and removal instructions](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/package.py#L24-L85)
+
+### ML-034 Align structural schema validation with strict loading
+
+**Priority:** P1 · **Effort:** S–M  
+**Depends on:** ML-028  
+**Builds on:** ML-007 and ML-027
+
+The published JSON Schema accepts a schema-less shaped trigger and an area on an alert trigger, while both strict readers reject those cases.
+
+**Implement**
+
+- Separate the reusable scenario-body schema from the root version/envelope rules.
+- Express the area version and trigger-kind constraints that JSON Schema can represent.
+- Keep topology, reference and rule checks explicitly assigned to the strict readers where the structural schema cannot express them.
+
+**Done when**
+
+- [ ] JSON Schema, the editor and C# reject shaped triggers in legacy/schema-less root scenarios.
+- [ ] All reject area on non-zone/non-hold trigger kinds.
+- [ ] All accept valid plan/2 envelopes whose mission body has no independent schema field.
+- [ ] CI runs structural fixtures through an actual JSON Schema validator and documents the separate semantic/geometry validation guarantees.
+
+**Current source:** [Published scenario schema](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/scenario.schema.json) · [Strict scenario version and area rules](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/ScenarioFile.cs#L73-L114)
+
+### ML-035 Resolve the fresh-enemy movement capability
+
+**Priority:** P0 · **Effort:** Spike, then M–L if feasible  
+**Depends on:** ML-030  
+**Builds on:** ML-003 and ML-020
+
+The current-position fix is present, but the latest game observations still show fresh hunters without a path. The introductory encounter currently relies on that movement.
+
+**Implement**
+
+- Reproduce one newly spawned enemy receiving a movement order, then investigate initialization, route assignment and game navigation state with bounded diagnostic logging.
+- Separate request accepted, path acquired and observable progress toward a destination.
+- End the spike with either a demonstrated supported order path or an explicit unsupported/failing status and an introductory encounter that uses proven behavior.
+
+**Done when**
+
+- [ ] A successful capability result includes a fresh enemy acquiring a path and visibly reaching a reachable destination in a repeatable game test.
+- [ ] Fixed sentries, unreachable destinations and an invalid floor give clear non-success outcomes rather than an accepted-command success label.
+- [ ] If no reliable approach is found, the feature remains marked failing/unsupported and the first mission no longer depends on it; the movement feature itself is not marked fixed.
+- [ ] Record the tested game/plugin/map context and retain a focused scenario for future game updates.
+
+**Current source:** [Recent game observations including failed fresh-enemy orders](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/findings.md#L284-L319) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522)
+
+### ML-036 Use one capability and verification registry
+
+**Priority:** P1 · **Effort:** M  
+**Depends on:** None  
+**Builds on:** ML-011 and ML-012
+
+The catalogue's tested boolean collapses never tried and tried-but-failing into the same label, while the README already knows the distinction.
+
+**Implement**
+
+- Create one small versioned local data source for supported, experimental/failing, untested and unavailable capabilities, with build/map/mode and solo/client evidence scope.
+- Use it in catalogue requirements, readiness and maintained status documentation.
+- Add scenario-specific checks for required map objectives and capabilities; reserve hard blocking for known incompatibilities or invalid setup.
+
+**Done when**
+
+- [ ] A scenario using fresh hunters displays the recorded failure state, not merely untested.
+- [ ] Solo evidence never implies an unmodded client has seen the result.
+- [ ] A scenario requiring a missing intel item or incompatible mode identifies the unmet requirement before launch.
+- [ ] Every evidence record identifies its build and context; newer builds do not silently inherit confirmed status. Intentional experimental use is an explicit, accurately labelled choice.
+
+**Current source:** [Current capability evidence set](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/Catalogue.cs#L24-L37) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522) · [Product users and first-host goal](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/PRODUCT.md#L7-L25)
+
+### ML-037 Prove one complete host and unmodded-client workflow
+
+**Priority:** P0 · **Effort:** M  
+**Depends on:** ML-029, ML-030, ML-031, ML-032, ML-035, ML-036, ML-038  
+**Builds on:** ML-011 and ML-027
+
+The current repository records recent solo tests, but the newest documented unmodded-client proof remains much older than the current feature set.
+
+**Implement**
+
+- Extend the existing acceptance mission and co-op record for one current release candidate, one supported map/mode and one unmodded client.
+- Observe both screens for messages, doors/collision, moved intel, extraction, delayed spawns and endings.
+- Include simultaneous deaths/shared waves, live shape edits, floor and stair transitions, crouching, stale/retried commands and cleanup across consecutive missions.
+
+**Done when**
+
+- [ ] The record identifies exact commit/build, game/BepInEx versions, scenario fingerprint, map/mode and host/client roles.
+- [ ] Each observation is passed, failed or untested; an RPC or host log alone is not recorded as client-visible success.
+- [ ] A client enters/exits the painted house while the garden, veranda, courtyard and unintended floors remain excluded; a held condition survives intended stair transitions.
+- [ ] Two consecutive missions do not inherit old trigger/input/queued-command state. A failed case is fixed and rerun or explicitly excluded from the supported release scope.
+
+**Current source:** [Prepared co-op acceptance record](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/coop-record.md) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md)
+
+### ML-038 Add a small real-browser regression suite
+
+**Priority:** P1 · **Effort:** M  
+**Depends on:** ML-028, ML-032  
+**Builds on:** ML-010, ML-014 and ML-027
+
+The extensive Node suite uses browser stubs. It cannot establish real pointer capture, keyboard interaction, layout or WebGL rendering behavior.
+
+**Implement**
+
+- Keep the current fast suite and add browser coverage for five high-value workflows using synthetic local map data.
+- Exercise scenario open/save, area draw/edit/cancel, mixed floor selection, draft/apply/retry, and switching between 2D and 3D.
+- Keep browser automation as development/CI tooling; the shipped editor stays offline and requires no new runtime package manager.
+
+**Done when**
+
+- [ ] Tests dispatch real pointer and keyboard interactions for cancellation and completed drawing.
+- [ ] Opening the distributed page and switching views produces no uncaught errors; a deterministic synthetic scene verifies 2D/3D coordinate alignment.
+- [ ] A controlled local API fixture covers stale-session rejection, a pending command and one deduplicated retry without inventing game success.
+- [ ] The exact-head CI result distinguishes browser, core and stubbed-editor checks; no game-derived map assets are committed as fixtures.
+
+**Current source:** [Existing editor test harness](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tests/editor/run.mjs) · [Existing three-dimensional area volumes](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/25-view3d.js#L307-L327)
+
+### ML-039 Ship a verified installation and first-edit path
+
+**Priority:** P0 · **Effort:** M  
+**Depends on:** ML-028, ML-029, ML-030, ML-031, ML-032, ML-033, ML-034, ML-035, ML-036, ML-037, ML-038  
+**Builds on:** ML-012 and ML-020
+
+The package builder now exists. A dependable release additionally needs real plugin compilation, clean-install verification and a first mission whose advertised behavior has been observed.
+
+**Implement**
+
+- Build Director and Recon against the supported game's references and produce one package from the verified commit.
+- Align installation prerequisites, the packaged README and first-edit walkthrough, including BepInEx setup.
+- Use a proven starter encounter, preserve existing user data and publish the package with its exact support scope.
+
+**Done when**
+
+- [ ] The exact candidate passes automated gates, both real plugin builds and package verification.
+- [ ] A first-time host can install, play the supported mission, change one encounter, save, restart and run the saved result with an unmodded friend.
+- [ ] The tutorial promises only behavior observed on the candidate; experimental movement is not essential to its success.
+- [ ] The release has a version/commit, package checksum, concise known limitations and the current verification record. Source-only build machinery is not counted as a delivered release.
+
+**Current source:** [Package content and removal instructions](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/package.py#L24-L85) · [Prepared co-op acceptance record](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/coop-record.md) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522) · [Product users and first-host goal](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/PRODUCT.md#L7-L25)
+
+## v0.27 B Authoring improvements
+
+### ML-040 Link triggers to reusable named room areas
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-032, ML-034, ML-045  
+**Builds on:** Extends ML-018, ML-019 and ML-027
+
+Named Places and painted areas already exist, but the current module binding copies a Place's geometry. Several triggers that should mean the same house can drift into different footprints.
+
+**User goal:** Paint House interior once, then use it for arrival, everyone-inside and hold conditions.
+
+**Implement**
+
+- Add Copy area from Place and Link to Place as distinct authoring choices. Start with one linked shaped Place per zone/hold trigger.
+- Show all consumers before changing a linked area, and resolve references into validated runtime geometry.
+- Persist authoring links behind an appropriate version/capability boundary. Offer an explicit flattened export when independent copies are required for compatibility.
+
+**Done when**
+
+- [ ] Renaming a Place preserves links; editing its footprint updates every linked trigger in one editor transaction and one reviewed geometry revision.
+- [ ] Copied shapes remain independent; editing a linked trigger offers editing the source or detaching it.
+- [ ] Deleting a referenced Place requires retargeting or explicit detachment; dangling references cannot be saved as a valid mission.
+- [ ] Live application uses a consistent geometry snapshot for all dependants, resets affected unfinished occupancy/hold progress and preserves firing history according to the existing rule.
+- [ ] Save/reload preserves link semantics; readers that would silently lose them refuse the authored format. An explicit flattened export retains the exact effective shape.
+- [ ] Module insertion, duplication and encounter transforms require explicit binding for map-bound shared Places, or rebinding/detachment to copies. They never move a shared room accidentally; modules, packs, revisions and run records preserve or explicitly flatten the chosen semantics.
+
+**Current source:** [Existing Place-to-module geometry copying](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/29e-modules.js#L263-L280) · [Area union, height and cached membership](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/21a-area.js#L1-L78)
+
+### ML-041 Organize the map by building room and floor
+
+**Priority:** P1 · **Effort:** M  
+**Depends on:** ML-032, ML-034, ML-045  
+**Builds on:** Extends ML-018 and ML-027
+
+Height filtering and translucent volumes already exist. Authors still need a persistent workspace that makes overlapping floors and stairs easy to select and inspect.
+
+**User goal:** Choose Upstairs bedroom and work there without accidentally moving an enemy directly below it.
+
+**Implement**
+
+- Add an outliner using named Places and author-defined building/floor groups, with focus, isolate, visibility and selection locks.
+- Add a local vertical section view showing area height bands, adjacent floors and an explicit player-foot sample.
+- Keep workspace display choices separate from the mission's actual geometry and behavior.
+
+**Done when**
+
+- [ ] Locked or ghosted floors cannot intercept edits in either 2D or 3D; an upstairs object cannot be moved through an ambiguous ground-floor selection.
+- [ ] Isolating a room never deletes or omits its hidden neighbors from export or runtime.
+- [ ] A stair path and touching/overlapping area bands can be inspected across floors, including unintended basement coverage.
+- [ ] Changing a floor preset or display ordering leaves stored geometry unchanged until an explicit Apply operation.
+- [ ] Workspace metadata restores for the matching map fingerprint; a changed map prompts review without silently reassigning floors.
+
+**Current source:** [Area union, height and cached membership](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/21a-area.js#L1-L78) · [Existing three-dimensional area volumes](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/25-view3d.js#L307-L327)
+
+### ML-042 Show the mission as a visual dependency graph
+
+**Priority:** P1 · **Effort:** M for viewing; L for editing later  
+**Depends on:** ML-029, ML-036  
+**Builds on:** Extends ML-015
+
+The inspector explains individual triggers and their relationships. A whole-mission graph would make branching, endings and non-spatial dependencies understandable at a glance.
+
+**User goal:** See what collecting the phone causes, which triggers can open extraction and why a branch is waiting.
+
+**Implement**
+
+- Start with a read-only graph derived from the existing trigger and inspector models: prerequisites, triggers, effects, extraction and ending nodes.
+- Display all/any, delay, chance exclusion and repeat/cooldown separately. Clicking a node opens the existing inspector and selects related map objects.
+- Overlay live or rehearsal status from the shared engine. Graph-edge editing is a later slice using the same validated editor commands.
+
+**Done when**
+
+- [ ] Every displayed dependency and effect corresponds to the actual scenario; the graph contains no independent evaluator.
+- [ ] Cycles and missing references highlight the exact affected nodes using existing findings.
+- [ ] Ever-fired history is visually distinct from current readiness, cooldown and action outcome.
+- [ ] Changing graph layout cannot change mission behavior, and sealed Play views do not reveal hidden branches.
+- [ ] The initial graph works with existing scenario files; editing requires ML-045 and uses the same validation path as forms.
+
+**Current source:** [Trigger cycle detection and execution](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/TriggerEngine.cs#L153-L220) · [Existing trigger relationship inspector](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/29c-inspect.js#L107-L135)
+
+### ML-043 Turn a map walkthrough into a saved mission test
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-029, ML-032, ML-034, ML-038  
+**Builds on:** Extends ML-016 and ML-027
+
+Rehearsal already runs Core rules. Authors need a spatial way to supply its inputs and inspect the first event where a mission differs from their intent.
+
+**User goal:** Walk a test squad through the front door, upstairs and into the garden; save the expectation that only the house counts.
+
+**Implement**
+
+- Add an inside/outside probe with explicit position and height, identifying the matching area part, excluded hole or failed floor bound.
+- Let authors place timed paths for one or more test players and inject known events such as intel pickup, a door opening or death.
+- Convert the walkthrough into the existing rehearsal format. Add previous/next event, before/after state and jump-to-first-failed-expectation controls.
+- Allow a recorded player track as input while requiring author-supplied events where the recording has no evidence.
+
+**Done when**
+
+- [ ] Boundary probing agrees with the shared fixtures, including hole edges, exact height limits and legacy circles.
+- [ ] Sample positions, times and interpolation are explicit; narrow crossings are sampled or checked under a documented policy rather than assumed continuous.
+- [ ] Saved tests cover doorway entry, courtyard/garden exclusion, stair continuity and two living players in different parts of one union.
+- [ ] Execution results come from the actual Core rehearsal evaluator through the current local service; offline authoring can export a trace without claiming it ran.
+- [ ] The trace identifies the first divergence after editing a trigger or area and distinguishes rule results from unmodelled combat, navigation and client presentation.
+
+**Current source:** [Area union, height and cached membership](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/21a-area.js#L1-L78) · [Existing rehearsal implementation](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/29d-rehearse.js)
+
+### ML-044 Guide authors through making a complete mission
+
+**Priority:** P1 · **Effort:** M for the first recipe  
+**Depends on:** ML-035, ML-036, ML-039  
+**Builds on:** Extends ML-019, ML-020 and ML-022
+
+Modules reuse an encounter and Quick mission generates a layout. A first-time host still has to assemble a complete goal, progression, ending and briefing.
+
+**User goal:** Choose Intel raid or Hold a room, select locations and difficulty, and receive a complete editable mission.
+
+**Implement**
+
+- Deliver one recipe first on the proven map/mode: choose insertion, supported objective, named/painted areas, encounter modules and pressure options.
+- Generate ordinary scenario data, a concise briefing, a clear completion/failure path and a saved rehearsal trace.
+- Add a second recipe only after a new author completes the first successfully. Use confirmed reinforcement behavior rather than depending on unresolved hunters.
+
+**Done when**
+
+- [ ] A first-time author completes the recipe without editing JSON or consulting the schema.
+- [ ] Missing required map objects or unsupported capabilities are explained before generation.
+- [ ] The result passes strict loading, completion checks and its saved rehearsal; it saves and reopens without changing behavior.
+- [ ] All generated elements remain editable in the normal editor, with understandable names and no opaque recipe-only runtime.
+- [ ] The supplied example is played with an unmodded client; estimated duration and difficulty remain author estimates until measured.
+
+**Current source:** [Product users and first-host goal](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/PRODUCT.md#L7-L25) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522)
+
+### ML-045 Add named undo and redo for mixed-object edits
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-032, ML-034, ML-038  
+**Builds on:** Extends ML-014 and existing undo/squad operations
+
+Snapshot undo exists, but the new spatial and graph workflows need consistent grouped edits, redo and clear recovery boundaries.
+
+**User goal:** Move a whole encounter, see exactly what changed, and undo or redo it without losing routes, areas or references.
+
+**Implement**
+
+- Introduce a small common editor transaction lifecycle and a named history list with Undo/Redo.
+- Initially support a bounded set of mixed selections: authored enemies, their routes, triggers and shaped Places transformed around one pivot.
+- Build on existing drafts/revisions for recovery; do not introduce another independent persistence system.
+
+**Done when**
+
+- [ ] One completed command creates one history entry and restores geometry, anchors, references and caches together on undo/redo.
+- [ ] A new command after Undo clears the redo branch; cancellation creates no completed entry.
+- [ ] Bulk edits preview affected objects and reject unsupported operations before committing; map-bound doors are rebound or flagged rather than blindly moved.
+- [ ] Replacing the scenario or switching to an incompatible session explicitly resets/rebases history without applying it to another mission.
+- [ ] Undoing local authorship never claims to rewind fired triggers, spawned game objects or completed player actions. Already-applied live changes need a new reviewed compensating edit.
+
+**Current source:** [Area gesture mutation and cancellation](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/27a-paint.js#L608-L665) · [Existing snapshot undo](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/27-editing.js#L1-L9)
+
+## v0.27 C Mission design and squad sessions
+
+### ML-046 Make mission objectives explicit
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-029, ML-034, ML-036, ML-043  
+**Builds on:** Extends triggers, endings and briefings
+
+Authors can encode progression with triggers, but there is no dedicated progression model that tells the host which player goals are active, completed or blocking the ending.
+
+**User goal:** Recover the phone, secure the upper floor, then extract, with an optional power-cut objective.
+
+**Implement**
+
+- Add stable objective IDs and inactive, active, succeeded and failed states, distinct from the existing intel-object placement model.
+- Drive transitions through existing rule observations and distinguish required goals from optional ones.
+- Provide a host-browser objective board, rehearsal/replay transitions and existing game notices where verified. Begin with preset transitions rather than arbitrary scripting.
+
+**Done when**
+
+- [ ] Completing the phone objective activates the next goal exactly once; repeated inputs do not duplicate transitions or messages.
+- [ ] An optional failure does not block required success unless the author explicitly makes it a prerequisite.
+- [ ] Conflicting terminal transitions in one evaluation step have a documented deterministic rule, and missing/cyclic required references are rejected.
+- [ ] Extraction and success conditions explain which required goals remain, using the same model in preflight and execution.
+- [ ] Clients need no mod for the supported notices. A custom persistent native client HUD is outside the initial scope and is not advertised.
+- [ ] Unrevealed Play shows only the intended player-facing goals; inactive/future objectives and hidden branches remain concealed until the existing reveal policy permits them.
+
+**Current source:** [Completion reachability](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/Completion.cs#L45-L99) · [Trigger cycle detection and execution](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/TriggerEngine.cs#L153-L220) · [Current supported and experimental capability table](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/README.md#L476-L522)
+
+### ML-047 Allow branches to wait for observed action outcomes
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-029, ML-030, ML-034, ML-036, ML-037, ML-043  
+**Builds on:** Extends ML-006 and ML-015
+
+The engine records action outcomes, but ordinary after/all/any conditions mean that another trigger fired. Authors need an optional way to wait until its intended effect actually happened.
+
+**User goal:** Start the defense countdown when the reinforcement spawn is observed; take a fallback branch if it fails.
+
+**Implement**
+
+- Add outcome predicates for a specific action invocation, keeping existing fired-history semantics unchanged.
+- Start with effects for which a reliable host-side observation can be implemented, such as identifying the requested spawned objects. Establish observability before adding each action type.
+- Model pending, observed success, failure, partial/unconfirmed and timeout explicitly; support an authored fallback and bounded retry only where safe.
+
+**Done when**
+
+- [ ] A trigger that fired but whose action failed cannot satisfy a success predicate.
+- [ ] Repeated firings have distinct invocation IDs; a late result from an older invocation or mission cannot satisfy the current one.
+- [ ] Timeout does not imply that an effect never happened. Late completion is reconciled and retries cannot duplicate a possibly applied effect.
+- [ ] Partial success and mission shutdown produce deterministic terminal/fallback behavior that is visible in rehearsal, inspector and replay.
+- [ ] Accepted calls and host-observed effects remain distinct from client-visible proof. Unsupported observations stay unconfirmed.
+
+**Current source:** [Current trigger outcome reporting](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/TriggerEngine.cs#L306-L315) · [Runtime effect outcome classification](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/GameMaster.cs#L1190-L1227)
+
+### ML-048 Run a unified mission validation matrix
+
+**Priority:** P1 · **Effort:** M  
+**Depends on:** ML-028, ML-029, ML-031, ML-034, ML-043  
+**Builds on:** Extends ML-016, ML-022 and ML-023
+
+Option validation, scatter sweeps and saved rehearsals already exist. Authors need one report connecting those checks to the scenario and revision they intend to publish.
+
+**User goal:** Check this mission for one, two and four players, all selected host options and a bounded set of seeds before inviting the squad.
+
+**Implement**
+
+- Combine existing format, completion, option/scatter sweeps and saved author assertions into one selectable validation run.
+- Record scenario/resolved hashes, map fingerprint, evaluator version, seed set, player counts, chosen options and actual coverage.
+- Save the first failing combination and its trace as a reproducible counterexample; show affected triggers/areas in the editor.
+
+**Done when**
+
+- [ ] A deliberately broken combination is reported with the exact seed, options, squad size and failed expectation needed to reproduce it.
+- [ ] The report states exhaustive versus sampled coverage and the number of combinations actually executed, with a work budget and cancellation.
+- [ ] Unchanged inputs produce the same results; changed source or map data marks previous results stale.
+- [ ] Logic checks can run on synthetic data, while map-dependent checks clearly require the matching locally available map.
+- [ ] A green report certifies only the checks performed; it does not claim combat balance, navigation or multiplayer correctness.
+
+**Current source:** [Existing rehearsal implementation](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/29d-rehearse.js) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md)
+
+### ML-049 Save a squad-session playlist and presets
+
+**Priority:** P2 · **Effort:** S–M  
+**Depends on:** ML-031, ML-036, ML-039  
+**Builds on:** Extends catalogue, options and run records
+
+The catalogue selects one mission and packs move content. Regular hosts need to organize a whole evening without repeatedly reconstructing scenario choices and seed settings.
+
+**User goal:** Queue a warm-up, a quiet raid and a defense, each with the intended squad settings and retry policy.
+
+**Implement**
+
+- Create a local ordered playlist that pins scenario identity/revision, host options, expected squad size and seed policy.
+- Support new roll, repeat an exact setup and retry the previous failed setup as distinct choices.
+- After a run, show the recorded outcome and the next entry; keep the game's ordinary lobby/map-start flow.
+
+**Done when**
+
+- [ ] Restarting the browser or game preserves the agenda and the selected next entry.
+- [ ] Each entry selects its pinned scenario/options and tells the host which base-game map/mode to choose.
+- [ ] A missing or changed revision requires an explicit resolution instead of silently selecting current content.
+- [ ] Unknown or interrupted endings remain unknown/incomplete; a host override is labelled as a manual result.
+- [ ] Completing the same run record twice does not advance two entries. Automatic map switching is not required.
+
+**Current source:** [Generated seed selection and run comparison](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/Director.cs#L320-L428) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md)
+
+## v0.27 D Optional later candidates
+
+### ML-050 Assist wall tracing and suggest bounded rooms
+
+**Priority:** P2 · **Effort:** M for snapping; L for room suggestions  
+**Depends on:** ML-032, ML-034, ML-041, ML-045  
+**Builds on:** Extends ML-027
+
+Manual painting works, but tracing the same house boundary accurately takes time. Assistance should reduce that effort while preserving the author's control over what counts as inside.
+
+**User goal:** Click in the kitchen, add a doorway barrier and preview a room outline that excludes the garden.
+
+**Implement**
+
+- First offer optional vertex/edge snapping to candidate wall edges in a selected height slice when matching local geometry is available.
+- Then spike Suggest this room using a bounded working region and author-drawn doorway barriers.
+- Show the result as editable draft geometry. Navigation connectivity alone is not evidence of a room boundary.
+
+**Done when**
+
+- [ ] Missing or mismatched local geometry disables assistance clearly while leaving manual painting available.
+- [ ] Every proposed snap/fill is previewed and can be rejected without changing the authored area or live mission.
+- [ ] An open exterior door and a stairwell do not silently flood-fill the outdoors or another floor; leaks/uncertainty are shown and bounded.
+- [ ] Accepted geometry retains holes and follows the same topology, complexity and simplification limits as manual areas.
+- [ ] The spike records which kinds of rooms it handles and where it fails; manual correction is part of the supported workflow.
+
+**Current source:** [Area union, height and cached membership](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/21a-area.js#L1-L78) · [Existing three-dimensional area volumes](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/tools/editor/src/25-view3d.js#L307-L327)
+
+### ML-051 Build branching operations across missions
+
+**Priority:** P2 · **Effort:** M–L  
+**Depends on:** ML-046, ML-049  
+**Builds on:** New progression layer over scenarios
+
+A short chain of existing scenarios can give a squad continuity and consequences without requiring arbitrary in-mission save/restore.
+
+**User goal:** Recover the phone in mission one to unlock the quiet approach in mission two; otherwise play the fallback mission.
+
+**Implement**
+
+- Start with a local two- or three-mission operation and explicit branches on recorded objective/end results.
+- Persist operation identity, scenario fingerprints, completed run IDs, choices and the next node only at mission boundaries.
+- Use atomic saves with a recoverable previous version and the normal host-controlled lobby transition.
+
+**Done when**
+
+- [ ] Restarting between missions preserves progress and the intended next setup.
+- [ ] An interrupted mission remains incomplete and can retry its recorded setup without duplicating progression.
+- [ ] Duplicate completion events advance once; unknown game outcomes require an explicit host decision rather than fabricated success.
+- [ ] Missing or changed scenarios produce a clear retarget/restart choice with existing progress preserved.
+- [ ] No promise is made to restore arbitrary NPC state, inventory, navigation, physics or network objects mid-mission.
+
+### ML-052 Experiment with an author-bounded pressure director
+
+**Priority:** P2 · **Effort:** Spike, then L if useful  
+**Depends on:** ML-035, ML-036, ML-037, ML-046, ML-047, ML-048  
+**Builds on:** Extends ML-025 budgets and action cards
+
+Existing cards and budgets can become a constrained pacing aid, but an automatic director must respect authored completion, known visibility limits and uncertain game behavior.
+
+**User goal:** When the squad progresses quickly, spend a limited budget on one approved reinforcement event; leave recovery time after casualties.
+
+**Implement**
+
+- Prototype simple authored pressure bands using only trustworthy observations such as elapsed time, active goals and observed living players.
+- Choose from explicitly approved encounters/cards with budget, cooldown, concurrent-enemy and location constraints.
+- Provide an understandable decision log, preview mode, manual override and off switch. All decisions remain host authoritative.
+
+**Done when**
+
+- [ ] The director cannot invent encounters, alter required completion rules or exceed the author's budget/caps.
+- [ ] Every choice and rejection explains which observed input and constraint caused it, and records the decision for later inspection.
+- [ ] Spawn-location checks use the supported distance/visibility policy and state any approximation; they do not promise perfect off-screen placement.
+- [ ] Unknown observations and failed/unconfirmed actions produce the documented fallback without duplicate spending or spawns.
+- [ ] A small playtest compares the proposed pacing against the same authored mission with the director off. Ship only if it improves that experience; seed alone is not claimed to reproduce player-dependent decisions.
+
+**Current source:** [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md) · [Current trigger outcome reporting](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Core/TriggerEngine.cs#L306-L315) · [Runtime effect outcome classification](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/src/MissionLab.Director/GameMaster.cs#L1190-L1227)
+
+### ML-053 Expose a local draft-authoring API for coding agents
+
+**Priority:** P2 · **Effort:** M  
+**Depends on:** ML-034, ML-036, ML-038, ML-045, ML-046, ML-048  
+**Builds on:** Extends the local editor API and schema
+
+A coding assistant can help assemble and test scenarios if it uses the same schema, validation and change-review path as the editor.
+
+**User goal:** Ask an assistant to make Upstairs a 30-second hold after the phone is collected, then review the proposed mission diff.
+
+**Implement**
+
+- Expose a small local tool surface for reading a scenario and named Places, inspecting capabilities, proposing a draft patch and running existing checks/rehearsals.
+- Use stable IDs, an expected revision and validated structured operations; a thin adapter can connect the chosen coding-agent tool protocol.
+- Keep the first version focused on draft authoring. Live Game Master actions require a separately designed, explicitly authorized host workflow.
+- Keep loopback binding and the existing request protections; an agent adapter must not bypass session, revision or command validation.
+
+**Done when**
+
+- [ ] The agent's output opens as a reviewable draft diff and never changes the running mission as a side effect of generation or validation.
+- [ ] Invalid references, unsupported capabilities and stale revisions are rejected through the same rules as the editor.
+- [ ] A proposed area/objective edit can be accepted as one undoable transaction and exported through the normal format path.
+- [ ] Returned tool data is bounded to the chosen scenario/metadata; local game assets are not automatically uploaded or packaged.
+- [ ] A scripted agent-client example creates and validates one supported encounter without any agent-specific alternate mission semantics.
+
+**Current source:** [Published scenario schema](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/scenario.schema.json) · [Product users and first-host goal](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/PRODUCT.md#L7-L25) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md)

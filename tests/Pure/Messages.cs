@@ -61,5 +61,18 @@ static class Messages
             for (int i = 0; i < 8; i++) full.Offer("m" + i, false, 0f);
             check("an ending never waits longer than the cap", full.EndAt(0f) == MessageQueue.MostWait, full.EndAt(0f).ToString());
         }
+        {   // A repeat that brings nobody back and does nothing else shows no message (the co-op run, 19 November).
+            MissionPlan p = MissionPlan.FromJson("{\"triggers\":[{\"id\":7,\"when\":\"time\",\"repeat\":60,\"message\":\"More of them.\"}," +
+                "{\"id\":8,\"when\":\"time\",\"repeat\":60,\"power\":\"off\",\"message\":\"The power is cut again.\"}," +
+                "{\"id\":9,\"when\":\"time\",\"repeat\":60,\"doors\":[{\"pos\":[1,0,1],\"locked\":true}],\"message\":\"The door is locked again.\"}]," +
+                "\"spawns\":[{\"pos\":[0,0,0],\"trigger\":7}]}");
+            TriggerPlan waves = p.Triggers[0], power = p.Triggers[1], door = p.Triggers[2];
+            check("a repeat with nobody back and nothing else to do leaves its message out", TriggerPlan.MessageLeftOut(waves, true, true, 0), "");
+            check("a repeat that brings one back shows it", !TriggerPlan.MessageLeftOut(waves, true, true, 1), "");
+            check("the first firing always shows it", !TriggerPlan.MessageLeftOut(waves, false, true, 0), "");
+            check("a repeat of a trigger without enemies of its own (a reminder) shows it", !TriggerPlan.MessageLeftOut(waves, true, false, 0), "");
+            check("a repeat that cuts the power shows it, enemies or not", !TriggerPlan.MessageLeftOut(power, true, true, 0), "");
+            check("a repeat that sets a door shows it, enemies or not", !TriggerPlan.MessageLeftOut(door, true, true, 0), "");
+        }
     }
 }

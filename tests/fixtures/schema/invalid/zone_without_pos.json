@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/1", "triggers": [ { "id": 1, "radius": 4 } ], "spawns": [ { "pos": [0, 0, 0] } ] }

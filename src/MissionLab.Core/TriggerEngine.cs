@@ -35,9 +35,28 @@ namespace MissionLab.Core
         public int Told;                 // countdown steps already told, as bits
         public bool ByHand;              // its last firing was by hand
         public string Shape = "";        // zone and hold: the place as last read (TriggerEngine.ShapeOf); a moved or reshaped place starts its count again
-        public string Outcome = "";      // what became of its last firing's actions: "", applied, failed or unconfirmed (told by the runtime through Report)
+        public string Outcome = "";      // what became of its last firing's actions: "", applied, failed, partial or unconfirmed (told by the runtime through Report)
         public string OutcomeWhy = "";
+        public readonly List<Invocation> Invocations = new List<Invocation>();   // every firing this mission, numbered from 1 (Fires is the latest)
+        public int Watched;              // an outcome trigger: the firing of the trigger it watches that it was last met by (0: none yet)
+        public string Late = "";         // the last report that came too late to count, in words ("": none)
         public bool EverFired => Fires > 0;
+        public Invocation Latest => Invocations.Count > 0 ? Invocations[Invocations.Count - 1] : null;
+    }
+
+    /// <summary>
+    /// One firing of a trigger, and what the runtime said became of its actions. Number is the trigger's Fires count at that
+    /// firing, so a report names the firing it is about and an answer for an older one cannot pass for the latest.
+    /// </summary>
+    public sealed class Invocation
+    {
+        public int Number;
+        public float FiredAt;
+        public bool ByHand;
+        public string Outcome = "";      // "" until reported: applied, failed, partial or unconfirmed
+        public string Why = "";
+        public bool TimedOut;            // an outcome trigger waiting for "timeout" was met by it: no report came in time
+        public bool Late;                // its report came after a newer firing, or after the timeout: recorded, never acted on
     }
 
     /// <summary>Where one trigger stands and why, in words a mission author can act on. Made by TriggerEngine.Explain.</summary>
@@ -53,6 +72,9 @@ namespace MissionLab.Core
         public List<int> Excluded = new List<int>();    // triggers it waits for that sat this mission out
         public int Inside = -1, Alive = -1;             // zone and hold: living players inside, and alive (-1: not asked)
         public string Outcome = "", OutcomeWhy = "";
+        public int Invocation;                          // its latest firing's number (0: it has not fired)
+        public List<int> Pending = new List<int>();     // its firings whose outcome is still to be told, oldest first
+        public string Late = "";                        // the last report that came too late to count ("": none)
     }
 
     public struct TriggerEvent
@@ -64,6 +86,7 @@ namespace MissionLab.Core
         public float Left;               // Warn: seconds until it fires
         public bool Again;               // Fire: it had fired before
         public bool ByHand;
+        public int Invocation;           // Fire: which firing of the trigger this is, from 1
     }
 
     /// <summary>
@@ -80,8 +103,13 @@ namespace MissionLab.Core
     /// - A zone or hold whose place changes during a mission (moved, resized, reshaped, everyone switched) loses only its
     ///   unfinished progress: a wait not yet over, a hold under way, the place it was set off from and the countdown steps told.
     ///   Its history (how often it fired, when, latched, armed again at) stays, because a moved place does not undo a firing.
-    /// - The runtime tells the engine what became of a firing's actions (Report). A firing counts whatever that outcome is;
-    ///   the outcome is only there to tell "it fired but its actions failed" apart from "its condition is not met".
+    /// - The runtime tells the engine what became of each firing's actions (Report), naming the firing (its invocation, from 1).
+    ///   A firing counts whatever that outcome is. Ordinary "after", "all" and "any" never look at outcomes.
+    /// - An "outcome" trigger watches the latest firing of its "after" trigger and is met once per such firing: when its report
+    ///   is the outcome it asks for, or, for "timeout", when no report at all (unconfirmed counts as one) came within "within"
+    ///   seconds of the firing. A report for an older firing, or one that comes after a timeout was met, is recorded as late
+    ///   and never meets anything; nothing is retried. A later report for the same firing replaces the earlier one.
+    /// - At the mission's end (Close), every firing still waiting for its report is failed, "the mission ended".
     /// - Explain says where a trigger stands and why, in one sentence. It only reads: asking never changes a trigger.
     /// - The order of the list does not matter: a trigger is always looked at after the ones it waits for.
     /// </summary>
@@ -146,38 +174,81 @@ namespace MissionLab.Core
 
         private static IEnumerable<int> Needs(TriggerPlan t)
         {
-            if (t.When == TriggerPlan.OnAfter && t.After != 0) yield return t.After;
+            if ((t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome) && t.After != 0) yield return t.After;
             if (t.When == TriggerPlan.OnAll || t.When == TriggerPlan.OnAny) foreach (int id in t.Of) yield return id;
         }
 
-        // Those a trigger waits for come first. Circles are found on the way.
+        /// <summary>
+        /// The triggers that wait for each other in a circle, one group per circle, each group and the list sorted by number.
+        /// The groups are the strongly connected parts over "after", "all" and "any", so the answer does not depend on the
+        /// order of the list; a trigger that waits for itself is a circle of one. A trigger in a circle never fires, whatever
+        /// other way out its "any" list has: the completion check and the engine both ask here, so they cannot disagree.
+        /// A second trigger with the same number is ignored, as Sync does.
+        /// </summary>
+        public static List<List<int>> Rings(IList<TriggerPlan> triggers)
+        {
+            var byId = new Dictionary<int, TriggerPlan>();
+            foreach (TriggerPlan t in triggers) if (!byId.ContainsKey(t.Id)) byId[t.Id] = t;
+            var ids = new List<int>(byId.Keys);
+            ids.Sort();
+            // Tarjan's walk. Neighbours are taken sorted, so the walk itself is the same for every order of the list.
+            var index = new Dictionary<int, int>();
+            var low = new Dictionary<int, int>();
+            var onStack = new HashSet<int>();
+            var stack = new Stack<int>();
+            var rings = new List<List<int>>();
+            int next = 0;
+            void Visit(int id)
+            {
+                index[id] = next; low[id] = next; next++;
+                stack.Push(id); onStack.Add(id);
+                bool self = false;
+                var needs = new List<int>();
+                foreach (int need in Needs(byId[id])) if (byId.ContainsKey(need)) needs.Add(need);
+                needs.Sort();
+                foreach (int need in needs)
+                {
+                    if (need == id) self = true;
+                    if (!index.ContainsKey(need)) { Visit(need); low[id] = Math.Min(low[id], low[need]); }
+                    else if (onStack.Contains(need)) low[id] = Math.Min(low[id], index[need]);
+                }
+                if (low[id] != index[id]) return;
+                var ring = new List<int>();
+                int popped;
+                do { popped = stack.Pop(); onStack.Remove(popped); ring.Add(popped); } while (popped != id);
+                if (ring.Count > 1 || self) { ring.Sort(); rings.Add(ring); }
+            }
+            foreach (int id in ids) if (!index.ContainsKey(id)) Visit(id);
+            rings.Sort((a, b) => a[0].CompareTo(b[0]));
+            return rings;
+        }
+
+        /// <summary>Every trigger that stands in a circle (see Rings).</summary>
+        public static HashSet<int> Circles(IList<TriggerPlan> triggers)
+        {
+            var all = new HashSet<int>();
+            foreach (List<int> ring in Rings(triggers)) foreach (int id in ring) all.Add(id);
+            return all;
+        }
+
+        // Those a trigger waits for come first. Circles come from Rings, the same for every order of the list.
         private void Order(IList<TriggerPlan> triggers)
         {
             _order = new List<TriggerPlan>(); _circle.Clear(); Problems.Clear();
-            var mark = new Dictionary<int, int>();                   // 1: being visited, 2: done
-            var path = new List<int>();
+            foreach (List<int> ring in Rings(triggers))
+            {
+                foreach (int id in ring) _circle.Add(id);
+                Problems.Add(ring.Count == 1 ? "trigger " + ring[0] + " waits for itself and can never fire"
+                                             : "triggers " + string.Join(", ", ring) + " wait for each other in a circle and can never fire");
+            }
+            var mark = new HashSet<int>();
             void Visit(TriggerPlan t)
             {
-                if (mark.TryGetValue(t.Id, out int m))
-                {
-                    if (m == 1)
-                    {
-                        int from = path.IndexOf(t.Id);
-                        var ring = path.GetRange(from, path.Count - from);
-                        bool fresh = false;
-                        foreach (int id in ring) fresh |= _circle.Add(id);
-                        if (fresh) Problems.Add(ring.Count == 1 ? "trigger " + ring[0] + " waits for itself and can never fire"
-                                                                 : "triggers " + string.Join(", ", ring) + " wait for each other in a circle and can never fire");
-                    }
-                    return;
-                }
-                mark[t.Id] = 1; path.Add(t.Id);
+                if (!mark.Add(t.Id)) return;
                 foreach (int need in Needs(t)) if (_byId.TryGetValue(need, out TriggerPlan other)) Visit(other);
-                path.RemoveAt(path.Count - 1); mark[t.Id] = 2;
                 _order.Add(t);
             }
-            var done = new HashSet<int>();
-            foreach (TriggerPlan t in triggers) if (done.Add(t.Id)) Visit(t);
+            foreach (TriggerPlan t in triggers) if (_byId.TryGetValue(t.Id, out TriggerPlan first) && ReferenceEquals(first, t)) Visit(t);
         }
 
         public bool Known(int id) => _byId.ContainsKey(id);
@@ -213,6 +284,7 @@ namespace MissionLab.Core
                         case TriggerPlan.OnIntel: yes = world.IntelTaken(t.Item); break;
                         case TriggerPlan.OnTime: yes = true; break;
                         case TriggerPlan.OnAfter: yes = t.After != 0 && t.After != t.Id && EverFired(t.After); break;
+                        case TriggerPlan.OnOutcome: yes = OutcomeMet(t, s, now); break;
                         case TriggerPlan.OnHold: yes = Held(t, s, now, world, out where); break;
                         case TriggerPlan.OnDown: yes = world.Down(t.Count, t.Tag ?? ""); break;
                         case TriggerPlan.OnDoor: yes = world.DoorOpen(t.Pos); break;
@@ -261,9 +333,37 @@ namespace MissionLab.Core
         private static void DoFire(TriggerPlan t, TriggerState s, float now, List<TriggerEvent> events, bool byHand)
         {
             s.Fires++; s.LastFiredAt = now; s.Latched = true; s.ByHand = byHand; s.Outcome = ""; s.OutcomeWhy = "";   // this firing's outcome is still to be told
+            s.Invocations.Add(new Invocation { Number = s.Fires, FiredAt = now, ByHand = byHand });
             s.RearmAt = t.Repeat > 0f && (t.Times <= 0 || s.Fires < t.Times) ? now + t.Repeat : (float?)null;
             s.MetAt ??= now;
-            events.Add(new TriggerEvent { Kind = TriggerEvent.Fire, Id = t.Id, Again = s.Fires > 1, ByHand = byHand });
+            events.Add(new TriggerEvent { Kind = TriggerEvent.Fire, Id = t.Id, Again = s.Fires > 1, ByHand = byHand, Invocation = s.Fires });
+        }
+
+        // An outcome trigger: has the latest firing of the trigger it watches come to what it asks for? Met once per firing,
+        // so a repeat waits for the next one. Met by a timeout, the firing is marked, so that a report after it is seen as late.
+        private bool OutcomeMet(TriggerPlan t, TriggerState s, float now)
+        {
+            if (t.After == 0 || t.After == t.Id || !_state.TryGetValue(t.After, out TriggerState w)) return false;
+            Invocation last = w.Latest;
+            if (last == null || last.Number == s.Watched) return false;
+            bool met = t.Outcome == TriggerPlan.Timeout ? last.Outcome == "" && now - last.FiredAt >= t.Within
+                                                       : last.Outcome != "" && !last.Late && last.Outcome == t.Outcome;
+            if (!met) return false;
+            s.Watched = last.Number;
+            if (t.Outcome == TriggerPlan.Timeout) last.TimedOut = true;
+            return true;
+        }
+
+        /// <summary>
+        /// What one firing's actions came to, as the runtime saw them: an error (other than an enemy not made) fails it; enemies
+        /// not made fail it when none of that firing's were made, and make it partial when some were; a part that cannot be seen
+        /// to take makes it unconfirmed; otherwise it applied.
+        /// </summary>
+        public static string Classify(int made, int missed, bool failed, bool unsure)
+        {
+            if (failed || (missed > 0 && made == 0)) return Failed;
+            if (missed > 0) return Partial;
+            return unsure ? Unconfirmed : Applied;
         }
 
         /// <summary>
@@ -303,16 +403,54 @@ namespace MissionLab.Core
             return Waiting;
         }
 
-        public const string Applied = "applied", Failed = "failed", Unconfirmed = "unconfirmed";
+        public const string Applied = TriggerPlan.Applied, Failed = TriggerPlan.Failed, Partial = TriggerPlan.Partial, Unconfirmed = TriggerPlan.Unconfirmed;
+        public const string MissionEnded = "the mission ended";
 
         /// <summary>
-        /// The runtime says what became of a trigger's last firing: applied, failed (why says what) or unconfirmed (the call was
-        /// made, but whether it took cannot be seen). The firing counts either way. An unknown trigger is ignored.
+        /// The runtime says what became of a trigger's last firing: applied, failed (why says what), partial or unconfirmed (the
+        /// call was made, but whether it took cannot be seen). The firing counts either way. An unknown trigger is ignored.
         /// </summary>
-        public void Report(int id, string outcome, string why)
+        public Invocation Report(int id, string outcome, string why) => Report(id, Fires(id), outcome, why);
+
+        /// <summary>
+        /// The runtime says what became of one firing (invocation, from 1) of a trigger. A report for a firing older than the
+        /// latest, or one that comes after an outcome trigger timed out waiting for it, is kept as late: it is shown, never acted
+        /// on. Returns the firing, or null when there is no such trigger or firing.
+        /// </summary>
+        public Invocation Report(int id, int invocation, string outcome, string why)
         {
-            if (!_state.TryGetValue(id, out TriggerState s)) return;
-            s.Outcome = outcome ?? ""; s.OutcomeWhy = why ?? "";
+            if (!_state.TryGetValue(id, out TriggerState s) || invocation < 1 || invocation > s.Invocations.Count) return null;
+            Invocation inv = s.Invocations[invocation - 1];
+            inv.Outcome = outcome ?? ""; inv.Why = why ?? "";
+            bool older = invocation != s.Fires;
+            inv.Late = older || inv.TimedOut;
+            if (inv.Late)
+                s.Late = "late: " + (older ? "firing " + invocation + " " + inv.Outcome + " after firing " + s.Fires + " had begun" : inv.Outcome + " after the timeout");
+            if (!older) { s.Outcome = inv.Outcome; s.OutcomeWhy = inv.Why; }
+            return inv;
+        }
+
+        /// <summary>
+        /// The mission is over: every firing still waiting for its report is failed with why, by trigger number and then by
+        /// firing, so that the same mission always ends the same way. Returns them as (trigger, firing).
+        /// </summary>
+        public List<KeyValuePair<int, int>> Close(string why = MissionEnded)
+        {
+            var closed = new List<KeyValuePair<int, int>>();
+            var ids = new List<int>(_state.Keys);
+            ids.Sort();
+            foreach (int id in ids)
+            {
+                TriggerState s = _state[id];
+                foreach (Invocation inv in s.Invocations)
+                {
+                    if (inv.Outcome != "") continue;
+                    inv.Outcome = Failed; inv.Why = why;
+                    if (inv.Number == s.Fires) { s.Outcome = Failed; s.OutcomeWhy = why; }
+                    closed.Add(new KeyValuePair<int, int>(id, inv.Number));
+                }
+            }
+            return closed;
         }
 
         /// <summary>
@@ -325,21 +463,25 @@ namespace MissionLab.Core
             v.Phase = Phase(t, now, out float left);
             v.Left = left;
             _state.TryGetValue(t.Id, out TriggerState s);
-            if (s != null) { v.Fires = s.Fires; v.Outcome = s.Outcome; v.OutcomeWhy = s.OutcomeWhy; }
+            if (s != null)
+            {
+                v.Fires = s.Fires; v.Outcome = s.Outcome; v.OutcomeWhy = s.OutcomeWhy; v.Invocation = s.Fires; v.Late = s.Late;
+                foreach (Invocation inv in s.Invocations) if (inv.Outcome == "") v.Pending.Add(inv.Number);
+            }
             foreach (int need in Needs(t))
             {
                 if (!EverFired(need) && !v.Waiting.Contains(need)) v.Waiting.Add(need);
                 if (_byId.TryGetValue(need, out TriggerPlan other) && other.Off && !v.Excluded.Contains(need)) v.Excluded.Add(need);
             }
             if (TriggerPlan.Placed(t.When) && world != null) { v.Inside = world.Inside(t, out int alive); v.Alive = alive; }
-            v.Why = WhyOf(t, s, v);
+            v.Why = WhyOf(t, s, v, now);
             return v;
         }
 
         // Whole seconds, rounded up, so that "1 s left" is said until it fires. The small margin keeps float noise from adding a second.
         private static int Secs(float f) => Math.Max(0, (int)Math.Ceiling(f - 0.01f));
 
-        private string WhyOf(TriggerPlan t, TriggerState s, TriggerView v)
+        private string WhyOf(TriggerPlan t, TriggerState s, TriggerView v, float now)
         {
             if (s == null) return "This trigger is not in the mission's list";
             switch (v.Phase)
@@ -387,6 +529,21 @@ namespace MissionLab.Core
                     if (v.Waiting.Count < t.Of.Count) return "Its condition is met; it fires at the next look";
                     if (v.Waiting.TrueForAll(Stuck)) return Need(v.Waiting[0]) + (v.Waiting.Count > 1 ? ", and none of the others in its list can fire either" : "");
                     return "Waiting for any of triggers " + string.Join(", ", v.Waiting);
+                case TriggerPlan.OnOutcome:
+                {
+                    if (t.After == 0) return "Watches no trigger and can never fire";
+                    if (v.Waiting.Count > 0) return Need(v.Waiting[0]);
+                    Invocation last = _state.TryGetValue(t.After, out TriggerState w) ? w.Latest : null;
+                    if (last == null) return Need(t.After);
+                    string firing = "firing " + last.Number + " of trigger " + t.After;
+                    if (last.Number == s.Watched) return "Already met by " + firing + "; waiting for its next firing";
+                    if (t.Outcome == TriggerPlan.Timeout)
+                        return last.Outcome == "" ? "Waiting " + Secs(last.FiredAt + t.Within - now) + " s more for an answer about " + firing
+                                                  : "The answer about " + firing + " came in time (" + last.Outcome + "); waiting for its next firing";
+                    if (last.Outcome == "") return "Waiting to hear what " + firing + " came to; it waits for " + t.Outcome;
+                    if (last.Late) return "The answer about " + firing + " came too late to count (" + last.Outcome + "); waiting for its next firing";
+                    return "Firing " + last.Number + " of trigger " + t.After + " came to " + last.Outcome + ", not " + t.Outcome + "; waiting for its next firing";
+                }
             }
             return "Waiting for its condition";
         }
@@ -409,6 +566,7 @@ namespace MissionLab.Core
         {
             if (s.Outcome == Failed) return ", but its actions failed" + (s.OutcomeWhy == "" ? "" : ": " + s.OutcomeWhy);
             if (s.Outcome == Unconfirmed) return "; whether its actions took could not be seen" + (s.OutcomeWhy == "" ? "" : ": " + s.OutcomeWhy);
+            if (s.Outcome == Partial) return ", but only part of its actions took" + (s.OutcomeWhy == "" ? "" : ": " + s.OutcomeWhy);
             return "";
         }
 

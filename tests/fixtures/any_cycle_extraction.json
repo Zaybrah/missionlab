@@ -1,0 +1,12 @@
+{
+ "schema": "missionlab-plan/1",
+ "name": "Fixture: the extraction waits for a trigger in a circle that has another way in",
+ "scene": "Fixture",
+ "extraction": { "after": 1 },
+ "triggers": [
+  { "id": 1, "name": "Either", "when": "any", "of": [2, 3] },
+  { "id": 2, "name": "Echo", "when": "after", "after": 1 },
+  { "id": 3, "name": "Clock", "when": "time", "delay": 0 }
+ ],
+ "spawns": [ { "pos": [0, 0, 0], "role": "Guard" } ]
+}

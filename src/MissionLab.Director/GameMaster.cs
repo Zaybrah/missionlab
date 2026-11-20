@@ -41,6 +41,7 @@ namespace MissionLab
             public float HuntAt;        // below 0: sets off for the players once its enemy exists; above 0: at that time
             public string Command = ""; // the page's change that waits to hear whether this marker's enemy was made ("": none)
             public int Spawn = -1;      // its place in the plan's list of spawns when the mission began (-1: placed during the mission); kept through edits, for the recording
+            public float AskedYaw = float.NaN; // the facing its last spawn was given toward a player (NaN: its own), for the facing check
         }
         private sealed class LiveThing { public ThingPlan Plan; public GameObject Go; public bool Placed; }
         private static readonly List<LiveThing> _things = new List<LiveThing>();
@@ -101,8 +102,13 @@ namespace MissionLab
         private static bool _alerted;
         internal static bool HoldExtraction;      // read by the hook: the game may not open the extraction yet
         internal static bool ExtractionAsked;     // ...but it has tried to
+        private static bool _extracted;           // the game has finished the extraction: the players are out and the mission is won
+        private static bool _extractTrust;        // the game's "extracting" flag has been seen off in this mission, so an "on" belongs to it
         internal static int ForcedInfil = -1;     // read by the hook: the insertion every player gets (-1: their own choice)
         private static int _holdAfter;            // the trigger the extraction waits for
+        private static readonly GoalBook Board = new GoalBook();   // the mission's player goals (ML-046), stepped after the trigger engine
+        private static bool _holdGoals;           // the extraction also waits for every required goal
+        private static bool _goalsGate;           // the scenario says "extraction": {"goals": true}, told to the page even with no required goal
         private static string _insertion = "";
         private static WeatherPlan _weather = new WeatherPlan();
         private static string _power = "";
@@ -124,7 +130,10 @@ namespace MissionLab
         private static List<Marker> _markers;
         private static HashSet<SpawnPlan> _later;       // the mission layout's own typed enemies, spawned shortly after the start
         private static int _current = -1;
-        private static bool _active, _weOpenedCam;
+        // Whether the mode is open, whether the keys are taken and whether the free camera is ours all live in one
+        // place, so a single release gives every one of them back (see GiveBack).
+        private static readonly InputOwnership Own = new InputOwnership();
+        private static bool _active => Own.IsOpen;
         private static int _role, _stance, _type, _stay, _when, _group = -1;
         private static int _aiming = -1;                // marker whose facing follows the crosshair until the second click
         private static bool _aimOk; private static Vector3 _aim;
@@ -134,7 +143,7 @@ namespace MissionLab
         private static readonly List<KeyValuePair<Marker, float>> FacingChecks = new List<KeyValuePair<Marker, float>>();
 
         /// <summary>True while the game's own key binds must stay silent.</summary>
-        internal static bool BlockGameKeys => _active && DirectorPlugin.GmBlockKeys.Value;
+        internal static bool BlockGameKeys => Own.BlocksGameKeys(DirectorPlugin.GmBlockKeys.Value);
         private static string _savePath;
 
         private static readonly Queue<Batch> Pending = new Queue<Batch>();
@@ -163,6 +172,7 @@ namespace MissionLab
             try { Replay.Begin(sceneName, Director.CurrentNav != null ? Director.CurrentNav.SourceFile : "", plan != null ? plan.ToJson() : null); }
             catch (Exception e) { DirectorPlugin.L.LogWarning("the replay could not be started: " + e.Message); }
             if (plan == null) return;
+            DirectorPlugin.PatchExtractionDone();
             BeginBudget(plan);
             _weather = plan.Weather ?? new WeatherPlan();
             _power = plan.Power ?? ""; _skillAll = plan.Skill ?? ""; _nvgAll = plan.Nvg; _needsGm = plan.GameMaster; Wave.After = plan.RespawnAfter; Wave.Times = plan.RespawnTimes;
@@ -181,6 +191,13 @@ namespace MissionLab
                 _holdAfter = plan.ExtractionAfter; HoldExtraction = true;
                 DirectorPlugin.PatchExtraction();
                 DirectorPlugin.L.LogInfo("extraction: held back until trigger " + _holdAfter + " has fired");
+            }
+            Board.Sync(plan.Goals); _goalsGate = plan.ExtractionGoals;
+            if (plan.ExtractionGoals && plan.Goals.Exists(g => g.Required))
+            {
+                _holdGoals = true; HoldExtraction = true;
+                DirectorPlugin.PatchExtraction();
+                DirectorPlugin.L.LogInfo("extraction: held back until every required objective is complete (" + Board.Holding() + ")");
             }
             if (plan.Doors.Count > 0)
             {
@@ -206,17 +223,16 @@ namespace MissionLab
 
         private static void Reset()
         {
-            if (_weOpenedCam)
-                try { ScreenshotFreeCamera fc = FreeCam(); if (fc != null && fc.ToggledCam) fc.ToggleOffCamera(); } catch { }
-            _weOpenedCam = false;
-            if (_active) ReleaseInput();
-            _aiming = -1; _aimOk = false; FacingChecks.Clear();
+            GiveBack("the mission was cleaned up");
+            CloseFirings();
+            FacingChecks.Clear();
             _zones = new List<TriggerPlan>(); Engine.Reset(0f); _yawLogged = false;
             _wanted = new List<ObjectivePlan>(); _objectivesPlaced = false; Homes.Clear();
             _doorPlans = new List<DoorPlan>(); _doorList = null; _doorScanAt = 0f; _doorError = null;
             Items.Clear(); Taken.Clear(); _alerted = false; Known.Clear(); Crew.Clear(); Vehicles.Clear(); TryOuts.Reset(); EverAlive.Clear();
-            HoldExtraction = false; ExtractionAsked = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); Openings.Clear(); _title = ""; _briefing = new List<string>();
-            _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _active = false; _group = -1; _savePath = null;
+            HoldExtraction = false; ExtractionAsked = false; _extracted = false; _extractTrust = false; ForcedInfil = -1; _holdAfter = 0; _insertion = ""; _weather = new WeatherPlan(); _power = ""; _vehicleCheckAt = -1f; _noticeAt = -1f; _briefAt = -1f; BriefQueue.Clear(); _skillAll = ""; _nvgAll = false; _needsGm = false; Wave.After = 0f; Wave.Times = 0; Wave.Reset(); WaveDead.Clear(); Openings.Clear(); _title = ""; _briefing = new List<string>();
+            Board.Reset(); Board.Sync(null); _holdGoals = false; _goalsGate = false;
+            _raidPtr = IntPtr.Zero; _markers = null; _later = null; _current = -1; _group = -1; _savePath = null;
             Pending.Clear(); _running = null; _savedList = null; _savedCustom = null; _before = null; Firings.Clear(); ResetBudget();
         }
 
@@ -225,7 +241,11 @@ namespace MissionLab
             if (_raidPtr == IntPtr.Zero) return;
             RaidManager raid = RaidManager.singleton;
             GameManager gm = GameManager.instance;
-            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active) { Replay.End("the mission is over"); try { RunRecord.Finish(); } catch { } Reset(); Director.EndSession("the mission is over"); return; }
+            if (raid == null || gm == null || raid.Pointer != _raidPtr || !Mirror.NetworkServer.active)
+            {
+                string why = _extracted ? "the mission is over: the players have extracted" : "the mission is over";
+                Replay.End(why); try { RunRecord.Finish(Board.Goals.Count > 0 ? Board.StatesJson() : ""); } catch { } Reset(); Director.EndSession(why); return;
+            }
 
             Replay.Tick(raid, gm, now);
             TryOuts.Tick(Time.unscaledTime);
@@ -242,13 +262,25 @@ namespace MissionLab
 
         internal static string LastSaid = ""; internal static int SaidCount;
 
-        /// <summary>The mod lets go of what it holds in the game: the camera it opened and the input it took.</summary>
-        internal static void LetGo()
+        /// <summary>The mod lets go of everything it holds in the game (after the rules have failed): the mode, the camera, the keys.</summary>
+        internal static void LetGo(string reason)
         {
-            if (_weOpenedCam)
+            GiveBack(reason);
+        }
+
+        /// <summary>
+        /// The one release path: closes the mode and gives back the camera it opened, the keys it took and any placing
+        /// in progress. Only the host pressing the Game Master key opens it again; the rules recovering do not.
+        /// </summary>
+        private static void GiveBack(string reason)
+        {
+            ReleaseOrder order = Own.Release(reason);
+            if (order.Camera)
                 try { ScreenshotFreeCamera fc = FreeCam(); if (fc != null && fc.ToggledCam) fc.ToggleOffCamera(); } catch { }
-            _weOpenedCam = false;
-            if (_active) ReleaseInput();
+            if (_markers != null) CancelAiming();
+            _aiming = -1; _aimOk = false;
+            ReleaseInput();
+            if (order.Mode) DirectorPlugin.L.LogInfo("Game Master closed: " + reason);
         }
 
         /// <summary>What the page is told whether or not a mission runs: the session, each part's health, a refused scenario, recent changes.</summary>
@@ -405,7 +437,42 @@ namespace MissionLab
                     try { if (zones[i] != null) zones[i].canExtract = true; } catch { }
                 try { raid.RPC_CanExfil(); } catch { }
             }
+            // Which flag the game itself keeps for "you may extract" is not known: the zones' flag has been off after every call of
+            // its own switch so far (each run fell back on setting it), so the mission-wide one is logged too, for a run to tell.
+            try { GameManagerNetwork g = GameManagerNetwork.instance; if (g != null) how += "; the game's mission-wide flag is " + (g.canExtract ? "on" : "off"); } catch { }
             Tell("extraction is open (" + why + "; " + how + ")");
+        }
+
+        /// <summary>
+        /// Called by the hook when the game finishes the extraction: its own, or the one a success ending asked for. The players
+        /// are out and the mission is won. Their bodies go as a dead player's do, so from here nobody is counted as dead and no
+        /// trigger fires. A mission the mod is already ending keeps the ending it was given.
+        /// </summary>
+        internal static void GameExtracted()
+        {
+            if (_raidPtr == IntPtr.Zero || _extracted) return;
+            _extracted = true;
+            bool ours = TryOuts.Ending;
+            if (!ours) try { RunRecord.Ending("success"); } catch { }
+            string said = ours ? "the game completes the extraction the mission's ending asked for" : "the players have extracted: the game ends the mission as a success";
+            DirectorPlugin.L.LogInfo(said);
+            Replay.Event("note", said);
+        }
+
+        /// <summary>
+        /// Is the game taking the players out right now? Its flag is only believed once it has been seen off in this mission,
+        /// in case the game keeps it from the mission before.
+        /// </summary>
+        private static bool GameExtracting()
+        {
+            try
+            {
+                GameManagerNetwork g = GameManagerNetwork.instance;
+                if (g == null) return false;
+                if (!g.isExtracting) { _extractTrust = true; return false; }
+                return _extractTrust;
+            }
+            catch { return false; }
         }
 
         /// <summary>While a scenario holds the extraction back, an opening that slipped past the hook is undone.</summary>
@@ -414,6 +481,36 @@ namespace MissionLab
             var zones = raid.exfilZones;
             for (int i = 0; zones != null && i < zones.Count; i++)
                 try { if (zones[i] != null && zones[i].canExtract) { zones[i].canExtract = false; ExtractionAsked = true; } } catch { }
+        }
+
+        /// <summary>
+        /// Does the scenario's own rule still hold the extraction: its trigger has not fired, or (with "goals": true) a required
+        /// goal has not succeeded? A trigger that opens the extraction overrides both, as it always has.
+        /// </summary>
+        private static bool StillHeld() => (_holdAfter != 0 && !Engine.EverFired(_holdAfter)) || (_holdGoals && Board.Remaining(true).Count > 0);
+
+        /// <summary>
+        /// Moves the goals on after the trigger engine has looked (ML-046): each transition once, in the replay and the log, and
+        /// on every screen through the message queue when the goal says so. Releases an extraction that was waiting for them.
+        /// </summary>
+        private static void StepGoals(RaidManager raid, float now)
+        {
+            if (Board.Goals.Count == 0) return;
+            List<GoalEvent> moved = Board.Step(now - Engine.Start, Engine.EverFired);
+            foreach (GoalEvent e in moved)
+            {
+                string said = Board.Say(e);
+                DirectorPlugin.L.LogInfo(said);
+                try { Replay.Event("goal", said); } catch { }
+                string notice = GoalBook.Notice(Board.Find(e.Id), e, out bool red);
+                if (notice == null) continue;
+                try { DirectorPlugin.L.LogInfo("objective notice: " + TryOuts.Message(raid, notice, red)); }
+                catch (Exception ex) { DirectorPlugin.L.LogWarning("an objective notice could not be shown: " + ex.Message); }
+            }
+            if (moved.Count == 0 || !_holdGoals || !HoldExtraction || StillHeld()) return;
+            HoldExtraction = false;
+            if (ExtractionAsked) OpenExtraction(raid, "every required objective is complete");
+            else Tell("every required objective is complete: the extraction is no longer held");
         }
 
         private static string ApplyWeather()
@@ -447,7 +544,10 @@ namespace MissionLab
             var sb = new System.Text.StringBuilder(256);
             bool open = ExtractionOpen(raid);
             sb.Append(",\"extraction\":{\"after\":").Append(_holdAfter).Append(",\"held\":").Append(HoldExtraction ? "true" : "false").Append(",\"asked\":").Append(ExtractionAsked ? "true" : "false")
-              .Append(",\"open\":").Append(open ? "true" : "false").Append('}');
+              .Append(",\"open\":").Append(open ? "true" : "false");
+            // With "goals": true, which required goals the extraction still waits for, in the words Completion uses (ML-046).
+            if (_goalsGate) sb.Append(",\"goals\":true,\"waits\":").Append(Q(Board.Holding()));
+            sb.Append('}');
             sb.Append(",\"respawn\":{\"after\":").Append(Wave.After.ToString("0.##", Inv)).Append(",\"times\":").Append(Wave.Times).Append(",\"done\":").Append(Wave.Done)
               .Append(",\"state\":\"").Append(Wave.State).Append("\",\"left\":").Append(Wave.WavesLeft).Append(",\"in\":").Append(Wave.SecondsLeft(Time.unscaledTime).ToString("0", Inv))
               .Append(",\"error\":").Append(Q(Wave.Error)).Append('}');
@@ -768,8 +868,9 @@ namespace MissionLab
         /// <summary>Asks the engine which triggers fire now and which countdown lines are due, and does what they say.</summary>
         private static void CheckTriggers(RaidManager raid, GameManager gm, float now)
         {
-            // An ending is decided: nothing more fires (18 November: a timer fired 2 s after the mission was won).
-            if (TryOuts.Ending) return;
+            // An ending is decided, or the game has taken the players out: nothing more fires (18 November: a timer fired 2 s
+            // after the mission was won).
+            if (TryOuts.Ending || _extracted) return;
             Engine.Start = Director.HandledAt;                 // timers count from the start of the mission
             Asks.Raid = raid; Asks.Gm = gm; Asks.Now = now;
             foreach (TriggerEvent ev in Engine.Step(now, Asks))
@@ -789,6 +890,7 @@ namespace MissionLab
                 }
                 catch { }
             }
+            StepGoals(raid, now);
         }
 
         /// <summary>Have that many enemies gone down? 0 asks for every enemy there is, once there has been one.</summary>
@@ -880,8 +982,11 @@ namespace MissionLab
                     Vector3 to = TryOuts.NearestPlayer(from);
                     if (to == Vector3.zero) continue;
                     int sent = TryOuts.WalkTo(gm, to, 0f, new HashSet<IntPtr> { m.Bot }, true);
-                    DirectorPlugin.L.LogInfo("hunter: enemy #" + m.Id + (sent == 1 ? " sets off for the nearest player, " + (to - from).magnitude.ToString("0", Inv) + " m away" : " could not be sent"));
-                    if (sent == 1) Replay.Event("note", "hunter: an enemy sets off for the nearest player");
+                    string bad = TryOuts.LastWalk.GroundWhy;
+                    // Taken is not walking: fresh hunters took their orders and stood still (18 November). The "order N:" lines follow it.
+                    DirectorPlugin.L.LogInfo("hunter: enemy #" + m.Id + (sent == 1 ? " accepted an order to the nearest player, " + (to - from).magnitude.ToString("0", Inv) + " m away; not yet seen to move"
+                                                                       : " could not be sent" + (string.IsNullOrEmpty(bad) ? "" : ": " + bad)));
+                    if (sent == 1) Replay.Event("note", "hunter: an enemy accepted an order to the nearest player");
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("a hunter could not be sent: " + e.Message); }
             }
@@ -894,6 +999,11 @@ namespace MissionLab
         private static void RespawnRule(RaidManager raid, float now)
         {
             if (Wave.After <= 0f || now - Director.HandledAt < 20f) return;
+            // Players who extract lose their bodies as the dead do: on 19 November "2 dead" and a wave were announced on every
+            // screen as the squad left, as after every success ending before. While the game takes them out, once it has, or
+            // once an ending is decided, nobody is waiting for a wave. GameExtracting comes first so that it is asked every
+            // time: it must see the game's flag off before it believes an on.
+            if (GameExtracting() || _extracted || TryOuts.Ending) return;
             int dead = 0, back = 0;
             var players = PlayerMaster.AllPlayerMasters;
             for (int i = 0; players != null && i < players.Count; i++)
@@ -1090,8 +1200,8 @@ namespace MissionLab
             Enqueue(mine);
             // What became of this firing's actions, for the page's inspector (Engine.Report). Its enemies are only known to
             // exist once the spawner has answered, so a firing that brings any is told when the last of them settles (Landed).
-            var f = new Firing();
-            if (Firings.TryGetValue(t.Id, out Firing before)) foreach (Marker m in before.Waiting) f.Waiting.Add(m);   // fired again before the last lot was made
+            // Each firing is told on its own, by its number: enemies still on their way from an earlier one answer for that one.
+            var f = new Firing { Id = t.Id, Invocation = Math.Max(1, Engine.Fires(t.Id)) };
             foreach (Marker m in mine) if (m.Queued) f.Waiting.Add(m);
             if (t.Hunt && mine.Count > 0) { foreach (Marker m in mine) m.HuntAt = -1f; f.Unsure.Add("sending its enemies after the players"); }
             int doors = 0;
@@ -1121,11 +1231,16 @@ namespace MissionLab
             RaidManager raidNow = RaidManager.singleton;
             if (raidNow != null)
             {
+                // The trigger the extraction waited for has fired; with "goals": true it stays held until the required goals
+                // are complete too (StepGoals lets it go then).
                 bool wasHeld = HoldExtraction && t.Id == _holdAfter;
-                if (wasHeld) HoldExtraction = false;
-                bool opens = t.OpensExtraction || (wasHeld && ExtractionAsked);
+                bool goalsLeft = wasHeld && _holdGoals && Board.Remaining(true).Count > 0;
+                if (wasHeld && !goalsLeft) HoldExtraction = false;
+                bool released = wasHeld && !goalsLeft;
+                bool opens = t.OpensExtraction || (released && ExtractionAsked);
                 if (t.OpensExtraction) OpenExtraction(raidNow, TriggerName(t) + " opens it");
-                else if (wasHeld && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
+                else if (released && ExtractionAsked) OpenExtraction(raidNow, "it was waiting for " + TriggerName(t));
+                else if (goalsLeft) Tell(TriggerName(t) + " has fired, and " + Board.Holding());
                 try { if (opens && !ExtractionOpen(raidNow)) f.Fail("the extraction did not open"); } catch { }
             }
             else if (t.OpensExtraction) f.Fail("the mission was not found, so the extraction could not be opened");
@@ -1139,7 +1254,9 @@ namespace MissionLab
                     else if (!said.Contains("the game now says the power is " + t.Power)) f.Unsure.Add("the lights");     // the breaker boxes say what they were told: that is the effect seen
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the lights could not be set by " + TriggerName(t) + ": " + e.Message); f.Fail("the lights could not be set: " + e.Message); }
-            if (!string.IsNullOrEmpty(t.Message))
+            bool quiet = !string.IsNullOrEmpty(t.Message) && _markers != null && TriggerPlan.MessageLeftOut(t, again, _markers.Exists(m => m.Plan.Trigger == t.Id && !Special(m.Plan)), mine.Count);
+            if (quiet) more += ", its message is left out (none of its enemies is down, so nobody comes)";
+            else if (!string.IsNullOrEmpty(t.Message))
             {
                 if (raidNow == null) f.Fail("the mission was not found, so the message could not be shown");
                 else
@@ -1157,8 +1274,13 @@ namespace MissionLab
                     // from a painted area, which may lie outside it or in a hole), else the nearest player to nobody in particular.
                     Vector3 to = stood && who != Vector3.zero ? who : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : TryOuts.FirstPlayer();
                     int called = TryOuts.WalkTo(GameManager.instance, to, t.Rally, null);
-                    more += ", " + called + (called == 1 ? " enemy is called" : " enemies are called") + " there";
-                    f.Unsure.Add("calling " + called + (called == 1 ? " enemy" : " enemies"));
+                    string bad = TryOuts.LastWalk.GroundWhy;
+                    if (!string.IsNullOrEmpty(bad)) { more += ", nobody is called: " + bad; f.Fail("the call was not sent: " + bad); }
+                    else
+                    {
+                        more += ", " + called + (called == 1 ? " enemy accepts" : " enemies accept") + " the call there";
+                        f.Unsure.Add("a call accepted by " + called + (called == 1 ? " enemy" : " enemies") + ", not yet seen to move");
+                    }
                     Replay.Event("note", "called: " + TryOuts.LastWalk.Words());
                     DirectorPlugin.L.LogInfo("call by " + TriggerName(t) + ": " + TryOuts.LastWalk.Words());
                 }
@@ -1171,7 +1293,9 @@ namespace MissionLab
             string why = t.When == TriggerPlan.OnDoor ? "(a door is opened)" : t.When == TriggerPlan.OnAll ? "(all of triggers " + string.Join(", ", t.Of) + ")" : t.When == TriggerPlan.OnAny ? "(one of triggers " + string.Join(", ", t.Of) + ")" :
                          t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
                          t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
-                       : t.When == TriggerPlan.OnTime ? "(time)" : "(after trigger " + t.After + ")";
+                       : t.When == TriggerPlan.OnTime ? "(time)"
+                       : t.When == TriggerPlan.OnOutcome ? (t.Outcome == TriggerPlan.Timeout ? "(no answer from trigger " + t.After + " within " + t.Within.ToString("0.##", Inv) + " s)" : "(trigger " + t.After + " came to " + t.Outcome + ")")
+                       : "(after trigger " + t.After + ")";
             Vector3? fireAt = stood ? who : TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor ? new Vector3(t.Pos.X, t.Pos.Y, t.Pos.Z) : (Vector3?)null;
             Tell(TriggerName(t) + " " + why + ": " + mine.Count + (mine.Count == 1 ? " enemy appears" : " enemies appear") + (doors > 0 ? ", " + doors + (doors == 1 ? " door changes" : " doors change") : "") + more,
                  Replay.KindFire, fireAt, t.Id);
@@ -1183,34 +1307,44 @@ namespace MissionLab
                     if (said.Contains("was not found")) f.Fail(said); else f.Unsure.Add("ending the mission");
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("the mission could not be ended by " + TriggerName(t) + ": " + e.Message); f.Fail("the mission could not be ended: " + e.Message); }
-            if (f.Waiting.Count > 0) Firings[t.Id] = f;
-            else Told(t.Id, f);
+            if (f.Waiting.Count > 0) Firings.Add(f);
+            else Told(f);
         }
 
         /// <summary>
-        /// What one firing's actions came to, until it is told to the engine. Applied: every call went through and its effect
-        /// was seen (an enemy exists, the extraction is open, the breaker boxes say so). Unconfirmed: the calls went through,
-        /// but nothing here can see them take (a message, a door, an order to walk). Failed: the first call that threw or
-        /// was refused, which says more than any later one.
+        /// What one firing's actions came to, until it is told to the engine (TriggerEngine.Classify decides the word). Applied:
+        /// every call went through and its effect was seen (an enemy exists, the extraction is open, the breaker boxes say so).
+        /// Unconfirmed: the calls went through, but nothing here can see them take (a message, a door, an order to walk).
+        /// Partial: some of its enemies were made and some were not. Failed: the first call that threw or was refused, which says
+        /// more than any later one, or none of its enemies made.
         /// </summary>
         private sealed class Firing
         {
+            public int Id, Invocation;
             public readonly HashSet<Marker> Waiting = new HashSet<Marker>();   // its enemies the spawner has not answered for yet
-            public int Made;
-            public string Error = "";
+            public int Made, Missed;
+            public string Error = "", MissWhy = "";
             public readonly List<string> Unsure = new List<string>();
             public void Fail(string why) { if (Error.Length == 0) Error = why; }
         }
-        private static readonly Dictionary<int, Firing> Firings = new Dictionary<int, Firing>();
+        private static readonly List<Firing> Firings = new List<Firing>();
 
-        private static void Told(int id, Firing f)
+        private static void Told(Firing f)
         {
-            Firings.Remove(id);
+            Firings.Remove(f);
             try
             {
-                if (f.Error.Length > 0) Engine.Report(id, TriggerEngine.Failed, f.Error);
-                else if (f.Unsure.Count > 0) Engine.Report(id, TriggerEngine.Unconfirmed, "asked of the game, not seen to take: " + string.Join(", ", f.Unsure));
-                else Engine.Report(id, TriggerEngine.Applied, f.Made > 0 ? f.Made + (f.Made == 1 ? " enemy appeared" : " enemies appeared") : "");
+                string outcome = TriggerEngine.Classify(f.Made, f.Missed, f.Error.Length > 0, f.Unsure.Count > 0);
+                string why = outcome == TriggerEngine.Failed ? (f.Error.Length > 0 ? f.Error : f.MissWhy)
+                           : outcome == TriggerEngine.Partial ? f.Made + " of " + (f.Made + f.Missed) + " enemies appeared; " + f.MissWhy
+                           : outcome == TriggerEngine.Unconfirmed ? "asked of the game, not seen to take: " + string.Join(", ", f.Unsure)
+                           : f.Made > 0 ? f.Made + (f.Made == 1 ? " enemy appeared" : " enemies appeared") : "";
+                var told = Engine.Report(f.Id, f.Invocation, outcome, why);
+                TriggerState s = Engine.State(f.Id);
+                bool late = told != null && told.Late && s != null;
+                string said = "trigger " + f.Id + ", firing " + f.Invocation + ": " + (late ? s.Late : outcome) + (why.Length > 0 ? " (" + why + ")" : "");
+                if (late) DirectorPlugin.L.LogInfo(said + "; recorded only: it changes nothing now and nothing is tried again");
+                Replay.Event("note", said);
             }
             catch (Exception e) { DirectorPlugin.L.LogWarning("what became of a trigger's actions could not be kept: " + e.Message); }
         }
@@ -1219,12 +1353,33 @@ namespace MissionLab
         private static void Landed(Marker m, bool made, string why)
         {
             if (Firings.Count == 0) return;
-            foreach (KeyValuePair<int, Firing> p in new List<KeyValuePair<int, Firing>>(Firings))
+            foreach (Firing f in new List<Firing>(Firings))
             {
-                if (!p.Value.Waiting.Remove(m)) continue;
-                if (made) p.Value.Made++; else p.Value.Fail(why);
-                if (p.Value.Waiting.Count == 0) Told(p.Key, p.Value);
+                if (!f.Waiting.Remove(m)) continue;
+                if (made) f.Made++;
+                else { f.Missed++; if (f.MissWhy.Length == 0) f.MissWhy = why; }
+                if (f.Waiting.Count == 0) Told(f);
             }
+        }
+
+        /// <summary>
+        /// The mission is over: every firing still waiting to be told is failed, "the mission ended", in trigger and firing
+        /// order (TriggerEngine.Close), as the browser changes still queued are. A report that comes later would be for a
+        /// mission that is gone, and the engine is reset with it, so it can satisfy nothing.
+        /// </summary>
+        private static void CloseFirings()
+        {
+            Firings.Clear();
+            try
+            {
+                foreach (KeyValuePair<int, int> p in Engine.Close(TriggerEngine.MissionEnded))
+                {
+                    string said = "trigger " + p.Key + ", firing " + p.Value + ": failed (" + TriggerEngine.MissionEnded + ")";
+                    DirectorPlugin.L.LogInfo(said);
+                    Replay.Event("note", said);
+                }
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the firings still waiting could not be closed: " + e.Message); }
         }
 
         /// <summary>The Game Master sets a trigger off by hand.</summary>
@@ -1630,7 +1785,8 @@ namespace MissionLab
                     {
                         AgentController ac = b.agent;
                         string agentYaw = ac != null && ac.entityExists && ac.Agent != null ? ac.Agent.rotation.eulerAngles.y.ToString("0", Inv) : "none";
-                        DirectorPlugin.L.LogInfo("facing check: planned " + m.Plan.Yaw.ToString("0", Inv) + ", object " + b.transform.rotation.eulerAngles.y.ToString("0", Inv) +
+                        string asked = float.IsNaN(m.AskedYaw) ? "planned " + m.Plan.Yaw.ToString("0", Inv) : "asked " + m.AskedYaw.ToString("0", Inv) + " (toward a player; planned " + m.Plan.Yaw.ToString("0", Inv) + ")";
+                        DirectorPlugin.L.LogInfo("facing check: " + asked + ", object " + b.transform.rotation.eulerAngles.y.ToString("0", Inv) +
                                                  ", agent " + agentYaw + ", state " + b.CurrentState + ", fixed " + m.Plan.Fixed + ", prone " + m.Plan.Prone);
                     }
                     catch (Exception e) { DirectorPlugin.L.LogInfo("facing check failed: " + e.Message); }
@@ -1677,7 +1833,7 @@ namespace MissionLab
             {
                 var points = new List<GameObject>();
                 int n = 0;
-                foreach (Marker m in batch.Items) { points.Add(Director.BuildPoint(template, raid.transform, m.Plan, "ML gm " + (++n), m.FaceYaw)); m.FaceYaw = float.NaN; }
+                foreach (Marker m in batch.Items) { points.Add(Director.BuildPoint(template, raid.transform, m.Plan, "ML gm " + (++n), m.FaceYaw)); m.AskedYaw = m.FaceYaw; m.FaceYaw = float.NaN; }
                 list.Clear();
                 foreach (GameObject p in points) list.Add(p);
                 gm.botAmount = points.Count;
@@ -1778,7 +1934,7 @@ namespace MissionLab
             bool was = fc.ToggledCam;
             fc.ToggleFreeCamera();
             if (fc.ToggledCam == was) { if (was) fc.ToggleOffCamera(); else fc.ToggleOnCamera(); }     // the plain toggle did nothing: ask directly
-            _weOpenedCam = fc.ToggledCam;
+            Own.CameraSwitched(fc.ToggledCam);
             Camera c = fc.FreeCamera;
             Say("free camera " + (fc.ToggledCam ? "ON: fly with WASD and the mouse" : "off") + (fc.ToggledCam == was ? " (the game did not switch it)" : ""));
             DirectorPlugin.L.LogInfo("free camera: toggled " + was + " -> " + fc.ToggledCam + ", camera '" + (c != null ? c.name : "none") + "' enabled " + (c != null && c.isActiveAndEnabled) +
@@ -1834,7 +1990,7 @@ namespace MissionLab
         /// <summary>Keeps the game's own key binds silent while the mode is open.</summary>
         private static void HoldInput()
         {
-            if (!DirectorPlugin.GmBlockKeys.Value) return;
+            if (!Own.TakeInput(DirectorPlugin.GmBlockKeys.Value)) return;
             if (!_patchTried) { _patchTried = true; DirectorPlugin.PatchInputBlock(); }
             try
             {
@@ -1862,9 +2018,8 @@ namespace MissionLab
             if (Down(DirectorPlugin.KeyGm))
             {
                 if (!_active && now - Director.HandledAt < 4f) { Say("wait a few seconds until the mission has finished spawning"); return; }
-                _active = !_active;
-                if (_active) { EnsureMarkers(); MapBots(gm, null); Say("Game Master mode on. " + DirectorPlugin.KeyCam.Value + " switches the free camera."); }
-                else { CancelAiming(); ReleaseInput(); Say("Game Master mode off"); }
+                if (!_active) { Own.Open(); EnsureMarkers(); MapBots(gm, null); Say("Game Master mode on. " + DirectorPlugin.KeyCam.Value + " switches the free camera."); }
+                else { GiveBack("closed by the host"); Say("Game Master mode off"); }
             }
             if (!_active) return;
             HoldInput();
@@ -1960,7 +2115,7 @@ namespace MissionLab
             _current = _markers.Count - 1;
             if (atCrosshair)
             {
-                _aiming = _current;
+                _aiming = _current; Own.SetAiming(true);
                 Say("enemy #" + _markers.Count + ": now aim where it should look and click again (right click cancels)" + (!walkable ? ". Not walkable ground here, so it will stay put." : ""));
             }
             else Finish(_current, !walkable);
@@ -1968,14 +2123,14 @@ namespace MissionLab
 
         private static void ConfirmAiming()
         {
-            int i = _aiming; _aiming = -1;
+            int i = _aiming; _aiming = -1; Own.SetAiming(false);
             if (i >= 0 && i < _markers.Count) Finish(i, false);
         }
 
         private static void CancelAiming()
         {
             if (_aiming >= 0 && _aiming < _markers.Count) { _markers.RemoveAt(_aiming); if (_current >= _aiming) _current = -1; }
-            _aiming = -1;
+            _aiming = -1; Own.SetAiming(false);
         }
 
         private static void Finish(int index, bool offGround)
@@ -2111,7 +2266,7 @@ namespace MissionLab
         // for it, and only then is the placement checked and the trigger fired. Whatever is not fired in the end is refunded.
         // Each request, spend, refund, wait, cancel and firing is a replay event of kind "budget", so a debrief can explain it.
         private sealed class ActionWait { public ActionPlan Action; public string Key = "", Command = ""; public float Since, CheckAt; }
-        private sealed class ActionFired { public ActionPlan Action; public string Key = "", Command = ""; public float Since; }
+        private sealed class ActionFired { public ActionPlan Action; public string Key = "", Command = ""; public float Since; public int Invocation; }
         private static Budget _budget;                                                   // null: the scenario has no director block
         private static readonly List<ActionWait> ActionWaits = new List<ActionWait>();   // paid for, waiting for a safe moment
         private static readonly List<ActionFired> ActionsFired = new List<ActionFired>(); // fired, waiting to hear what the trigger's actions came to
@@ -2130,6 +2285,7 @@ namespace MissionLab
             _budget = plan != null && plan.Director != null ? new Budget(plan.Director, ActionTriggerWhy) : null;
             if (_budget != null) DirectorPlugin.L.LogInfo("director budget: " + _budget.Initial + " points, " + _budget.Regen + " a minute, " + _budget.Actions.Count + " action(s)");
             if (_budget != null && _budgetFree) BudgetEvent("budget mode off: the host chose free directing for this session; cards fire without spending");
+            BeginPressure(plan);
         }
 
         private static void ResetBudget()
@@ -2139,7 +2295,7 @@ namespace MissionLab
             foreach (ActionFired f in ActionsFired) SettleAction(f.Command, f.Action.Id, CommandLedger.Failed, "the mission ended before the game answered");
             ActionWaits.Clear(); ActionsFired.Clear();
             if (_budget != null) _budget.Reset();
-            _budget = null;
+            _budget = null; _pressure = null;
         }
 
         /// <summary>For the budget: "" when the trigger can be fired by hand now, else why not.</summary>
@@ -2159,6 +2315,7 @@ namespace MissionLab
         private static void SettleAction(string command, string actionId, string status, string said)
         {
             if (string.IsNullOrEmpty(command)) return;
+            if (_pressure != null) _pressure.Settle(command, status, said, BudgetClock);      // only the director's own waiting spend is taken
             try { LiveLink.Ledger.Settle(command, actionId, status, said); }
             catch (Exception e) { DirectorPlugin.L.LogWarning("the result of an action could not be updated: " + e.Message); }
         }
@@ -2275,7 +2432,7 @@ namespace MissionLab
                 return new CommandOp("action", a.Id, -1, CommandLedger.Failed, why + (back ? "; " + a.Cost.ToString(Inv) + " point(s) refunded" : ""));
             }
             BudgetEvent("fire '" + a.Id + "': trigger " + a.Fire.ToString(Inv));
-            var fired = new ActionFired { Action = a, Key = key, Command = command ?? "", Since = Time.unscaledTime };
+            var fired = new ActionFired { Action = a, Key = key, Command = command ?? "", Since = Time.unscaledTime, Invocation = Engine.Fires(a.Fire) };
             if (ActionAnswered(fired, out string status, out string said)) return new CommandOp("action", a.Id, -1, status, said);
             ActionsFired.Add(fired);
             return new CommandOp("action", a.Id, -1, CommandLedger.Pending, "trigger " + a.Fire.ToString(Inv) + " fired; waiting to see what it brings");
@@ -2285,17 +2442,21 @@ namespace MissionLab
         /// What the fired trigger's actions came to, once the engine has been told. Failed, or no answer within ActionAnswerLimit,
         /// is refunded: the points pay for an effect, not for asking. Unconfirmed (the call went through, the effect cannot be
         /// seen, such as a door or a message) stays paid, because otherwise an action made only of those would always be free.
+        /// Partial (some of its enemies came) stays paid too: part of the effect happened. The answer read is that of the firing
+        /// this action caused, so a later firing of the same trigger cannot answer for it.
         /// </summary>
         private static bool ActionAnswered(ActionFired f, out string status, out string said)
         {
             status = ""; said = "";
             TriggerState s = Engine.State(f.Action.Fire);
-            string outcome = s != null ? s.Outcome ?? "" : "";
-            if (outcome == TriggerEngine.Applied) { status = CommandLedger.Applied; said = s.OutcomeWhy; }
-            else if (outcome == TriggerEngine.Unconfirmed) { status = CommandLedger.Unconfirmed; said = s.OutcomeWhy; }
+            string outcome = "", told = "";
+            if (s != null && f.Invocation >= 1 && f.Invocation <= s.Invocations.Count) { outcome = s.Invocations[f.Invocation - 1].Outcome; told = s.Invocations[f.Invocation - 1].Why; }
+            if (outcome == TriggerEngine.Applied) { status = CommandLedger.Applied; said = told; }
+            else if (outcome == TriggerEngine.Partial) { status = CommandLedger.Applied; said = "only partly: " + told; }
+            else if (outcome == TriggerEngine.Unconfirmed) { status = CommandLedger.Unconfirmed; said = told; }
             else if (outcome == TriggerEngine.Failed || Time.unscaledTime - f.Since > ActionAnswerLimit)
             {
-                string why = outcome == TriggerEngine.Failed ? s.OutcomeWhy : "the game did not answer within " + ActionAnswerLimit.ToString("0", Inv) + " s";
+                string why = outcome == TriggerEngine.Failed ? told : "the game did not answer within " + ActionAnswerLimit.ToString("0", Inv) + " s";
                 bool back = _budget != null && _budget.Refund(f.Key);
                 BudgetEvent("refund '" + f.Action.Id + "': " + why);
                 status = CommandLedger.Failed; said = why + (back ? "; " + f.Action.Cost.ToString(Inv) + " point(s) refunded" : "");
@@ -2330,6 +2491,7 @@ namespace MissionLab
                 CommandOp op = FireAction(w.Action, w.Key, w.Command);
                 if (op.Status != CommandLedger.Pending) SettleAction(w.Command, w.Action.Id, op.Status, op.Said);
             }
+            PressureTick();
         }
 
         /// <summary>
@@ -2376,6 +2538,160 @@ namespace MissionLab
             catch { return true; }     // no answer: counts as seen
         }
 
+        // ------------------------------------------------------------------ pressure director (ML-052)
+        // An experiment in author-bounded pacing (Core PressureDirector). The host decides: the director only looks at what the
+        // host can see (time, active goals, living players and enemies) and plays the director block's own cards through
+        // ActionRequest with a command id of its own, so the budget, the placement check, refunds and the ledger are the cards'
+        // own. Every decision, hold and result is a replay event of kind "pressure". Off by default; the host can switch it.
+        private static PressureDirector _pressure;       // null: the scenario authors no pressure bounds, or has no budget
+        private static string _pressureHost = "";        // the host's mode for this game session ("": the author's), kept from mission to mission
+        private static float _pressureWatchAt;
+        private static bool _pressureWarned;
+
+        private static void BeginPressure(MissionPlan plan)
+        {
+            _pressure = _budget != null && plan != null && plan.Director != null && plan.Director.Pressure != null ? new PressureDirector(plan.Director.Pressure, _budget) : null;
+            _pressureWatchAt = 0f; _pressureWarned = false;
+            if (_pressure == null) return;
+            _pressure.Brings = PressureBrings; _pressure.Placement = ActionUnsafe; _pressure.Noted = PressureNoted;
+            DirectorPlugin.L.LogInfo("pressure director: " + plan.Director.Pressure.Bands.Count + " band(s), authored " + _pressure.RunMode + "; it plays only this mission's cards, through the budget");
+            if (_pressureHost.Length > 0) _pressure.SetMode(_pressureHost, 0f, true);
+        }
+
+        private static void PressureNoted(PressureDecision d)
+        {
+            string words = d.Words();
+            try { Replay.Event("pressure", words); } catch { }
+            DirectorPlugin.L.LogInfo("pressure director: " + words);
+        }
+
+        // The enemies still to come for the card's trigger: those bound to it that have not appeared or been queued. -1: not known.
+        private static int PressureBrings(ActionPlan a)
+        {
+            if (_markers == null) return -1;
+            int n = 0;
+            foreach (Marker m in _markers) if (m.Plan.Trigger == a.Fire && m.Waiting && !m.Queued) n++;
+            return n;
+        }
+
+        // A player counts as living while the game has a body for them, as the zone checks count them. -1: the list could not be read.
+        private static int LivingPlayers()
+        {
+            try
+            {
+                var players = PlayerMaster.AllPlayerMasters;
+                if (players == null) return -1;
+                int n = 0;
+                for (int i = 0; i < players.Count; i++) if (players[i] != null && players[i].PlayerSpawnedObject != null) n++;
+                return n;
+            }
+            catch { return -1; }
+        }
+
+        private static int LivingEnemies()
+        {
+            try
+            {
+                GameManager gm = GameManager.instance;
+                var ai = gm == null ? null : gm.allAI;
+                if (ai == null) return -1;
+                int n = 0;
+                for (int i = 0; i < ai.Count; i++) if (ai[i] != null) n++;
+                return n;
+            }
+            catch { return -1; }
+        }
+
+        private static PressureLook PressureLookNow(float now)
+        {
+            var look = new PressureLook { Elapsed = now, Players = LivingPlayers(), Enemies = LivingEnemies(), BudgetOff = _budgetFree };
+            try
+            {
+                var active = new List<string>();
+                foreach (GoalPlan g in Board.Goals) if (Board.State(g.Id) == GoalBook.Active) active.Add(g.Id);
+                look.ActiveGoals = active;
+            }
+            catch { look.ActiveGoals = null; }
+            return look;
+        }
+
+        /// <summary>Every frame from BudgetTick: the players are looked at twice a second (a casualty starts the rest), and a due decision is made.</summary>
+        private static void PressureTick()
+        {
+            if (_pressure == null) return;
+            try
+            {
+                float now = BudgetClock;
+                if (now >= _pressureWatchAt) { _pressureWatchAt = now + 0.5f; _pressure.Watch(now, LivingPlayers()); }
+                if (_pressure.Due(now)) PressureDecide(now, false);
+            }
+            catch (Exception e)
+            {
+                if (!_pressureWarned) DirectorPlugin.L.LogWarning("the pressure director could not decide (" + e.Message + "); the cards still work by hand");
+                _pressureWarned = true;
+            }
+        }
+
+        /// <summary>
+        /// One decision. A spend is played like the host's own press of the card, under the director's command id: paid, checked
+        /// for a safe spot, then fired, waited for or cancelled and refunded. Its result reaches the director through SettleAction,
+        /// or at once when the card path answered at once.
+        /// </summary>
+        private static PressureDecision PressureDecide(float now, bool manual)
+        {
+            PressureDecision d = _pressure.Decide(now, PressureLookNow(now), manual);
+            if (d.Kind != PressureDecision.Spend) return d;
+            var done = new Outcome();
+            try { ActionRequest("{\"id\":\"" + Guard.Esc(d.Action) + "\"}", d.Command, done); }
+            catch (Exception e)
+            {
+                bool back = _budget != null && _budget.Refund(d.Command);
+                _pressure.Settle(d.Command, CommandLedger.Failed, "the card could not be played: " + e.Message + (back ? "; refunded" : ""), BudgetClock);
+                return d;
+            }
+            CommandOp op = done.Ops.Find(o => o.Kind == "action");
+            if (op == null)
+            {
+                bool back = _budget != null && _budget.Refund(d.Command);
+                _pressure.Settle(d.Command, CommandLedger.Failed, "the card path gave no answer" + (back ? "; refunded" : ""), BudgetClock);
+            }
+            else if (op.Status != CommandLedger.Pending) _pressure.Settle(d.Command, op.Status, op.Said, BudgetClock);
+            return d;
+        }
+
+        /// <summary>
+        /// {"cmd":"pressure","what":"mode","arg":"off"|"preview"|"on"}: the host's mode for the session (also kept for later
+        /// missions); {"cmd":"pressure","what":"hold"}: no automatic spending for the author's rest; {"cmd":"pressure","what":"spend"}:
+        /// decide now, skipping the interval and the rest but never a bound. Manual choices are labelled in the log.
+        /// </summary>
+        private static void PressureRequest(string what, string arg, Outcome done)
+        {
+            if (what == "mode")
+            {
+                if (Array.IndexOf(PressurePlan.Modes, arg) < 0) { done.Add(new CommandOp("pressure", "mode", -1, CommandLedger.Failed, "say \"arg\": off, preview or on")); return; }
+                _pressureHost = arg;
+                if (_pressure != null) _pressure.SetMode(arg, BudgetClock, true);
+                done.Add(new CommandOp("pressure", "mode", -1, CommandLedger.Applied, "pressure director " + arg + (_pressure == null ? " (this mission has no pressure bands; the choice holds for later missions)" : "")));
+                return;
+            }
+            if (_pressure == null) { done.Add(new CommandOp("pressure", what ?? "", -1, CommandLedger.Failed, "this mission has no pressure director")); return; }
+            float now = BudgetClock;
+            if (what == "hold")
+            {
+                float held = _pressure.Hold(now);
+                done.Add(new CommandOp("pressure", "hold", -1, CommandLedger.Applied, "no automatic spending for " + held.ToString("0", Inv) + " s"));
+            }
+            else if (what == "spend")
+            {
+                if (_pressure.RunMode == PressurePlan.Off) { done.Add(new CommandOp("pressure", "spend", -1, CommandLedger.Failed, "the director is off: switch it to preview or on first")); return; }
+                PressureDecision d = PressureDecide(now, true);
+                // A spend is only asked of the card path here; what it came to follows in the director's log.
+                string status = d.Kind == PressureDecision.Hold ? CommandLedger.Failed : d.Kind == PressureDecision.Spend ? CommandLedger.Unconfirmed : CommandLedger.Applied;
+                done.Add(new CommandOp("pressure", "spend", -1, status, d.Words()));
+            }
+            else done.Add(new CommandOp("pressure", what ?? "", -1, CommandLedger.Failed, "say \"what\": mode, hold or spend"));
+        }
+
         // ------------------------------------------------------------------ browser editor (called by LiveLink on the game thread)
         private static bool MissionRunning(out RaidManager raid, out GameManager gm)
         {
@@ -2394,6 +2710,17 @@ namespace MissionLab
         private static string F(float f) => (float.IsNaN(f) || float.IsInfinity(f) ? 0f : (float)Math.Round(f, 2)).ToString(Inv);
         private static string P(Vector3 v) => "[" + F(v.x) + "," + F(v.y) + "," + F(v.z) + "]";
         private static string GeoFile(string nav) => Path.Combine(DirectorPlugin.BaseDir, "maps", Path.GetFileNameWithoutExtension(nav) + ".mlgeo");
+
+        // The named places the page last sent with its triggers (ML-040), for the mission they were sent in. Linked zones and
+        // holds take their shape from them; until the page sends some, the scenario's own places count.
+        private static List<PlacePlan> _livePlaces;
+        private static MissionPlan _livePlacesFor;
+        private static List<PlacePlan> LivePlaces()
+        {
+            MissionPlan cp = Director.CurrentPlan;
+            if (_livePlaces != null && _livePlacesFor == cp) return _livePlaces;
+            return cp != null ? cp.Places : new List<PlacePlan>();
+        }
 
         /// <summary>
         /// The state answer with what became of each part of the change, after the last state field:
@@ -2432,6 +2759,8 @@ namespace MissionLab
         /// {"phase":"cooling","left":12.5,"why":"Fired 2 of 3 times; armed again in 13 s","fires":2,"times":3,"waiting":[],"excluded":[],
         ///  "inside":-1,"alive":-1,"outcome":"unconfirmed","outcomeWhy":"asked of the game, not seen to take: a message"}
         /// inside and alive are -1 where they were not asked (not a zone or hold); outcome is "" until the runtime knows.
+        /// invocation: the latest firing's number (0: not fired); pending: its firings still waiting to be told; late: the last
+        /// report that came too late to count ("late: applied after the timeout"), shown only.
         /// </summary>
         private static string ExplainJson(TriggerView v)
         {
@@ -2442,7 +2771,10 @@ namespace MissionLab
             sb.Append("],\"excluded\":[");
             for (int k = 0; k < v.Excluded.Count; k++) sb.Append(k == 0 ? "" : ",").Append(v.Excluded[k].ToString(Inv));
             sb.Append("],\"inside\":").Append(v.Inside.ToString(Inv)).Append(",\"alive\":").Append(v.Alive.ToString(Inv))
-              .Append(",\"outcome\":\"").Append(Guard.Esc(v.Outcome)).Append("\",\"outcomeWhy\":\"").Append(Guard.Esc(v.OutcomeWhy)).Append("\"}");
+              .Append(",\"outcome\":\"").Append(Guard.Esc(v.Outcome)).Append("\",\"outcomeWhy\":\"").Append(Guard.Esc(v.OutcomeWhy))
+              .Append("\",\"invocation\":").Append(v.Invocation.ToString(Inv)).Append(",\"pending\":[");
+            for (int k = 0; k < v.Pending.Count; k++) sb.Append(k == 0 ? "" : ",").Append(v.Pending[k].ToString(Inv));
+            sb.Append("],\"late\":\"").Append(Guard.Esc(v.Late)).Append("\"}");
             return sb.ToString();
         }
 
@@ -2537,7 +2869,15 @@ namespace MissionLab
                 sb.Append('}');
                 rev.Append(_zones[i].Id).Append(phase[0]).Append(phase.Length).Append(Engine.Fires(_zones[i].Id));
             }
-            sb.Append("],\"triggerProblems\":[");
+            sb.Append(']');
+            // The objective board (ML-046): every goal and its state; the page decides what an unrevealed Play view may show.
+            // goalPlan: the running mission's goals as the file writes them, so the page judges these goals and not the last file it opened.
+            if (Board.Goals.Count > 0)
+            {
+                sb.Append(",\"goals\":").Append(Board.BoardJson()).Append(",\"goalPlan\":").Append(MissionPlan.GoalsJson(new List<GoalPlan>(Board.Goals)));
+                rev.Append('O').Append(Board.StatesJson());
+            }
+            sb.Append(",\"triggerProblems\":[");
             for (int i = 0; i < Engine.Problems.Count; i++) sb.Append(i == 0 ? "" : ",").Append(Q(Engine.Problems[i]));
             sb.Append("],\"types\":[");
             var types = Types(gm);
@@ -2549,6 +2889,9 @@ namespace MissionLab
             if (_budget != null)
                 try { string budget = _budget.Json(BudgetClock, !_budgetFree); sb.Append(",\"budget\":").Append(budget); }
                 catch (Exception e) { if (!_budgetWarned) DirectorPlugin.L.LogWarning("the director budget could not be shown to the page: " + e.Message); _budgetWarned = true; }
+            if (_pressure != null)
+                try { string pressure = _pressure.Json(BudgetClock); sb.Append(",\"pressure\":").Append(pressure); }      // the pressure director's mode and decision log (ML-052)
+                catch (Exception e) { if (!_pressureWarned) DirectorPlugin.L.LogWarning("the pressure director could not be shown to the page: " + e.Message); _pressureWarned = true; }
             sb.Append(",\"vehicleTypes\":[");
             try { List<GameObject> trucks = Director.VehiclePrefabs(raid); for (int i = 0; i < trucks.Count; i++) sb.Append(i > 0 ? "," : "").Append(Q(trucks[i].name)); } catch { }
             // The page takes the marker list over only when this changes.
@@ -2568,7 +2911,7 @@ namespace MissionLab
             EnsureMarkers();
             var done = new Outcome();
             var ids = new List<int>(); bool spawnNow; MissionPlan sent; MissionPlan settings = null;
-            Dictionary<int, string> refusedAreas;
+            Dictionary<int, string> refusedAreas; bool placesSent; string placesText;
             using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json))
             {
                 System.Text.Json.JsonElement root = doc.RootElement, list = root.GetProperty("markers");
@@ -2581,13 +2924,20 @@ namespace MissionLab
                     string raw = st.GetRawText().Trim(), inner = raw.Substring(1, raw.Length - 2).Trim();
                     settings = MissionPlan.FromJson("{" + (inner.Length > 0 ? inner + "," : "") + "\"spawns\":[]}");
                 }
-                string zonesText = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
-                refusedAreas = AreaEdits.Refused(zs);       // checked on the text as sent, with the file rules, before anything is taken over
+                bool triggersSent = root.TryGetProperty("triggers", out var zs) && zs.ValueKind == System.Text.Json.JsonValueKind.Array;
+                string zonesText = triggersSent ? zs.GetRawText() : MissionPlan.TriggersJson(_zones);
+                // The places go with the triggers, as one snapshot: every trigger linked to a place gets that place's one shape
+                // in the same Sync. Places sent without triggers are not taken: nothing would check them against the links.
+                bool placesThere = root.TryGetProperty("places", out var ps) && ps.ValueKind == System.Text.Json.JsonValueKind.Array;
+                placesSent = triggersSent && placesThere;
+                placesText = placesSent ? ps.GetRawText() : MissionPlan.PlacesJson(LivePlaces());
+                using (System.Text.Json.JsonDocument placesDoc = System.Text.Json.JsonDocument.Parse(placesText))
+                    refusedAreas = AreaEdits.Refused(zs, placesDoc.RootElement);      // checked on the text as sent, with the file rules, before anything is taken over
                 string itemsText = root.TryGetProperty("objectives", out var os) && os.ValueKind == System.Text.Json.JsonValueKind.Array ? os.GetRawText() : MissionPlan.ObjectivesJson(_wanted);
                 string doorsText = root.TryGetProperty("doors", out var ds) && ds.ValueKind == System.Text.Json.JsonValueKind.Array ? ds.GetRawText() : MissionPlan.DoorsJson(_doorPlans);
                 var thingsNow = new List<ThingPlan>(); foreach (LiveThing lt in _things) thingsNow.Add(lt.Plan);
                 string thingsText = root.TryGetProperty("things", out var ths) && ths.ValueKind == System.Text.Json.JsonValueKind.Array ? ths.GetRawText() : MissionPlan.ThingsJson(thingsNow);
-                sent = MissionPlan.FromJson("{\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"doors\":" + doorsText + ",\"things\":" + thingsText + ",\"spawns\":" + list.GetRawText() + "}");
+                sent = MissionPlan.FromJson("{\"places\":" + placesText + ",\"triggers\":" + zonesText + ",\"objectives\":" + itemsText + ",\"doors\":" + doorsText + ",\"things\":" + thingsText + ",\"spawns\":" + list.GetRawText() + "}");
             }
             if (sent.Spawns.Count != ids.Count)
             {
@@ -2680,6 +3030,7 @@ namespace MissionLab
                 done.Add(new CommandOp("triggers", no.Key.ToString(Inv), -1, CommandLedger.Failed, no.Value));
             }
             _zones = sent.Triggers;
+            if (placesSent) { _livePlaces = sent.Places; _livePlacesFor = Director.CurrentPlan; }
             var knownProblems = new HashSet<string>(Engine.Problems);
             Engine.Sync(_zones, now);
             foreach (string problem in Engine.Problems)
@@ -2717,7 +3068,7 @@ namespace MissionLab
                     _holdAfter = holdNow;
                     bool hold = holdNow != 0 && !Engine.EverFired(holdNow);
                     if (hold) { HoldExtraction = true; DirectorPlugin.PatchExtraction(); }
-                    else if (HoldExtraction) { HoldExtraction = false; if (ExtractionAsked) OpenExtraction(raid, "nothing holds it back any more"); }
+                    else if (HoldExtraction && !StillHeld()) { HoldExtraction = false; if (ExtractionAsked) OpenExtraction(raid, "nothing holds it back any more"); }
                 }
             }
             List<DoorPlan> doorsBefore = _doorPlans;
@@ -2756,8 +3107,10 @@ namespace MissionLab
             int saidBefore = SaidCount;
             if (cmd == "order" && hasPos)
             {
-                // The Game Master sends the chosen enemies to a spot on the map. Each is told or not; whether it gets there is not followed.
+                // The Game Master sends the chosen enemies to a spot on the map. Taking the order is not walking it (ML-035): an
+                // order the game took is "unconfirmed"; how it ends is logged and recorded later by TryOuts ("order N: ...").
                 var who = new HashSet<IntPtr>();
+                var asks = new List<KeyValuePair<int, IntPtr>>();     // its place in the page's list, and the enemy asked
                 for (int i = 0; i < ids.Count; i++)
                 {
                     string reference = ids[i].ToString(Inv);
@@ -2774,13 +3127,21 @@ namespace MissionLab
                         catch (Exception e) { why = "it could not be asked: " + e.Message; }
                     if (why != "") { done.Add(new CommandOp("order", reference, i, CommandLedger.Failed, why)); continue; }
                     who.Add(m.Bot);
-                    done.Add(new CommandOp("order", reference, i, CommandLedger.Unconfirmed, "told to walk there"));
+                    asks.Add(new KeyValuePair<int, IntPtr>(i, m.Bot));
                 }
                 int sent = who.Count == 0 ? 0 : TryOuts.WalkTo(gm, pos, 0f, who);
+                string bad = who.Count == 0 ? "" : TryOuts.LastWalk.GroundWhy;
+                foreach (KeyValuePair<int, IntPtr> a in asks)
+                {
+                    string reference = ids[a.Key].ToString(Inv);
+                    if (TryOuts.Ordered(a.Value)) done.Add(new CommandOp("order", reference, a.Key, CommandLedger.Unconfirmed, "accepted, not yet seen to move"));
+                    else done.Add(new CommandOp("order", reference, a.Key, CommandLedger.Failed, string.IsNullOrEmpty(bad) ? "it could not be sent" : "not sent: " + bad));
+                }
                 TryOuts.Did("an order to walk");
                 Replay.Event("note", "order: " + TryOuts.LastWalk.Words());
                 DirectorPlugin.L.LogInfo("order: " + TryOuts.LastWalk.Words());
-                Say(sent == 0 ? "no live enemy among those selected could be sent" : sent + (sent == 1 ? " enemy is" : " enemies are") + " on the way to that spot");
+                Say(sent == 0 ? "no enemy among those selected was sent" + (string.IsNullOrEmpty(bad) ? "" : ": " + bad)
+                              : sent + (sent == 1 ? " enemy accepted" : " enemies accepted") + " the order; not yet seen to move (the log follows each one)");
             }
             else if (cmd == "fire" && CardGuard(id).Length > 0)
                 done.Add(new CommandOp("fire", id.ToString(Inv), -1, CommandLedger.Failed, CardGuard(id)));   // under budget rules an action's trigger is fired through its card only (ML-025)
@@ -2794,6 +3155,7 @@ namespace MissionLab
             }
             else if (cmd == "action") ActionRequest(json, command, done);     // a director budget action (ML-025): paid, checked, then fired, waited or cancelled
             else if (cmd == "budgetMode") BudgetModeRequest(json, done);      // the host turns the budget rules on or off for the session (ML-025)
+            else if (cmd == "pressure") PressureRequest(what, arg, done);     // the pressure director's mode, hold now and spend now (ML-052)
             else if (cmd == "try")
             {
                 string said = TryOuts.Run(what, arg, hasPos, pos, raid, gm);
@@ -2873,6 +3235,9 @@ namespace MissionLab
                     plan.Objectives.Add(new ObjectivePlan { Name = o.gameObject.name, Pos = new V3(op.x, op.y, op.z), Yaw = o.transform.eulerAngles.y });
                 }
             plan.RequestedEnemies = plan.Spawns.Count;
+            // The places the triggers' links name (ML-040). From a file, CarryAuthored puts the author's places back and keeps
+            // only the links that still fit them; otherwise these are the page's, so a saved link never points at nothing.
+            plan.Places = new List<PlacePlan>(LivePlaces());
             plan.Notes.Add("Saved from Game Master mode");
             try
             {

@@ -5,25 +5,29 @@ using System.Text.Json;
 namespace MissionLab.Core
 {
     /// <summary>
-    /// The scenario file's contract, missionlab-plan/1 and /2. Reads a file strictly: a wrong type, a number used twice, a link to
+    /// The scenario file's contract, missionlab-plan/1, /2 and /3. Reads a file strictly: a wrong type, a number used twice, a link to
     /// something that is not there, a kind this version does not know and a file written for a newer version are each named
     /// with the place in the file ("triggers[2].after") and a short code. Nothing is quietly dropped or bent into shape.
     /// missionlab-plan/2 holds the same body under "mission"; it exists so that older versions, which would read a shaped
-    /// area as its anchor circle, refuse the file instead. Paths in findings are relative to the body.
+    /// area as its anchor circle, refuse the file instead. missionlab-plan/3 is the same envelope with zones and holds that
+    /// link a named place ("place": its id) instead of carrying an area, or with player goals ("goals"); v0.26, which reads
+    /// plan/2, refuses it as newer. Goals in an older format are refused (unknown-format goals): the file was not written so.
+    /// Paths in findings are relative to the body.
     /// The editor carries the same rules in JavaScript; tests/fixtures/invalid holds files both must judge alike.
     /// docs/scenario.schema.json describes the same format for other tools.
     /// </summary>
     public static class ScenarioFile
     {
-        public const int Version = 2;
-        public static readonly string[] Kinds = { "zone", "hold", "alert", "intel", "time", "after", "down", "all", "any", "door" };
+        public const int Version = 3;
+        public static readonly string[] Kinds = { "zone", "hold", "alert", "intel", "time", "after", "down", "all", "any", "door", "outcome" };
 
         // Field tables: n number, i whole number, b yes/no, s text. The editor has the same tables.
         private static readonly string[] SpawnFields = { "n:yaw", "n:detectionRange", "n:hearingRange", "n:fov", "n:wanderDistance", "n:patrolWaitSeconds", "n:chance", "n:scatter",
             "i:group", "i:trigger", "i:lot", "i:either", "i:option", "i:team", "i:minPlayers", "i:within", "b:indoor", "b:defensive", "b:fixed", "b:prone", "b:hvt", "b:vehicle", "b:nvg",
             "s:role", "s:type", "s:skill", "s:tag", "s:fallback" };
-        private static readonly string[] TriggerFields = { "n:radius", "n:delay", "n:hold", "n:chance", "n:repeat", "n:rally", "i:count", "i:times", "i:after",
-            "b:facePlayer", "b:warn", "b:everyone", "b:red", "b:hunt", "b:respawn", "s:name", "s:when", "s:item", "s:message", "s:power", "s:end", "s:extraction", "s:tag" };
+        private static readonly string[] TriggerFields = { "n:radius", "n:delay", "n:hold", "n:chance", "n:repeat", "n:rally", "i:count", "i:times", "i:after", "i:place",
+            "b:facePlayer", "b:warn", "b:everyone", "b:red", "b:hunt", "b:respawn", "s:name", "s:when", "s:item", "s:message", "s:power", "s:end", "s:extraction", "s:tag",
+            "n:within", "s:outcome" };
         private static readonly string[] ThingFields = { "s:name", "n:yaw", "n:chance", "i:trigger" };
         private static readonly string[] DoorFields = { "s:name", "b:locked", "b:enemiesCanOpen", "b:open", "n:chance" };
 
@@ -75,19 +79,32 @@ namespace MissionLab.Core
                 if (!Has(root, "schema", out JsonElement schema)) Note("no-version", "schema", "the file names no format; it is read as missionlab-plan/1");
                 else
                 {
+                    // Only digits after the slash, as the editor reads it: int.TryParse alone would also take a sign or spaces.
+                    // A number too big to hold is still a number, and so a newer format.
                     string s = schema.ValueKind == JsonValueKind.String ? schema.GetString() : "";
-                    int v = s.StartsWith("missionlab-plan/", StringComparison.Ordinal) && int.TryParse(s.Substring(16), out int n) ? n : 0;
+                    string digits = s.StartsWith("missionlab-plan/", StringComparison.Ordinal) ? s.Substring(16) : "";
+                    int v = digits.Length > 0 && AllDigits(digits) ? (int.TryParse(digits, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int n) ? n : int.MaxValue) : 0;
                     if (v <= 0) { Bad("unknown-format", "schema", "\"" + s + "\" is not a MissionLab scenario format"); return found; }
-                    if (v > Version) { Bad("future-version", "schema", "this file is missionlab-plan/" + v + "; this version of MissionLab reads missionlab-plan/" + Version + ". Update MissionLab to use it. The file was not changed"); return found; }
+                    if (v > Version) { Bad("future-version", "schema", "this file is " + s + "; this version of MissionLab reads missionlab-plan/" + Version + ". Update MissionLab to use it. The file was not changed"); return found; }
                     version = v;
                 }
                 if (version >= 2)
                 {
-                    if (!Has(root, "mission", out JsonElement body) || body.ValueKind != JsonValueKind.Object) { Bad("wrong-type", "mission", "a missionlab-plan/2 file holds its scenario as an object under \"mission\""); return found; }
+                    if (!Has(root, "mission", out JsonElement body) || body.ValueKind != JsonValueKind.Object) { Bad("wrong-type", "mission", "a missionlab-plan/" + version + " file holds its scenario as an object under \"mission\""); return found; }
+                    // The file's own "schema" is the format; a second one inside would leave it unclear which version the body is.
+                    if (Has(body, "schema", out _)) { Bad("unknown-format", "mission.schema", "the scenario under \"mission\" names no format of its own: the file's \"schema\" says which format it is"); return found; }
                     root = body;
                 }
+                // FromJson reads an object under "mission" whatever the version, so in a plan/1 file the checks below would
+                // look at the root while something else is loaded. Any "mission" there is refused, which is simpler to say.
+                else if (Has(root, "mission", out _)) { Bad("wrong-type", "mission", "\"mission\" holds the scenario only in a missionlab-plan/2 or /3 file; this file is read as missionlab-plan/1, with the scenario at the root"); return found; }
 
                 var ids = new HashSet<long>();
+                // Named places a zone or hold may link, collected first like the trigger numbers: id, and whether it is painted.
+                var placeShaped = new Dictionary<long, bool>();
+                if (Has(root, "places", out JsonElement placeList) && placeList.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement pl in placeList.EnumerateArray())
+                        if (pl.ValueKind == JsonValueKind.Object && Has(pl, "id", out JsonElement plid) && Whole(plid) && plid.GetInt64() >= 1 && !placeShaped.ContainsKey(plid.GetInt64())) placeShaped[plid.GetInt64()] = Has(pl, "area", out _);
                 if (Has(root, "triggers", out JsonElement triggers))
                 {
                     if (triggers.ValueKind != JsonValueKind.Array) Bad("wrong-type", "triggers", "\"triggers\" is a list");
@@ -113,11 +130,35 @@ namespace MissionLab.Core
                                 else if (version < 2) Bad("bad-area", at + ".area", "a shaped area needs missionlab-plan/2: save the file again with this MissionLab");
                                 else AreaPlan.Check(area, at, Bad);
                             }
+                            if (Has(t, "place", out JsonElement link) && Whole(link))
+                            {
+                                long pid = link.GetInt64();
+                                if (when != "zone" && when != "hold") Bad("bad-area", at + ".place", "only zone and hold triggers link a place");
+                                else if (version < 3) Bad("bad-area", at + ".place", "a link to a place needs missionlab-plan/3: save the file again with this MissionLab");
+                                else if (Has(t, "area", out _)) Bad("bad-area", at + ".place", "a trigger links a place or has an area of its own, not both");
+                                else if (!placeShaped.TryGetValue(pid, out bool painted)) Bad("missing-ref", at + ".place", "there is no place " + pid);
+                                else if (!painted) Bad("bad-area", at + ".place", "place " + pid + " is a point: only a place with a painted area can be linked");
+                            }
                             if (when == "after" && Has(t, "after", out JsonElement after) && Whole(after))
                             {
                                 long a = after.GetInt64();
                                 if (a != 0 && a == me) Bad("self-ref", at + ".after", "the trigger waits for itself");
                                 else if (a != 0 && !ids.Contains(a)) Bad("missing-ref", at + ".after", "there is no trigger " + a);
+                            }
+                            if (when == "outcome")
+                            {
+                                // An outcome trigger watches one trigger's firings, so it has to name one: 0 (fired by hand only) names none.
+                                if (!Has(t, "after", out JsonElement watched)) Bad("missing-field", at + ".after", "an outcome trigger needs \"after\": the trigger whose outcome it waits for");
+                                else if (Whole(watched))
+                                {
+                                    long a = watched.GetInt64();
+                                    if (a != 0 && a == me) Bad("self-ref", at + ".after", "the trigger waits for itself");
+                                    else if (!ids.Contains(a)) Bad("missing-ref", at + ".after", "there is no trigger " + a);
+                                }
+                                if (!Has(t, "outcome", out _)) Bad("missing-field", at + ".outcome", "an outcome trigger needs \"outcome\": " + string.Join(", ", TriggerPlan.Outcomes));
+                                else Value(t, at, "outcome", TriggerPlan.Outcomes, Bad);
+                                if (Has(t, "within", out JsonElement within) && within.ValueKind == JsonValueKind.Number && (within.GetDouble() < TriggerPlan.WithinLeast || within.GetDouble() > TriggerPlan.WithinMost))
+                                    Bad("out-of-range", at + ".within", "\"within\" is from " + TriggerPlan.WithinLeast + " to " + TriggerPlan.WithinMost + " seconds");
                             }
                             if ((when == "all" || when == "any") && Has(t, "of", out JsonElement of))
                             {
@@ -159,11 +200,21 @@ namespace MissionLab.Core
                 if (Has(root, "extraction", out JsonElement ex))
                 {
                     if (ex.ValueKind != JsonValueKind.Object) Bad("wrong-type", "extraction", "\"extraction\" is an object");
-                    else if (Has(ex, "after", out JsonElement after))
+                    else
                     {
-                        if (!Whole(after)) Bad("wrong-type", "extraction.after", "a trigger number is a whole number");
-                        else if (after.GetInt64() != 0 && !ids.Contains(after.GetInt64())) Bad("missing-ref", "extraction.after", "there is no trigger " + after.GetInt64());
+                        if (Has(ex, "after", out JsonElement after))
+                        {
+                            if (!Whole(after)) Bad("wrong-type", "extraction.after", "a trigger number is a whole number");
+                            else if (after.GetInt64() != 0 && !ids.Contains(after.GetInt64())) Bad("missing-ref", "extraction.after", "there is no trigger " + after.GetInt64());
+                        }
+                        Types(ex, "extraction", new[] { "b:goals" }, Bad);
                     }
+                }
+                if (Has(root, "goals", out JsonElement goals))
+                {
+                    // An older version would run the mission without its goals, so they need missionlab-plan/3.
+                    if (version < 3) Bad("unknown-format", "goals", "goals need missionlab-plan/3: save the file again with this MissionLab");
+                    else Goals(goals, ids, Bad);
                 }
                 if (Has(root, "things", out JsonElement things))
                 {
@@ -305,6 +356,7 @@ namespace MissionLab.Core
                                 }
                             }
                         }
+                        if (Has(director, "pressure", out JsonElement pressure)) Pressure(pressure, GoalIds(root), Bad);
                     }
                 }
                 Types(root, "", new[] { "s:name", "s:scene", "s:navFile", "s:insertion", "s:power", "s:skill", "b:nvg", "b:gameMaster", "i:seed", "s:id", "i:revision", "n:minutes", "s:mapPrint", "b:sealed" }, Bad);
@@ -331,6 +383,7 @@ namespace MissionLab.Core
 
         private static bool Has(JsonElement o, string key, out JsonElement value) => o.TryGetProperty(key, out value) && value.ValueKind != JsonValueKind.Null;
         private static bool Whole(JsonElement e) => e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out _);
+        private static bool AllDigits(string s) { foreach (char c in s) if (c < '0' || c > '9') return false; return true; }
         private static bool Spot(JsonElement e)
         {
             if (e.ValueKind != JsonValueKind.Array || e.GetArrayLength() < 3) return false;
@@ -408,6 +461,128 @@ namespace MissionLab.Core
         {
             if (Has(o, "trigger", out JsonElement t) && Whole(t) && t.GetInt64() != 0 && !ids.Contains(t.GetInt64())) bad("missing-ref", at + ".trigger", "there is no trigger " + t.GetInt64());
         }
+
+        /// <summary>The goal ids a pressure band may name: every good id in the "goals" list, as the goals' own check collects them.</summary>
+        private static HashSet<string> GoalIds(JsonElement root)
+        {
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            if (Has(root, "goals", out JsonElement list) && list.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement g in list.EnumerateArray())
+                {
+                    string gid = g.ValueKind == JsonValueKind.Object ? Text(g, "id") : null;
+                    if (gid != null && GoalPlan.IdOk(gid)) known.Add(gid);
+                }
+            return known;
+        }
+
+        /// <summary>
+        /// The pressure director's bounds (ML-052), field by field in the order mode, bands (each: name, from, goals, minPlayers,
+        /// spend, every), maxEnemies, rest. The editor checks the same things in the same order.
+        /// </summary>
+        private static void Pressure(JsonElement p, HashSet<string> goals, Action<string, string, string> bad)
+        {
+            const string at = "director.pressure";
+            if (p.ValueKind != JsonValueKind.Object) { bad("wrong-type", at, "\"pressure\" is an object: {\"mode\": \"off\", \"preview\" or \"on\", \"bands\": [...], \"maxEnemies\": enemies, \"rest\": seconds}"); return; }
+            Choice(p, at, "mode", PressurePlan.Modes, bad);
+            if (!Has(p, "bands", out JsonElement bands)) bad("missing-field", at + ".bands", "the pressure director needs \"bands\": 1 to " + PressurePlan.MostBands + " bands");
+            else if (bands.ValueKind != JsonValueKind.Array) bad("wrong-type", at + ".bands", "\"bands\" is a list");
+            else
+            {
+                int count = bands.GetArrayLength();
+                if (count < 1 || count > PressurePlan.MostBands) bad("out-of-range", at + ".bands", "the pressure director has 1 to " + PressurePlan.MostBands + " bands");
+                int i = 0;
+                foreach (JsonElement b in bands.EnumerateArray())
+                {
+                    string one = at + ".bands[" + i++ + "]";
+                    if (b.ValueKind != JsonValueKind.Object) { bad("wrong-type", one, "a band is an object"); continue; }
+                    Named(b, one, "a band", bad);
+                    Range(b, one, "from", false, 0, PressureBand.FromLimit, bad);
+                    if (Has(b, "goals", out JsonElement list))
+                    {
+                        if (list.ValueKind != JsonValueKind.Array) bad("wrong-type", one + ".goals", "\"goals\" is a list of goal ids");
+                        else
+                        {
+                            int j = 0;
+                            foreach (JsonElement g in list.EnumerateArray())
+                            {
+                                string gat = one + ".goals[" + j++ + "]";
+                                if (g.ValueKind != JsonValueKind.String) bad("wrong-type", gat, "a goal id is text");
+                                else if (!goals.Contains(g.GetString())) bad("missing-ref", gat, "there is no goal \"" + g.GetString() + "\"");
+                            }
+                        }
+                    }
+                    Range(b, one, "minPlayers", true, 0, PressureBand.PlayersLimit, bad);
+                    Range(b, one, "spend", true, 0, DirectorPlan.BudgetLimit, bad);
+                    Range(b, one, "every", false, PressureBand.EveryLeast, PressureBand.EveryMost, bad);
+                }
+            }
+            Range(p, at, "maxEnemies", true, 0, PressurePlan.EnemiesLimit, bad);
+            Range(p, at, "rest", false, 0, PressurePlan.RestLimit, bad);
+        }
+
+        /// <summary>
+        /// The goals of a missionlab-plan/3 file (ML-046). Goal ids are collected first, from every goal whose id is good, so
+        /// "after" may name a goal further down the list. The editor checks the same things in the same order.
+        /// </summary>
+        private static void Goals(JsonElement list, HashSet<long> triggers, Action<string, string, string> bad)
+        {
+            if (list.ValueKind != JsonValueKind.Array) { bad("wrong-type", "goals", "\"goals\" is a list"); return; }
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            foreach (JsonElement g in list.EnumerateArray())
+            {
+                string gid = g.ValueKind == JsonValueKind.Object ? Text(g, "id") : null;
+                if (gid != null && GoalPlan.IdOk(gid)) known.Add(gid);
+            }
+            var seen = new HashSet<string>(StringComparer.Ordinal); int i = 0;
+            foreach (JsonElement g in list.EnumerateArray())
+            {
+                string at = "goals[" + i++ + "]";
+                if (g.ValueKind != JsonValueKind.Object) { bad("wrong-type", at, "a goal is an object"); continue; }
+                string me = null;
+                if (!Has(g, "id", out JsonElement id)) bad("missing-field", at + ".id", "a goal needs an \"id\"");
+                else if (id.ValueKind != JsonValueKind.String) bad("wrong-type", at + ".id", "a goal's \"id\" is text");
+                else
+                {
+                    me = id.GetString();
+                    if (!GoalPlan.IdOk(me)) bad("bad-id", at + ".id", "a goal id is 1 to " + GoalPlan.IdLength + " of a-z, 0-9 and '-', not starting with '-'");
+                    else if (!seen.Add(me)) bad("duplicate-id", at + ".id", "the goal id \"" + me + "\" is used twice");
+                }
+                if (!Has(g, "name", out JsonElement name)) bad("missing-field", at + ".name", "a goal needs a \"name\" for players to read");
+                else if (name.ValueKind != JsonValueKind.String) bad("wrong-type", at + ".name", "\"name\" must be text");
+                else if (GoalPlan.Clean(name.GetString()) == "") bad("missing-field", at + ".name", "a goal needs a \"name\" for players to read");
+                Types(g, at, new[] { "b:required" }, bad);
+                if (Has(g, "after", out JsonElement after))
+                {
+                    if (after.ValueKind != JsonValueKind.Array) bad("wrong-type", at + ".after", "\"after\" is a list of goal ids");
+                    else
+                    {
+                        int j = 0;
+                        foreach (JsonElement a in after.EnumerateArray())
+                        {
+                            string op = at + ".after[" + j++ + "]";
+                            if (a.ValueKind != JsonValueKind.String) bad("wrong-type", op, "a goal id is text");
+                            else if (me != null && a.GetString() == me) bad("self-ref", op, "the goal waits for itself");
+                            else if (!known.Contains(a.GetString())) bad("missing-ref", op, "there is no goal \"" + a.GetString() + "\"");
+                        }
+                    }
+                }
+                if (Has(g, "activate", out JsonElement activate))
+                {
+                    if (!Whole(activate)) bad("wrong-type", at + ".activate", "\"activate\" is a trigger number, a whole number");
+                    else if (activate.GetInt64() != 0 && !triggers.Contains(activate.GetInt64())) bad("missing-ref", at + ".activate", "there is no trigger " + activate.GetInt64());
+                }
+                if (!Has(g, "succeed", out JsonElement succeed)) bad("missing-field", at + ".succeed", "a goal needs \"succeed\": the trigger whose firing completes it");
+                else if (!Whole(succeed)) bad("wrong-type", at + ".succeed", "\"succeed\" is a trigger number, a whole number");
+                else if (succeed.GetInt64() <= 0 || !triggers.Contains(succeed.GetInt64())) bad("missing-ref", at + ".succeed", "there is no trigger " + succeed.GetInt64());
+                if (Has(g, "fail", out JsonElement fail))
+                {
+                    if (!Whole(fail)) bad("wrong-type", at + ".fail", "\"fail\" is a trigger number, a whole number");
+                    else if (fail.GetInt64() != 0 && !triggers.Contains(fail.GetInt64())) bad("missing-ref", at + ".fail", "there is no trigger " + fail.GetInt64());
+                }
+                Types(g, at, new[] { "b:notify" }, bad);
+            }
+        }
+
         private static void Doors(JsonElement list, string at, Action<string, string, string> bad)
         {
             if (list.ValueKind != JsonValueKind.Array) { bad("wrong-type", at, "\"doors\" is a list"); return; }

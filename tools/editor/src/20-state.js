@@ -5,7 +5,9 @@ const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
 const ROLES = ['Guard', 'Wander', 'Patrol'];
 const DRAFT_KEY = 'missionlab-editor-draft-1';
-const EDITOR_VERSION = '0.26.1';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
+const EDITOR_VERSION = '0.27.0';             // the MissionLab release this page belongs to; always the plugin's DirectorPlugin.Version
+// Each part hands what the automated tests need to window.missionlabEditor through this, wherever it sits in the page.
+function expose(names) { window.missionlabEditor = Object.assign(window.missionlabEditor || {}, names); }
 
 const state = {
   map: null,            // walkable surface, see makeMap()
@@ -60,5 +62,4 @@ const state = {
   director: null,            // the Game Master's budget: {budget, regen, actions: [{id, name, cost, cooldown, fire, minDistance, unseen, fallback}]}, or null
   mode: '2d',
 };
-const undoStack = [];
 

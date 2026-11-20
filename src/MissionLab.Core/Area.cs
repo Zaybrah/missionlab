@@ -151,6 +151,22 @@ namespace MissionLab.Core
         }
 
         /// <summary>
+        /// An independent copy of the parts, for a trigger that stops following a named place (MissionPlan.Flatten): changing
+        /// one afterwards must never change the other.
+        /// </summary>
+        public AreaPlan Copy()
+        {
+            var copy = new AreaPlan();
+            foreach (AreaPart part in Parts)
+            {
+                var one = new AreaPart { Outline = new List<P2>(part.Outline), Bottom = part.Bottom, Top = part.Top };
+                foreach (List<P2> hole in part.Holes) one.Holes.Add(new List<P2>(hole));
+                copy.Parts.Add(one);
+            }
+            return copy;
+        }
+
+        /// <summary>
         /// The strict rules for the "area" of a trigger or a place, found at <paramref name="at"/> ("triggers[3]"; paths read
         /// "triggers[3].area.parts[0].outline"). At most one finding per ring: the first rule it breaks. Never throws.
         /// </summary>

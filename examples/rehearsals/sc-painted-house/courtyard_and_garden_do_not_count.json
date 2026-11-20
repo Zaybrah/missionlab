@@ -1,0 +1,13 @@
+{"schema":"missionlab-rehearsal/1","name":"the courtyard and the garden do not count","players":1,"steps":[
+{"at":0,"players":[[10,0,10]]},
+{"at":2.5,"expect":{"notFired":[1,2]}},
+{"at":2.5,"expect":{"phase":{"1":"waiting"}}},
+{"at":3,"players":[[10,0,-6]]},
+{"at":3.5,"players":[[12.5,0,-6]]},
+{"at":4,"players":[[15,0,-6]]},
+{"at":4.5,"players":[[17.5,0,-6]]},
+{"at":5,"players":[[20,0,-6]]},
+{"at":5.5,"players":[[22.5,0,-6]]},
+{"at":6,"players":[[25,0,-6]]},
+{"at":6,"expect":{"notFired":[1,2]}}
+]}

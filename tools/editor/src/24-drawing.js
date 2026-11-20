@@ -11,17 +11,21 @@ function readTokens() {
 }
 let dirty = false;
 function invalidate() { if (state.mode === '3d') { view3d.invalidate(); return; } if (!dirty) { dirty = true; requestAnimationFrame(draw); } }
+// Floors that Floors and rooms hides are left out, and those outside an isolated floor go into one faint path (29k-outliner.js).
 function groundPaths(m) {
-  if (m.paths && m.pathsCeiling === state.ceiling) return m.paths;
-  const paths = shades.map(() => new Path2D()), t = m.tris, span = (m.bounds.maxY - m.bounds.minY) || 1;
+  const key = state.ceiling + '|' + outlinerGroundKey();
+  if (m.paths && m.pathsKey === key) return m.paths;
+  const paths = shades.map(() => new Path2D()), ghost = new Path2D(), t = m.tris, span = (m.bounds.maxY - m.bounds.minY) || 1;
   for (const i of m.order) {                              // low to high, so upper floors cover lower ones
     if (m.minY[i] > state.ceiling) continue;
-    const o = i * 9, p = paths[Math.min(9, Math.floor((m.avgY[i] - m.bounds.minY) / span * 10))];
+    const look = outlinerFloorLook(m.avgY[i]);
+    if (look === 'hidden') continue;
+    const o = i * 9, p = look === 'ghost' ? ghost : paths[Math.min(9, Math.floor((m.avgY[i] - m.bounds.minY) / span * 10))];
     p.moveTo(t[o], -t[o + 2]); p.lineTo(t[o + 3], -t[o + 5]); p.lineTo(t[o + 6], -t[o + 8]); p.closePath();
   }
   const border = new Path2D(), e = m.borders;
-  for (let i = 0; i < e.length; i += 5) { if (e[i + 4] > state.ceiling + 0.4) continue; border.moveTo(e[i], -e[i + 1]); border.lineTo(e[i + 2], -e[i + 3]); }
-  m.paths = paths; m.borderPath = border; m.pathsCeiling = state.ceiling;
+  for (let i = 0; i < e.length; i += 5) { if (e[i + 4] > state.ceiling + 0.4 || outlinerFloorLook(e[i + 4])) continue; border.moveTo(e[i], -e[i + 1]); border.lineTo(e[i + 2], -e[i + 3]); }
+  m.paths = paths; m.ghostPath = ghost; m.borderPath = border; m.pathsKey = key;
   return paths;
 }
 function shape(role, x, y, r) {
@@ -45,6 +49,7 @@ function draw() {
     ctx.save();
     ctx.setTransform(k * v.scale, 0, 0, k * v.scale, k * ox, k * oz);
     ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.3; ctx.fillStyle = ctx.strokeStyle = shades[0]; ctx.lineWidth = 0.8 / v.scale; ctx.fill(m.ghostPath); ctx.stroke(m.ghostPath); ctx.globalAlpha = 1;   // outside an isolated floor
     paths.forEach((p, i) => { ctx.fillStyle = ctx.strokeStyle = shades[i]; ctx.lineWidth = 0.8 / v.scale; ctx.fill(p); ctx.stroke(p); });
     ctx.strokeStyle = css.wall; ctx.globalAlpha = 0.9; ctx.lineWidth = Math.min(1.5, Math.max(0.6, v.scale * 0.22)) / v.scale; ctx.stroke(m.borderPath); ctx.globalAlpha = 1;
     ctx.restore();
@@ -54,6 +59,7 @@ function draw() {
   ctx.fillStyle = css['ink-2']; ctx.globalAlpha = 0.35;
   for (const p of state.authored) { const [x, y] = toScreen(p[0], p[2]); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 1;
+  drawOutlinerVeil();          // outside an isolated building or room, the map is veiled (29k-outliner.js)
 
   // Zones: walk in here and the enemies bound to it appear. A painted area (27a-paint.js) replaces the circle; the anchor
   // keeps a small cross, since labels and rally points still use it.
@@ -63,19 +69,22 @@ function draw() {
   state.zones.forEach((z, zi) => {
     if (sealed) return;
     if (z.when !== 'zone' || !isVec(z.pos)) return;
+    const fade = outlinerAlpha(z.pos);                 // hidden, faint or locked in Floors and rooms (29k-outliner.js)
+    if (!fade) return;
     const [x, y] = toScreen(z.pos[0], z.pos[2]), done = state.fired.includes(z.id), painted = !!(z.area && z.area.parts && z.area.parts.length), editing = paintIs('trigger', zi);
     let top = y - z.radius * v.scale - 3;
     if (painted || editing) {
+      ctx.globalAlpha = fade;
       drawArea(ctx, z.area, { colour: css.friend, fill: done ? 0.05 : editing ? 0.2 : 0.12, line: done ? 0.4 : 0.95, width: editing ? 2.2 : 1.6, floor: shownFloor });
-      ctx.globalAlpha = done ? 0.4 : 0.9; ctx.strokeStyle = css.friend; ctx.lineWidth = 1.6;
+      ctx.globalAlpha = (done ? 0.4 : 0.9) * fade; ctx.strokeStyle = css.friend; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5); ctx.stroke();
       top = y - 7;
     } else {
       ctx.beginPath(); ctx.arc(x, y, z.radius * v.scale, 0, Math.PI * 2);
-      ctx.globalAlpha = done ? 0.04 : 0.1; ctx.fillStyle = css.friend; ctx.fill();
-      ctx.globalAlpha = done ? 0.4 : 0.9; ctx.setLineDash([8, 5]); ctx.lineWidth = 1.6; ctx.strokeStyle = css.friend; ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = (done ? 0.04 : 0.1) * fade; ctx.fillStyle = css.friend; ctx.fill();
+      ctx.globalAlpha = (done ? 0.4 : 0.9) * fade; ctx.setLineDash([8, 5]); ctx.lineWidth = 1.6; ctx.strokeStyle = css.friend; ctx.stroke(); ctx.setLineDash([]);
     }
-    ctx.globalAlpha = done ? 0.4 : 0.9;
+    ctx.globalAlpha = (done ? 0.4 : 0.9) * fade;
     ctx.font = '600 12px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = css.friend; ctx.fillText('Zone ' + z.id, x, top);
     ctx.globalAlpha = 1;
   });
@@ -88,17 +97,22 @@ function draw() {
   // The mission's intel items.
   state.things.forEach((t, n) => {
     if (sealed) return;
+    const fade = outlinerAlpha(t.pos);
+    if (!fade) return;
     const [x, y] = toScreen(t.pos[0], t.pos[2]), on = n === state.thing;
-    ctx.fillStyle = css.ink; ctx.strokeStyle = css.panel; ctx.lineWidth = 1.5;
+    ctx.globalAlpha = fade; ctx.fillStyle = css.ink; ctx.strokeStyle = css.panel; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
     if (on) { ctx.strokeStyle = css['accent-text']; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke(); }
     const text = t.name.trim().slice(0, 14) + (t.trigger ? ' \u2192 ' + trigTag(t.trigger) : '');
     ctx.font = '600 11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 3; ctx.strokeStyle = css.paper; ctx.strokeText(text, x + 10, y + 1); ctx.fillStyle = css.ink; ctx.fillText(text, x + 10, y + 1);
+    ctx.globalAlpha = 1;
   });
   for (const o of state.objectives) {
+    const fade = outlinerAlpha(o.pos);
+    if (!fade) continue;
     const [x, y] = toScreen(o.pos[0], o.pos[2]);
-    ctx.globalAlpha = o.obtained ? 0.35 : 1;
+    ctx.globalAlpha = (o.obtained ? 0.35 : 1) * fade;
     ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x + 8, y); ctx.lineTo(x, y + 8); ctx.lineTo(x - 8, y); ctx.closePath();
     ctx.fillStyle = css.warn; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
     ctx.font = '600 11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -110,18 +124,21 @@ function draw() {
   dangers().forEach((d, i) => {
     if (sealed) return;
     if (!d) return;
-    const e = state.enemies[i], [x0, y0] = toScreen(e.pos[0], e.pos[2]), [x1, y1] = toScreen(d.at[0], d.at[2]);
+    const e = state.enemies[i], fade = outlinerAlpha(e.pos), [x0, y0] = toScreen(e.pos[0], e.pos[2]), [x1, y1] = toScreen(d.at[0], d.at[2]);
+    if (!fade) return;
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.setLineDash([6, 5]);
-    ctx.lineWidth = i === state.selected ? 2.5 : 1.5; ctx.strokeStyle = css.enemy; ctx.globalAlpha = i === state.selected || d.facing ? 0.9 : 0.5; ctx.stroke();
+    ctx.lineWidth = i === state.selected ? 2.5 : 1.5; ctx.strokeStyle = css.enemy; ctx.globalAlpha = (i === state.selected || d.facing ? 0.9 : 0.5) * fade; ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
   });
 
   // Doors: a thick line where the leaf is. Grey is left to the game, red is locked, blue is unlocked.
   state.doors.forEach((d, n) => {
     if (d.mid[1] - 1 > state.ceiling + 0.4) return;
+    const fade = outlinerAlpha(d.mid);
+    if (!fade) return;
     const g = doorLine(d), set = doorSet(d), lockedNow = d.locked === true || (d.locked === null && d.isLocked === true);
     const stroke = (w, c) => { ctx.beginPath(); ctx.moveTo(g[0], g[1]); ctx.lineTo(g[2], g[3]); ctx.lineWidth = w; ctx.strokeStyle = c; ctx.stroke(); };
-    ctx.lineCap = 'round'; ctx.globalAlpha = d.broken ? 0.3 : 1;
+    ctx.lineCap = 'round'; ctx.globalAlpha = (d.broken ? 0.3 : 1) * fade;
     stroke(n === state.door ? 13 : set ? 9 : 7, n === state.door ? css['accent-text'] : css.panel);          // a casing, so the door stands out from the ground
     if (n === state.door) stroke(9, css.panel);
     stroke(set ? 6 : 3, d.locked === true ? css.enemy : d.locked === false ? css.friend : css.ink);
@@ -141,15 +158,18 @@ function draw() {
   state.enemies.forEach((e, i) => {
     if (sealed) return;
     if (e.role !== 'Patrol' || !e.patrol.length) return;
+    const fade = outlinerAlpha(e.pos);
+    if (!fade) return;
     const pts = e.patrol.map(p => toScreen(p[0], p[2])), start = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected;
-    ctx.strokeStyle = css.enemy; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = fade; ctx.strokeStyle = css.enemy; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.setLineDash([6, 4]);
     ctx.beginPath(); pts.forEach((p, n) => n ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); if (pts.length > 2) ctx.closePath(); ctx.stroke();
-    ctx.globalAlpha = 0.55; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(start[0], start[1]); ctx.lineTo(pts[0][0], pts[0][1]); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.55 * fade; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(start[0], start[1]); ctx.lineTo(pts[0][0], pts[0][1]); ctx.stroke(); ctx.globalAlpha = fade;
     ctx.setLineDash([]);
     if (sel) pts.forEach((p, n) => {
       ctx.beginPath(); ctx.arc(p[0], p[1], 7, 0, Math.PI * 2); ctx.fillStyle = css.panel; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = css.enemy; ctx.stroke();
       ctx.fillStyle = css.ink; ctx.font = '500 10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(n + 1), p[0], p[1] + 0.5);
     });
+    ctx.globalAlpha = 1;
   });
 
   // Insertion points.
@@ -163,16 +183,19 @@ function draw() {
   const mono = getComputedStyle(document.body).getPropertyValue('--mono');
   state.enemies.forEach((e, i) => {
     if (sealed) return;
+    const fade = outlinerAlpha(e.pos);
+    if (!fade) return;
     const [x, y] = toScreen(e.pos[0], e.pos[2]), sel = i === state.selected, r = 6.5, bad = warningFor(e);
     const yaw = e.yaw * Math.PI / 180;
+    ctx.globalAlpha = fade;
     if (state.squad.includes(i)) { ctx.beginPath(); ctx.arc(x, y, 13, 0, 6.2832); ctx.lineWidth = 2; ctx.strokeStyle = css.friend; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]); }
     if (e.role === 'Wander' && !e.fixed && e.wanderDistance > 0) {            // how far it may roam
       ctx.beginPath(); ctx.arc(x, y, e.wanderDistance * v.scale, 0, Math.PI * 2);
-      ctx.globalAlpha = sel ? 0.12 : 0.06; ctx.fillStyle = css.enemy; ctx.fill();
-      ctx.globalAlpha = sel ? 0.9 : 0.5; ctx.setLineDash([5, 4]); ctx.lineWidth = sel ? 1.8 : 1.2; ctx.strokeStyle = css.enemy; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.globalAlpha = (sel ? 0.12 : 0.06) * fade; ctx.fillStyle = css.enemy; ctx.fill();
+      ctx.globalAlpha = (sel ? 0.9 : 0.5) * fade; ctx.setLineDash([5, 4]); ctx.lineWidth = sel ? 1.8 : 1.2; ctx.strokeStyle = css.enemy; ctx.stroke(); ctx.setLineDash([]);
     }
     const above = e.pos[1] > state.ceiling + 0.4;                            // stands on a floor that is hidden right now
-    if (above) ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = (above ? 0.35 : 1) * fade;
     ctx.strokeStyle = css.enemy; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(yaw) * (r + 9), y - Math.cos(yaw) * (r + 9)); ctx.stroke();
     if (e.vehicle) {                                   // a gun truck: a box as long as the truck, nose where it faces
       const L = Math.max(10, 5.2 * v.scale), W = Math.max(5, 2 * v.scale);
@@ -250,11 +273,13 @@ function draw() {
   if (quick.result) drawQuick();           // a quick mission layout being previewed, not part of the scenario yet (29f-options.js)
   if (state.inspectSel) drawInspect();     // the inspected trigger: what it needs and what it brings (29c-inspect.js)
   if (state.rehearse && (state.rehearse.picking || state.rehearse.focus)) drawRehearsal();   // the players of the rehearsal row being edited (29d-rehearse.js)
+  if (state.walk && (state.walk.players.length || state.walk.probe)) drawWalk();             // test players' paths and the probe (29j-walk.js)
 
   if (drag && drag.box && drag.moved) {
     ctx.fillStyle = css.friend; ctx.globalAlpha = 0.1; ctx.fillRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy);
     ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeStyle = css.friend; ctx.setLineDash([5, 4]); ctx.strokeRect(drag.sx, drag.sy, drag.bx - drag.sx, drag.by - drag.sy); ctx.setLineDash([]);
   }
+  if (state.outliner.section || state.outliner.drawing) drawSectionLine();   // the vertical section's line, A to B (29k-outliner.js)
   drawPaint(ctx);            // the painting tool under way: brush tip, rectangle, polygon, corner handles (27a-paint.js)
 
   // Scale bar: this is a map, so say what a length on it means.
@@ -263,5 +288,56 @@ function draw() {
   const bx = w - 20 - len * v.scale, by = h - 22;
   ctx.strokeStyle = css.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(bx, by - 5); ctx.lineTo(bx, by); ctx.lineTo(bx + len * v.scale, by); ctx.lineTo(bx + len * v.scale, by - 5); ctx.stroke();
   ctx.fillStyle = css.ink; ctx.font = '500 11px ' + mono; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(len + ' m', w - 20, by - 7);
+}
+// The test players' paths (29j-walk.js): each waypoint numbered, a dot at every half-second sample the rehearsal takes, a
+// warning ring where a stretch between two samples goes through a place unseen, where they are at the step chosen in the
+// result, and the probe as a cross. The test player being edited is drawn full strength, the others faint.
+function drawWalk() {
+  const w = state.walk, font = getComputedStyle(document.body).getPropertyValue('--mono'), times = w.players.length ? walkTimes(w) : [];
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  w.players.forEach((p, k) => {
+    if (!walkHas(p)) return;
+    ctx.globalAlpha = k === w.sel ? 1 : 0.45;
+    ctx.strokeStyle = css.friend; ctx.lineWidth = k === w.sel ? 2 : 1.5;
+    ctx.beginPath();
+    p.points.forEach((q, i) => {
+      const [x, y] = toScreen(q.pos[0], q.pos[2]);
+      if (i && q.t > p.points[i - 1].t) ctx.lineTo(x, y); else ctx.moveTo(x, y);   // two waypoints at one time are a jump: no line between them
+    });
+    ctx.stroke();
+    ctx.fillStyle = css.friend;
+    for (const t of times) {
+      if (!walkAlive(p, t)) break;
+      const s = walkPos(p.points, t), [x, y] = toScreen(s[0], s[2]);
+      ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 6.2832); ctx.fill();
+    }
+    ctx.font = '600 10px ' + font;
+    p.points.forEach((q, i) => {
+      const [x, y] = toScreen(q.pos[0], q.pos[2]);
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, 6.2832); ctx.fillStyle = css.panel; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.friend; ctx.stroke();
+      if (k === w.sel) { ctx.fillStyle = css.friend; ctx.fillText(String(i + 1), x + 6, y - 6); }
+    });
+    const [x0, y0] = toScreen(p.points[0].pos[0], p.points[0].pos[2]);
+    ctx.font = '600 11px ' + font; ctx.fillStyle = css.friend; ctx.fillText('T' + (k + 1), x0 + 8, y0 + 9);
+    const down = walkDown(p);
+    if (down !== null) {
+      const s = walkPos(p.points, down), [x, y] = toScreen(s[0], s[2]);
+      ctx.lineWidth = 2; ctx.strokeStyle = css.ink; ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke();
+    }
+  });
+  ctx.globalAlpha = 1;
+  for (const c of w.warnings) {
+    const [x, y] = toScreen(c.at[0], c.at[2]);
+    ctx.lineWidth = 2; ctx.strokeStyle = css.warn; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (const q of walkAt(w, w.at)) {
+    const [x, y] = toScreen(q.pos[0], q.pos[2]);
+    ctx.beginPath(); ctx.arc(x, y, 6.5, 0, 6.2832); ctx.fillStyle = css.friend; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = css.panel; ctx.stroke();
+  }
+  if (w.probe) {
+    const [x, y] = toScreen(w.probe[0], w.probe[2]), inside = walkProbe(w.probe, state.zones).filter(a => a.inside).length;
+    ctx.lineWidth = 2; ctx.strokeStyle = css.ink; ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke();
+    ctx.font = '600 11px ' + font; ctx.fillStyle = css.ink; ctx.fillText(w.probe[1] + ' m · inside ' + inside, x + 10, y - 10);
+  }
 }
 

@@ -27,7 +27,7 @@ const view3d = (() => {
       cv.setPointerCapture(ev.pointerId);
       down = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button, grab: -1, item: -1, saved: false };
       if (ev.button === 0 && state.tool === 'select') {
-        const item = cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.objective)), h = enemyHit(ev);
+        const item = cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.objective) && !outlinerBlocks((state.objectives[h.object.userData.objective] || {}).pos)), h = enemyHit(ev);
         if (item && (!h || item.distance < h.distance)) down.item = item.object.userData.objective;
         else if (h) { down.grab = h.object.userData.enemy; select(down.grab); }
       }
@@ -40,7 +40,7 @@ const view3d = (() => {
       if (down.item >= 0) {                                // dragging an intel item: it lies exactly where the cursor touches
         const o = state.objectives[down.item], hit = ground(ev);
         if (!o || !hit) return;
-        if (!down.saved) { pushUndo(); down.saved = true; }
+        if (!down.saved) { txBegin('Move intel ' + (o.label || o.name)); down.saved = true; }
         o.pos = [hit.point.x, hit.point.y + 0.02, -hit.point.z]; o.moved = true; syncEnemies();
         return;
       }
@@ -49,14 +49,14 @@ const view3d = (() => {
         if (!e || !hit) return;
         const p = [hit.point.x, hit.point.y, -hit.point.z], level = levelsAt(p[0], p[2]).filter(y => Math.abs(y - p[1]) <= 1.0).sort((a, b) => Math.abs(a - p[1]) - Math.abs(b - p[1]))[0];
         if (level === undefined && !e.fixed) return;       // only a fixed sentry may stand where nobody can walk
-        if (!down.saved) { pushUndo(); down.saved = true; }
+        if (!down.saved) { txBegin('Move enemy ' + (down.grab + 1)); down.saved = true; }
         e.pos = level !== undefined ? [p[0], level, p[2]] : p; syncEnemies();
         return;
       }
       yaw -= dx * 0.005; pitch = Math.max(-1.55, Math.min(1.55, pitch - dy * 0.005)); invalidate3();
     });
-    cv.addEventListener('pointerup', ev => { const d = down; down = null; if (!d) return; if (d.saved) return changed(); if (!d.moved && (d.button === 0 || d.button === 2)) pick(ev, d.button); });
-    cv.addEventListener('pointercancel', () => { down = null; });
+    cv.addEventListener('pointerup', ev => { const d = down; down = null; if (!d) return; if (d.saved) { txCommit(); return changed(); } if (!d.moved && (d.button === 0 || d.button === 2)) pick(ev, d.button); });
+    cv.addEventListener('pointercancel', () => { const d = down; down = null; if (d && d.saved) txCancel(); });     // a drag that did not finish leaves no change
     cv.addEventListener('contextmenu', ev => ev.preventDefault());
     cv.addEventListener('wheel', ev => { ev.preventDefault(); move(0, 0, -ev.deltaY * 0.03 * speed()); invalidate3(); }, { passive: false });
     new ResizeObserver(invalidate3).observe(cv);
@@ -241,8 +241,10 @@ const view3d = (() => {
     const sealed = sealedHides();          // a sealed mission, not revealed (20b-sealed.js): no enemies, routes, zones or placed things
     state.enemies.forEach((e, i) => {
       if (sealed) return;
+      const fade = outlinerAlpha(e.pos);                   // hidden, faint or locked in Floors and rooms (29k-outliner.js)
+      if (!fade) return;
       const ghost = live.on && !e.live, sel = i === state.selected, size = e.vehicle ? 3.3 : 0.95;    // ghost: placed, but not in the game (yet)
-      const g = figure(e, red, ghost ? 0.35 : 1, i);
+      const g = figure(e, red, (ghost ? 0.35 : 1) * fade, i);
       if (sel) hoop(g, size + 0.25, chosen);
       if (e.hvt) hoop(g, size, amber);
       if (warningFor(e)) hoop(g, size - 0.15, amber, 0.3);
@@ -250,10 +252,10 @@ const view3d = (() => {
       at(g, e.pos, 0).rotation.y = -e.yaw * Math.PI / 180; enemyGroup.add(g);
       if (e.hvt) { const halo = new T.Mesh(new T.TorusGeometry(0.42, 0.05, 8, 32), flat(amber)); halo.rotation.x = Math.PI / 2; extraGroup.add(at(halo, e.pos, e.prone ? 0.75 : 1.98)); }
       const tag = String(i + 1) + (e.vehicle ? ' TRUCK' : e.hvt ? ' TARGET' : e.trigger ? ' \u2192 ' + trigTag(e.trigger) : '');
-      extraGroup.add(at(label(tag, e.hvt ? css.warn : e.trigger ? css.friend : css.ink), e.pos, e.vehicle ? 2.1 : e.prone ? 0.85 : 2.1));
+      extraGroup.add(at(label(tag, e.hvt ? css.warn : e.trigger ? css.friend : css.ink, fade), e.pos, e.vehicle ? 2.1 : e.prone ? 0.85 : 2.1));
       if (e.role === 'Patrol' && !e.fixed && e.patrol.length) {
         const stops = e.patrol.map(p => new T.Vector3(p[0], p[1] + 0.25, -p[2]));
-        dashed(extraGroup, e.patrol.length > 2 ? [...stops, stops[0]] : stops, red, sel ? 1 : 0.75, 0.9);
+        dashed(extraGroup, e.patrol.length > 2 ? [...stops, stops[0]] : stops, red, (sel ? 1 : 0.75) * fade, 0.9);
         extraGroup.add(new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(e.pos[0], e.pos[1] + 0.25, -e.pos[2]), stops[0]]), new T.LineBasicMaterial({ color: red, transparent: true, opacity: 0.45, fog: false })));
         e.patrol.forEach((p, n) => {
           extraGroup.add(at(new T.Mesh(new T.SphereGeometry(sel ? 0.22 : 0.14, 12, 8), flat(red)), p, 0.25));
@@ -261,40 +263,49 @@ const view3d = (() => {
         });
       }
       if (e.role === 'Wander' && !e.fixed && e.wanderDistance > 0) {
-        dashed(extraGroup, circle(e.pos, e.wanderDistance, 0.2), red, sel ? 0.95 : 0.55, 0.9);
+        dashed(extraGroup, circle(e.pos, e.wanderDistance, 0.2), red, (sel ? 0.95 : 0.55) * fade, 0.9);
         extraGroup.add(lay(new T.CircleGeometry(e.wanderDistance, 64), flat(red, { opacity: sel ? 0.08 : 0.035 }), e.pos, 0.2));
       }
     });
     state.zones.forEach(z => {
       if (sealed) return;
       if (z.when !== 'zone' || !isVec(z.pos)) return;
-      const done = state.fired.includes(z.id), a = done ? 0.4 : 0.9;
+      const fade = outlinerAlpha(z.pos);
+      if (!fade) return;
+      const done = state.fired.includes(z.id), a = (done ? 0.4 : 0.9) * fade;
       if (!(z.area && z.area.parts && z.area.parts.length)) {        // a painted area is a volume of its own, see areas()
         dashed(extraGroup, circle(z.pos, z.radius, 0.3), blue, a, 1.2);
         extraGroup.add(lay(new T.CircleGeometry(z.radius, 72), flat(blue, { opacity: done ? 0.03 : 0.07 }), z.pos, 0.3));
       }
-      extraGroup.add(at(new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 3, 6), flat(blue, { transparent: done, opacity: a })), z.pos, 1.5));
+      extraGroup.add(at(new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 3, 6), flat(blue, { transparent: done || fade < 1, opacity: a })), z.pos, 1.5));
       extraGroup.add(at(label('Zone ' + z.id, css.friend, a), z.pos, 3.1));
     });
-    areas(sealed ? [] : areaVolumes());
+    // An area whose holder is hidden is left out; one that is faint or locked is drawn faint.
+    areas(sealed ? [] : areaVolumes().map(one => { const f = outlinerAreaAlpha(one.area); return f === 1 ? one : f ? Object.assign({}, one, { strong: false, faint: true }) : null; }).filter(Boolean));
     for (const [n, t] of (sealed ? [] : state.things).entries()) {
-      const bar = at(new T.Mesh(new T.BoxGeometry(0.9, 0.12, 0.2), lit(ink)), t.pos, 0.08); bar.rotation.y = -(t.yaw || 0) * Math.PI / 180; extraGroup.add(bar);
+      const fade = outlinerAlpha(t.pos);
+      if (!fade) continue;
+      const bar = at(new T.Mesh(new T.BoxGeometry(0.9, 0.12, 0.2), lit(ink, { transparent: fade < 1, opacity: fade })), t.pos, 0.08); bar.rotation.y = -(t.yaw || 0) * Math.PI / 180; extraGroup.add(bar);
       if (n === state.thing) { const g = at(new T.Group(), t.pos, 0); hoop(g, 0.8, chosen); extraGroup.add(g); }
-      extraGroup.add(at(label(t.name.trim().slice(0, 14) + (t.trigger ? ' \u2192 ' + trigTag(t.trigger) : ''), css.ink), t.pos, 0.6));
+      extraGroup.add(at(label(t.name.trim().slice(0, 14) + (t.trigger ? ' \u2192 ' + trigTag(t.trigger) : ''), css.ink, fade), t.pos, 0.6));
     }
     state.objectives.forEach((o, n) => {
-      const box = new T.Mesh(new T.BoxGeometry(0.35, 0.35, 0.35), lit(amber, { emissive: amber, emissiveIntensity: 0.5, transparent: o.obtained, opacity: o.obtained ? 0.35 : 1 }));
+      const fade = outlinerAlpha(o.pos), a = (o.obtained ? 0.35 : 1) * fade;
+      if (!fade) return;
+      const box = new T.Mesh(new T.BoxGeometry(0.35, 0.35, 0.35), lit(amber, { emissive: amber, emissiveIntensity: 0.5, transparent: a < 1, opacity: a }));
       box.rotation.y = Math.PI / 4; box.userData.objective = n; enemyGroup.add(at(box, o.pos, 0.18));
-      extraGroup.add(at(label(o.label.slice(0, 24), css.warn, o.obtained ? 0.35 : 1), o.pos, 0.6));
+      extraGroup.add(at(label(o.label.slice(0, 24), css.warn, a), o.pos, 0.6));
     });
     for (const p of state.infils) extraGroup.add(at(new T.Mesh(new T.ConeGeometry(0.5, 1.4, 4), flat(blue)), p, 0.7));
     // Doors: a see-through slab over the leaf. Faint is left to the game, red is locked, blue is unlocked; the selected
     // one is outlined in the selection blue.
     const grey = col('ink-2');
     state.doors.forEach((d, n) => {
+      const fade = outlinerAlpha(d.mid);
+      if (!fade) return;
       const dx = d.mid[0] - d.pos[0], dz = d.mid[2] - d.pos[2], half = Math.hypot(dx, dz), set = doorSet(d), lockedNow = d.locked === true || (d.locked === null && d.isLocked === true);
       const slab = new T.Mesh(new T.BoxGeometry(half > 0.15 ? half * 2 : 0.9, 2.0, 0.2),
-        flat(d.locked === true || (!set && lockedNow) ? red : d.locked === false ? blue : grey, { transparent: true, opacity: n === state.door ? 0.9 : set ? 0.65 : lockedNow ? 0.4 : 0.2, depthWrite: false }));
+        flat(d.locked === true || (!set && lockedNow) ? red : d.locked === false ? blue : grey, { transparent: true, opacity: (n === state.door ? 0.9 : set ? 0.65 : lockedNow ? 0.4 : 0.2) * fade, depthWrite: false }));
       slab.position.set(d.mid[0], d.mid[1], -d.mid[2]); slab.rotation.y = Math.atan2(dz, dx); slab.userData.door = n; enemyGroup.add(slab);
       if (n === state.door) {                              // drawn over walls too, so the selected door can be found from anywhere
         const box = new T.LineSegments(new T.EdgesGeometry(slab.geometry), new T.LineBasicMaterial({ color: chosen, fog: false, depthTest: false, transparent: true }));
@@ -350,15 +361,16 @@ const view3d = (() => {
     ray.setFromCamera(new T.Vector2((ev.clientX - r.left) / r.width * 2 - 1, -((ev.clientY - r.top) / r.height * 2 - 1)), camera);
     return ray;
   }
-  // Only what is drawn can be clicked: floors above the cut-off height are ignored.
-  const ground = ev => cast(ev).intersectObjects([geoMesh, mapMesh].filter(Boolean), false).find(h => h.point.y <= state.ceiling + 0.4);
-  const enemyHit = ev => cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.enemy));   // the figure, not its rings
+  // Only what is drawn and free can be clicked: floors above the cut-off height are ignored, and so is whatever Floors and
+  // rooms hides, locks or leaves faint (29k-outliner.js); the ray goes on to what is free behind it.
+  const ground = ev => cast(ev).intersectObjects([geoMesh, mapMesh].filter(Boolean), false).find(h => h.point.y <= state.ceiling + 0.4 && !outlinerBlocks([h.point.x, h.point.y, -h.point.z]));
+  const enemyHit = ev => cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.enemy) && !outlinerBlocks((state.enemies[h.object.userData.enemy] || {}).pos));   // the figure, not its rings
   function screenOf(p) { const v = new T.Vector3(p[0], p[1] + 0.9, -p[2]).project(camera), r = cv.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; }
   function pick(ev, button) {
     const hit = ground(ev), hitEnemy = button === 2 ? null : enemyHit(ev);
     if (hitEnemy && (!hit || hitEnemy.distance <= hit.distance + 0.3)) return click3d(null, hitEnemy.object.userData.enemy, button);
     // A door is clicked through its slab, but not through a wall in front of it.
-    const hitDoor = button === 0 && state.tool === 'select' ? cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.door) && h.point.y <= state.ceiling + 2.4) : null;
+    const hitDoor = button === 0 && state.tool === 'select' ? cast(ev).intersectObjects(enemyGroup.children, true).find(h => Number.isInteger(h.object.userData.door) && h.point.y <= state.ceiling + 2.4 && !outlinerBlocks((state.doors[h.object.userData.door] || {}).mid)) : null;
     if (hitDoor && (!hit || hitDoor.distance <= hit.distance + 0.3)) return selectDoor(hitDoor.object.userData.door);
     click3d(hit ? [hit.point.x, hit.point.y, -hit.point.z] : null, -1, button);
   }

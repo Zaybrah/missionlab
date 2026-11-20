@@ -1,164 +1,426 @@
 {
-  "schema": "missionlab-plan/1",
-  "name": "Clean House: co-op acceptance",
-  "scene": "",
-  "navFile": "suburbv2.bytes",
-  "seed": 0,
-  "notes": [
-    "The mission for the co-op record (docs/coop-record.md): one modded host, at least one friend without the mod. Every feature below is used once, so each row of the record has one place to look.",
-    "Start enemies: five guards in the house and one patrol walking the yard north of it (route from Clean House: Open Door).",
-    "Zone trigger 1 'At the door': walking up to the front door brings two patrols from the north and unlocks and opens the upstairs door that starts locked.",
-    "Repeating trigger 2 'Every ninety seconds': a timer at 60 s that fires again every 90 s, three times in all, and brings one wanderer each time.",
-    "Doors: 'Door Interior Paneled_3' upstairs starts locked (trigger 1 unlocks and opens it); taking the phone closes and locks the back door 'Door Exterior Paneled_3'.",
-    "Moved intel: the phone is laid upstairs at (-20.75, 4.78, 6.5) instead of the game's own place. Trigger 3 'Phone taken' fires when any phone of the set is picked up.",
-    "Countdown: trigger 5 'Out of time' starts with the phone and tells the players at the start, at one minute and at ten seconds.",
-    "Two messages at once: triggers 3 and 4 both speak the moment the phone is taken; the second must follow the first, not replace it.",
-    "Extraction held: the extraction stays shut until trigger 4 'Extraction open' has fired, which is when the phone is taken.",
-    "Shared respawn: 20 seconds after the first death everyone who is dead comes back together, two waves at most.",
-    "Success ending: trigger 7 'Job done' ends the mission as a success once the phone is taken and the officer upstairs is down (trigger 6). Failure ending: trigger 5 ends it as failed three minutes after the phone is taken."
-  ],
-  "briefing": [
-    "Clean House, co-op acceptance run.",
-    "Take the phone upstairs and kill the officer. The way out stays shut until you hold the phone.",
-    "Once you hold it you have three minutes."
-  ],
-  "triggers": [
-    {
-      "id": 1,
-      "name": "At the door",
-      "when": "zone",
-      "pos": [
-        -12.0,
-        0.29,
-        -6.0
-      ],
-      "radius": 5,
-      "facePlayer": true,
-      "message": "Movement to the north: more of them are coming.",
-      "doors": [
-        {
-          "name": "Door Interior Paneled_3",
-          "pos": [
-            -23.05,
-            3.7,
-            -14.15
-          ],
-          "locked": false,
-          "open": true
-        }
-      ]
+  "schema": "missionlab-plan/2",
+  "mission": {
+    "name": "Clean House: co-op acceptance (0.27)",
+    "scene": "",
+    "navFile": "suburbv2.bytes",
+    "seed": 0,
+    "notes": [
+      "The mission for the co-op record (docs/coop-record.md, the 0.27.0 record): one modded host, at least one friend without any mod. Every feature below is used once, so each row of the record has one place to look. It uses only what docs/capabilities.json does not mark failing: no hunters, no calling enemies (rally), no Game Master orders to fresh enemies.",
+      "Start enemies: five guards in the house and one patrol walking the yard north of it (route from Clean House: Open Door).",
+      "Zone trigger 1 'At the door': walking up to the front door brings two patrols from the north and unlocks and opens the upstairs door that starts locked.",
+      "Repeating trigger 2 'Every ninety seconds': a timer at 60 s that fires again every 90 s, three times in all, and brings one wanderer each time. A repeat brings back only its own enemies that are down; one that brings nobody shows no message (0.26.2).",
+      "Doors: 'Door Interior Paneled_3' upstairs starts locked (trigger 1 unlocks and opens it); taking the phone closes and locks the back door 'Door Exterior Paneled_3'.",
+      "Moved intel: the phone is laid upstairs at (-20.75, 4.78, 6.5) instead of the game's own place. Trigger 3 'Phone taken' fires when the phone is picked up (the sim cards do not fire it).",
+      "Countdown: trigger 5 'Out of time' starts with the phone and tells the players at the start, at one minute and at ten seconds.",
+      "Two messages at once: triggers 3 and 4 both speak the moment the phone is taken; the second must follow the first, not replace it.",
+      "Extraction held: the extraction stays shut until trigger 4 'Extraction open' has fired, which is when the phone is taken.",
+      "Shared respawn: 20 seconds after the first death everyone who is dead comes back together, two waves at most.",
+      "Success ending: trigger 7 'Job done' ends the mission as a success once the phone is taken and the officer upstairs is down (trigger 6). Failure ending: trigger 5 ends it as failed three minutes after the phone is taken.",
+      "Painted house: triggers 8 'In the house' and 9 'House held' share one painted area of two parts, the ground floor (band 0.2 to 3.2) and the upper floor (3.18 to 6.28), outlines from the house walls (docs/findings.md, 'Painted trigger areas against recorded movement'). The front garden, the railed veranda in front of the front wall, the courtyard behind the back door and the basement are outside it. The bands overlap on the stairs, so a hold is not restarted by going up or down.",
+      "Hold by everyone: trigger 9 fires once every living player has been inside the painted house for 45 s in one go; anyone stepping outside restarts it. It ends nothing and opens nothing: it is there to be watched. Trigger 10 'Late guard' brings one standing guard to the north yard 20 s after it (a delayed spawn that does not need to move).",
+      "Written as missionlab-plan/2 because of the painted area. It has no goals and no linked places; the record's objective-notice row is played on clean_house_objectives.json (missionlab-plan/3)."
+    ],
+    "briefing": [
+      "Clean House, co-op acceptance run.",
+      "Take the phone upstairs and kill the officer. The way out stays shut until you hold the phone.",
+      "Once you hold it you have three minutes."
+    ],
+    "triggers": [
+      {
+        "id": 1,
+        "name": "At the door",
+        "when": "zone",
+        "pos": [-12.0, 0.29, -6.0],
+        "radius": 5,
+        "facePlayer": true,
+        "message": "Movement to the north: more of them are coming.",
+        "doors": [
+          {
+            "name": "Door Interior Paneled_3",
+            "pos": [-23.05, 3.7, -14.15],
+            "locked": false,
+            "open": true
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Every ninety seconds",
+        "when": "time",
+        "delay": 60,
+        "repeat": 90,
+        "times": 3,
+        "facePlayer": true,
+        "message": "{time} in: one more of them is on the way. {enemies} left."
+      },
+      {
+        "id": 3,
+        "name": "Phone taken",
+        "when": "intel",
+        "item": "Cell Phone",
+        "facePlayer": true,
+        "message": "Phone secured. The back door is locked behind you.",
+        "doors": [
+          {
+            "name": "Door Exterior Paneled_3",
+            "pos": [-19.55, 0.7, -19.57],
+            "locked": true,
+            "open": false
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "name": "Extraction open",
+        "when": "after",
+        "after": 3,
+        "facePlayer": true,
+        "message": "Second message: the extraction is open."
+      },
+      {
+        "id": 5,
+        "name": "Out of time",
+        "when": "after",
+        "after": 3,
+        "delay": 180,
+        "facePlayer": true,
+        "warn": true,
+        "red": true,
+        "message": "Out of time.",
+        "end": "failed"
+      },
+      {
+        "id": 6,
+        "name": "Officer down",
+        "when": "down",
+        "tag": "officer",
+        "count": 0,
+        "facePlayer": true,
+        "message": "The officer is down."
+      },
+      {
+        "id": 7,
+        "name": "Job done",
+        "when": "all",
+        "of": [3, 6],
+        "facePlayer": true,
+        "message": "Phone and officer: mission accomplished.",
+        "end": "success"
+      },
+      {
+        "id": 8,
+        "name": "In the house",
+        "when": "zone",
+        "pos": [-22.0, 0.69, -8.0],
+        "radius": 10,
+        "area": {
+          "parts": [
+            {
+              "floor": [0.2, 3.2],
+              "outline": [
+                [-26.2, -19.9],
+                [-15.2, -19.9],
+                [-15.2, -13.6],
+                [-18.2, -13.6],
+                [-18.2, 2.6],
+                [-13.8, 2.6],
+                [-13.8, 10.4],
+                [-26.2, 10.4]
+              ]
+            },
+            {
+              "floor": [3.18, 6.28],
+              "outline": [
+                [-26.2, -19.9],
+                [-18.2, -19.9],
+                [-18.2, 2.6],
+                [-13.8, 2.6],
+                [-13.8, 10.4],
+                [-26.2, 10.4]
+              ]
+            }
+          ]
+        },
+        "facePlayer": true,
+        "message": "Inside the house."
+      },
+      {
+        "id": 9,
+        "name": "House held",
+        "when": "hold",
+        "pos": [-22.0, 0.69, -8.0],
+        "radius": 10,
+        "area": {
+          "parts": [
+            {
+              "floor": [0.2, 3.2],
+              "outline": [
+                [-26.2, -19.9],
+                [-15.2, -19.9],
+                [-15.2, -13.6],
+                [-18.2, -13.6],
+                [-18.2, 2.6],
+                [-13.8, 2.6],
+                [-13.8, 10.4],
+                [-26.2, 10.4]
+              ]
+            },
+            {
+              "floor": [3.18, 6.28],
+              "outline": [
+                [-26.2, -19.9],
+                [-18.2, -19.9],
+                [-18.2, 2.6],
+                [-13.8, 2.6],
+                [-13.8, 10.4],
+                [-26.2, 10.4]
+              ]
+            }
+          ]
+        },
+        "hold": 45,
+        "everyone": true,
+        "facePlayer": true,
+        "message": "House held by everyone for 45 seconds."
+      },
+      {
+        "id": 10,
+        "name": "Late guard",
+        "when": "after",
+        "after": 9,
+        "delay": 20,
+        "facePlayer": true,
+        "message": "Twenty seconds after the hold: one more of them in the north yard."
+      }
+    ],
+    "objectives": [
+      {
+        "name": "Cell Phone_1",
+        "pos": [-20.75, 4.78, 6.5],
+        "yaw": 260
+      }
+    ],
+    "doors": [
+      {
+        "name": "Door Interior Paneled_3",
+        "pos": [-23.05, 3.7, -14.15],
+        "locked": true,
+        "enemiesCanOpen": false
+      }
+    ],
+    "extraction": {
+      "after": 4
     },
-    {
-      "id": 2,
-      "name": "Every ninety seconds",
-      "when": "time",
-      "delay": 60,
-      "repeat": 90,
-      "times": 3,
-      "facePlayer": true,
-      "message": "{time} in: one more of them is on the way. {enemies} left."
+    "respawn": {
+      "after": 20,
+      "times": 2
     },
-    {
-      "id": 3,
-      "name": "Phone taken",
-      "when": "intel",
-      "item": "Cell Phone",
-      "facePlayer": true,
-      "message": "Phone secured. The back door is locked behind you.",
-      "doors": [
-        {
-          "name": "Door Exterior Paneled_3",
-          "pos": [
-            -19.55,
-            0.7,
-            -19.57
-          ],
-          "locked": true,
-          "open": false
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "name": "Extraction open",
-      "when": "after",
-      "after": 3,
-      "facePlayer": true,
-      "message": "Second message: the extraction is open."
-    },
-    {
-      "id": 5,
-      "name": "Out of time",
-      "when": "after",
-      "after": 3,
-      "delay": 180,
-      "facePlayer": true,
-      "warn": true,
-      "red": true,
-      "message": "Out of time.",
-      "end": "failed"
-    },
-    {
-      "id": 6,
-      "name": "Officer down",
-      "when": "down",
-      "tag": "officer",
-      "count": 0,
-      "facePlayer": true,
-      "message": "The officer is down."
-    },
-    {
-      "id": 7,
-      "name": "Job done",
-      "when": "all",
-      "of": [
-        3,
-        6
-      ],
-      "facePlayer": true,
-      "message": "Phone and officer: mission accomplished.",
-      "end": "success"
-    }
-  ],
-  "objectives": [
-    {
-      "name": "Cell Phone_1",
-      "pos": [
-        -20.75,
-        4.78,
-        6.5
-      ],
-      "yaw": 260
-    }
-  ],
-  "doors": [
-    {
-      "name": "Door Interior Paneled_3",
-      "pos": [
-        -23.05,
-        3.7,
-        -14.15
-      ],
-      "locked": true,
-      "enemiesCanOpen": false
-    }
-  ],
-  "extraction": {
-    "after": 4
-  },
-  "respawn": {
-    "after": 20,
-    "times": 2
-  },
-  "spawns": [
-    {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 0, "role": "Wander", "pos": [-20.5, 0.68, -4.0], "yaw": 200, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 5, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 0, "role": "Guard", "pos": [-18.0, 0.69, -17.0], "yaw": 180, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "tag": "officer"},
-    {"group": 0, "role": "Guard", "pos": [-21.0, -2.32, 6.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 1, "role": "Patrol", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},
-    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
-    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]},
-    {"group": 3, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []}
-  ]
+    "spawns": [
+      {
+        "group": 0,
+        "role": "Guard",
+        "pos": [-15.0, 0.65, -6.0],
+        "yaw": 90,
+        "indoor": true,
+        "defensive": true,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": []
+      },
+      {
+        "group": 0,
+        "role": "Wander",
+        "pos": [-20.5, 0.68, -4.0],
+        "yaw": 200,
+        "indoor": true,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 5,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": []
+      },
+      {
+        "group": 0,
+        "role": "Guard",
+        "pos": [-18.0, 0.69, -17.0],
+        "yaw": 180,
+        "indoor": true,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": []
+      },
+      {
+        "group": 0,
+        "role": "Guard",
+        "pos": [-19.0, 3.68, 4.0],
+        "yaw": 180,
+        "indoor": true,
+        "defensive": true,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": [],
+        "tag": "officer"
+      },
+      {
+        "group": 0,
+        "role": "Guard",
+        "pos": [-21.0, -2.32, 6.0],
+        "yaw": 180,
+        "indoor": true,
+        "defensive": true,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": []
+      },
+      {
+        "group": 1,
+        "role": "Patrol",
+        "pos": [-9.0, 0.36, 8.0],
+        "yaw": 180,
+        "indoor": false,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 3,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 0,
+        "hvt": false,
+        "patrol": [
+          [-9.0, 0.27, -12.0],
+          [-3.0, 0.0, -12.0],
+          [-3.0, 0.18, 8.0],
+          [-9.0, 0.36, 8.0]
+        ]
+      },
+      {
+        "group": 2,
+        "role": "Patrol",
+        "pos": [2.0, 0.03, 62.0],
+        "yaw": 180,
+        "indoor": false,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 2,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 1,
+        "hvt": false,
+        "patrol": [
+          [2.0, 0.03, 30.0],
+          [2.0, 0.01, 8.0],
+          [-3.0, 0.0, -12.0]
+        ]
+      },
+      {
+        "group": 2,
+        "role": "Patrol",
+        "pos": [6.0, 0.11, 66.0],
+        "yaw": 180,
+        "indoor": false,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 2,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 1,
+        "hvt": false,
+        "patrol": [
+          [4.0, 0.07, 32.0],
+          [-3.0, 0.18, 8.0],
+          [-9.0, 0.27, -12.0]
+        ]
+      },
+      {
+        "group": 3,
+        "role": "Wander",
+        "pos": [5.0, 0.08, 20.0],
+        "yaw": 200,
+        "indoor": false,
+        "defensive": false,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 12,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 2,
+        "hvt": false,
+        "patrol": []
+      },
+      {
+        "group": 4,
+        "role": "Guard",
+        "pos": [-23.0, 0.5, 18.0],
+        "yaw": 180,
+        "indoor": false,
+        "defensive": true,
+        "detectionRange": 0,
+        "hearingRange": 0,
+        "fov": 0,
+        "wanderDistance": 0,
+        "patrolWaitSeconds": 4,
+        "fixed": false,
+        "prone": false,
+        "type": "",
+        "trigger": 10,
+        "hvt": false,
+        "patrol": []
+      }
+    ]
+  }
 }

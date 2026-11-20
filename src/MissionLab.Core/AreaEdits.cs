@@ -12,6 +12,12 @@ namespace MissionLab.Core
     /// them is refused whole. The trigger then keeps the place it had (anchor, radius and area), so the engine sees no change
     /// of place and its progress stands; a good new shape goes through TriggerEngine.Sync, which drops only the unfinished
     /// progress of a reshaped zone or hold and keeps its firings.
+    ///
+    /// A zone or hold linked to a named place (ML-040) takes its shape from the place list sent with it. The page sends every
+    /// place and every trigger in one request and MissionPlan.FromJson gives all triggers linked to one place that place's
+    /// one AreaPlan, so every dependant gets the same new shape in the same TriggerEngine.Sync: each loses its unfinished
+    /// occupancy and hold progress and keeps its firings. A link whose place is missing, a point or breaks the area rules is
+    /// refused like a broken area, and the trigger keeps the place it had.
     /// </summary>
     public static class AreaEdits
     {
@@ -21,7 +27,14 @@ namespace MissionLab.Core
         /// ignores anyway. Of two triggers with the same number only the first counts, as in the engine. Numbers and kinds are read
         /// as MissionPlan.FromJson reads them. Paths read as in a file: "triggers[2].area.parts[0].outline: ...".
         /// </summary>
-        public static Dictionary<int, string> Refused(JsonElement triggers)
+        public static Dictionary<int, string> Refused(JsonElement triggers) => Refused(triggers, default(JsonElement));
+
+        /// <summary>
+        /// As Refused(triggers), and a trigger that links a place ("place": its id) is judged by that place in
+        /// <paramref name="places"/> (the place list as sent; anything but a list counts as no places): the place must be there,
+        /// painted, and keep the area rules. Paths read "triggers[2].place: ..." or "places[0].area.parts[0].outline: ...".
+        /// </summary>
+        public static Dictionary<int, string> Refused(JsonElement triggers, JsonElement places)
         {
             var refused = new Dictionary<int, string>();
             if (triggers.ValueKind != JsonValueKind.Array) return refused;
@@ -36,12 +49,35 @@ namespace MissionLab.Core
                 string when = t.TryGetProperty("when", out JsonElement w) && w.ValueKind == JsonValueKind.String ? w.GetString() : null;
                 if (!TriggerPlan.Known(when)) when = TriggerPlan.OnZone;
                 if (!TriggerPlan.Placed(when)) continue;
+                if (t.TryGetProperty("place", out JsonElement link) && link.ValueKind == JsonValueKind.Number && (int)link.GetDouble() > 0)
+                {
+                    string why = LinkRefused((int)link.GetDouble(), places, "triggers[" + i + "]");
+                    if (why != null) refused[id] = why;
+                    continue;
+                }
                 if (!t.TryGetProperty("area", out JsonElement area) || area.ValueKind == JsonValueKind.Null) continue;     // null: the circle, as before
                 string first = null;
                 AreaPlan.Check(area, "triggers[" + i + "]", (code, path, text) => { if (first == null) first = path + ": " + text; });
                 if (first != null) refused[id] = first;
             }
             return refused;
+        }
+
+        /// <summary>What is wrong with a link to place <paramref name="placeId"/>, or null when the place is there, painted and keeps the area rules.</summary>
+        private static string LinkRefused(int placeId, JsonElement places, string at)
+        {
+            int k = -1;
+            if (places.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement p in places.EnumerateArray())
+                {
+                    k++;
+                    if (p.ValueKind != JsonValueKind.Object || !p.TryGetProperty("id", out JsonElement n) || n.ValueKind != JsonValueKind.Number || (int)n.GetDouble() != placeId) continue;
+                    if (!p.TryGetProperty("area", out JsonElement area) || area.ValueKind == JsonValueKind.Null) return at + ".place: place " + placeId + " has no painted area";
+                    string first = null;
+                    AreaPlan.Check(area, "places[" + k + "]", (code, path, text) => { if (first == null) first = path + ": " + text; });
+                    return first;
+                }
+            return at + ".place: there is no place " + placeId;
         }
 
         /// <summary>
@@ -68,7 +104,7 @@ namespace MissionLab.Core
                     if (before == null) { sent.RemoveAt(i); kept = "it was not added"; }
                     else if (TriggerPlan.Placed(before.When))
                     {
-                        t.Pos = before.Pos; t.Radius = before.Radius; t.Area = before.Area;
+                        t.Pos = before.Pos; t.Radius = before.Radius; t.Area = before.Area; t.Place = before.Place;
                         kept = "it keeps the place it had";
                     }
                     else { sent[i] = before; kept = "it stays as it was"; }

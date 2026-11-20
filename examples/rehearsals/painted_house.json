@@ -1,0 +1,24 @@
+{
+ "schema": "missionlab-plan/2",
+ "mission": {
+  "name": "Example: a painted house to walk through",
+  "id": "sc-painted-house",
+  "scene": "Example",
+  "triggers": [
+   { "id": 1, "name": "House", "when": "zone", "pos": [4, 0, 4], "radius": 6, "message": "In the house.",
+     "area": { "parts": [
+      { "floor": [0, 2.8], "outline": [[0, 0], [20, 0], [20, 20], [0, 20]], "holes": [ [[8, 8], [12, 8], [12, 12], [8, 12]] ] },
+      { "floor": [3, 5.8], "outline": [[0, 0], [20, 0], [20, 20], [0, 20]], "holes": [ [[8, 8], [12, 8], [12, 12], [8, 12]] ] },
+      { "floor": [0, 5.8], "outline": [[16, 2], [19, 2], [19, 8], [16, 8]] }
+     ] } },
+   { "id": 2, "name": "Hold the house", "when": "hold", "pos": [4, 0, 4], "radius": 6, "hold": 6, "everyone": true, "message": "The house is held.",
+     "area": { "parts": [
+      { "floor": [0, 2.8], "outline": [[0, 0], [20, 0], [20, 20], [0, 20]], "holes": [ [[8, 8], [12, 8], [12, 12], [8, 12]] ] },
+      { "floor": [3, 5.8], "outline": [[0, 0], [20, 0], [20, 20], [0, 20]], "holes": [ [[8, 8], [12, 8], [12, 12], [8, 12]] ] },
+      { "floor": [0, 5.8], "outline": [[16, 2], [19, 2], [19, 8], [16, 8]] }
+     ] } },
+   { "id": 3, "name": "Alarm", "when": "alert", "message": "They know." }
+  ],
+  "spawns": [ { "pos": [60, 0, 60], "role": "Guard" } ]
+ }
+}

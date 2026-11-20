@@ -63,7 +63,7 @@ function areaEditStart(target, band) {
   const b = Array.isArray(band) && band.length === 2 ? band : floorBand();
   if (!setPaintBand(b[0], b[1])) { const f = floorBand(); setPaintBand(f[0], f[1]); }
   if (!state.paint.tool) state.paint.tool = 'brush';
-  paintGesture = null;
+  paintGestureDrop();
   if (target.kind === 'trigger') showTab('triggers');
   // A focused button inside the trigger list keeps the list from being rebuilt, and with it the painting controls.
   if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
@@ -72,7 +72,7 @@ function areaEditStart(target, band) {
   return true;
 }
 function areaEditStop() {
-  state.paint.target = null; state.paint.tool = null; paintGesture = null;
+  paintGestureDrop(); state.paint.target = null; state.paint.tool = null;
   syncSide(); invalidate(); view3d.syncEnemies();
 }
 // Called once after every finished stroke, shape or corner edit. Other parts may wrap it.
@@ -81,11 +81,21 @@ function areaChanged(target) { changed(); }
 function areaClear(target) {
   const h = areaHolder(target); if (!h) return;
   const had = !!(h.area && h.area.parts && h.area.parts.length);
-  if (state.paint.target && state.paint.target.kind === target.kind && state.paint.target.index === target.index) { state.paint.target = null; state.paint.tool = null; paintGesture = null; }
+  if (state.paint.target && state.paint.target.kind === target.kind && state.paint.target.index === target.index) { state.paint.target = null; state.paint.tool = null; paintGestureDrop(); }
   if (!had) { h.area = null; syncSide(); invalidate(); view3d.syncEnemies(); return; }
-  pushUndo(); h.area = null; areaChanged(target);
+  willChange('Back to a circle: ' + areaTargetName(target)); h.area = null; areaChanged(target);
   say('The painted area is gone and the circle counts again. Undo brings the area back.');
 }
+// The painted thing in words, for the undo history: 'zone 2', 'place "Yard"', 'placement area "North"'.
+function areaTargetName(target) {
+  const h = areaHolder(target);
+  if (!h) return 'the area';
+  return target.kind === 'trigger' ? trigTitle(h).toLowerCase() : (target.kind === 'place' ? 'place "' : 'placement area "') + (h.name || h.id) + '"';
+}
+// What each finished paint edit is called in the history, by the word its refusal message starts with.
+const PAINT_STEPS = { 'That stroke': 'Paint on ', 'That erasing': 'Erase from ', 'That rectangle': 'Add a rectangle to ', 'That polygon': 'Add a polygon to ',
+  'That corner move': 'Move a corner of ', 'Removing that corner': 'Remove a corner of ', 'That corner': 'Add a corner to ', 'That move': 'Move the area of ',
+  'That turn': 'Turn the area of ', 'Deleting that part': 'Delete a part of ', 'Adding a floor': 'Add a floor to ' };
 
 // ----- the one order every tool writes
 function paintRing(ring, outline) {
@@ -124,7 +134,7 @@ function paintCommit(target, parts, what, more) {
   if (!holder) return false;
   const why = paintLimits(parts);
   if (why) { say(what + ' was not made: ' + why + '.'); return false; }
-  pushUndo();
+  willChange((PAINT_STEPS[what] || 'Change the area of ') + areaTargetName(target));
   holder.area = { parts };
   if (more) more(holder);
   areaPrepare(holder.area);
@@ -367,7 +377,7 @@ function areaVertex(part, ring, k, p) {
   else if (r.length > 3) r.splice(k, 1);
   else if (ring >= 0) { parts[part].holes.splice(ring, 1); say('A hole needs three corners, so that hole is gone.'); }
   else { say('An outline needs at least three corners. To remove it, delete the part in the list.'); return false; }
-  return paintCommit(t, parts.map(paintPart), p ? 'That move' : 'Removing that corner');
+  return paintCommit(t, parts.map(paintPart), p ? 'That corner move' : 'Removing that corner');
 }
 // Adds a corner p = [x, z] after corner k of a ring.
 function areaInsertVertex(part, ring, k, p) {
@@ -442,7 +452,7 @@ function areaAnchorInside() {
   if (!area || !area.parts.length) { say('Paint the area first.'); return false; }
   const p = areaInteriorPoint(area);
   if (!p) { say('No point inside the area was found. Check its findings.'); return false; }
-  pushUndo(); h.pos = p; areaChanged(t);
+  willChange('Anchor inside the area of ' + areaTargetName(t)); h.pos = p; areaChanged(t);
   say('The anchor now stands inside the area, at ' + p[0].toFixed(1) + ', ' + p[2].toFixed(1) + ', height ' + p[1].toFixed(1) + '.');
   return true;
 }
@@ -519,7 +529,7 @@ function drawPaint(c) {
   }
   if (g && g.kind === 'poly' && g.pts.length) {
     c.beginPath(); g.pts.forEach((p, k) => { const [x, y] = toScreen(p[0], p[1]); if (k) c.lineTo(x, y); else c.moveTo(x, y); });
-    if (paintPointer) { const [x, y] = toScreen(paintPointer[0], paintPointer[1]); c.lineTo(x, y); }
+    if (paintPointer) { const p = wallsSnap(paintPointer), [x, y] = toScreen(p[0], p[1]); c.lineTo(x, y); }
     c.setLineDash([5, 4]); c.stroke(); c.setLineDash([]);
     g.pts.forEach((p, k) => { const [x, y] = toScreen(p[0], p[1]); c.beginPath(); c.arc(x, y, k ? 3.5 : 6, 0, Math.PI * 2); c.fillStyle = css.panel; c.fill(); c.stroke(); });
   }
@@ -567,19 +577,65 @@ function areaVolumes() {
   return out;
 }
 
+// ----- corner, edge-middle and whole-area drags. The drag changes the area in place so it can be drawn, but it is one
+// change only when it ends: it is a transaction from its first movement (27-editing.js), so until then nothing is staged or
+// saved and no undo entry exists, and giving it up by any route (Esc, pointercancel, another tool, Done) puts back exactly
+// what was there before it started.
+function paintDragStart(kind, fields, sx, sy) {
+  const t = state.paint.target, h = areaHolder(t);
+  paintGesture = Object.assign({ kind, sx, sy, saved: false, holder: h, target: { kind: t.kind, index: t.index, id: t.id },
+    was: JSON.stringify(h.area), sig: areaSignature(h.area), pos: isVec(h.pos) ? h.pos.slice() : null }, fields);
+}
+// Puts the area and its anchor back as they were before the drag. In place, so anything holding the area sees it, and its
+// cached bounds are worked out again: the drag left them describing the dragged shape.
+function paintDragRestore(g) {
+  const h = g.holder, was = JSON.parse(g.was);
+  if (h.area && was) h.area.parts = was.parts; else h.area = was;
+  if (g.pos) h.pos = g.pos.slice();
+  if (h.area) areaPrepare(h.area);
+}
+const paintIsDrag = g => !!g && (g.kind === 'vertex' || g.kind === 'move');
+// Gives up whatever gesture is under way; a drag is undone first. True when there was a drag to give up.
+function paintGestureDrop() {
+  const g = paintGesture;
+  paintGesture = null;
+  if (!paintIsDrag(g)) return false;
+  if (g.saved) { paintDragRestore(g); txCancel(); }
+  invalidate();
+  return true;
+}
+// The end of a drag: one undo entry (the state before it started) and one change notice, or nothing when it moved nothing.
+function paintDragEnd(g) {
+  paintGesture = null;
+  const h = g.holder, area = h.area;
+  if (!area) { if (g.saved) txCancel(); return; }
+  if (!g.saved) {           // a click on an edge middle adds a corner there; a click on a corner or the area changes nothing
+    if (g.kind === 'vertex' && g.hd.mid) areaInsertVertex(g.hd.part, g.hd.ring, g.hd.k, g.hd.p);
+    return;
+  }
+  const parts = area.parts.map(paintPart), pos = isVec(h.pos) ? [r2(h.pos[0]), h.pos[1], r2(h.pos[2])] : null;
+  if (areaSignature({ parts }) === g.sig && JSON.stringify(pos) === JSON.stringify(g.pos)) { paintDragRestore(g); txCancel(); invalidate(); return; }
+  area.parts = parts; if (pos) h.pos = pos;
+  areaPrepare(area);
+  txCommit();
+  areaChanged(g.target);
+}
+function paintToolSet(tool) { paintGestureDrop(); state.paint.tool = tool; syncSide(); invalidate(); }
+
 // ----- the mouse on the flat map. These listeners come before 28-squads.js's, so a painting click stops there; the right
-// button and empty ground under Corners still pan as usual.
+// button and empty ground under Corners still pan as usual. Every corner a Rectangle, a Polygon or a Corners drag places
+// goes through wallsSnap (27c-walls.js), which leaves it where it is unless snapping to walls is on and the geometry matches.
 const paintAt = ev => { const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top; return { sx, sy, w: toWorld(sx, sy) }; };
 const paintActive = () => !!(state.paint.target && state.paint.tool && state.mode !== '3d' && areaHolder(state.paint.target));
-canvas.addEventListener('pointerdown', ev => {
+function paintPointerDown(ev) {
   if (!paintActive()) return;
   const { sx, sy, w } = paintAt(ev), tool = state.paint.tool;
   if (tool === 'vertex') {
     const hd = paintHandleAt(sx, sy);
-    if (ev.button === 2 && hd && !hd.mid) { ev.stopImmediatePropagation(); areaVertex(hd.part, hd.ring, hd.k, null); return; }
+    if (ev.button === 2 && hd && !hd.mid) { ev.stopImmediatePropagation(); paintGestureDrop(); areaVertex(hd.part, hd.ring, hd.k, null); return; }
     if (ev.button !== 0) return;
-    if (hd) { ev.stopImmediatePropagation(); canvas.setPointerCapture(ev.pointerId); paintGesture = { kind: 'vertex', hd, sx, sy, saved: false }; return; }
-    if (paintOnArea(w)) { ev.stopImmediatePropagation(); canvas.setPointerCapture(ev.pointerId); paintGesture = { kind: 'move', from: w, sx, sy, saved: false }; }
+    if (hd) { ev.stopImmediatePropagation(); canvas.setPointerCapture(ev.pointerId); paintGestureDrop(); paintDragStart('vertex', { hd }, sx, sy); return; }
+    if (paintOnArea(w)) { ev.stopImmediatePropagation(); canvas.setPointerCapture(ev.pointerId); paintGestureDrop(); paintDragStart('move', { from: w }, sx, sy); }
     return;
   }
   if (ev.button !== 0) return;
@@ -587,11 +643,11 @@ canvas.addEventListener('pointerdown', ev => {
   if (tool === 'brush' || tool === 'erase') {
     paintGesture = { kind: 'stroke', stroke: paintStrokeNew(tool === 'erase'), last: w, at: 0, preview: null };
     paintSweep(paintGesture.stroke, w, w);
-  } else if (tool === 'rect') paintGesture = { kind: 'rect', a: w, b: w };
+  } else if (tool === 'rect') { const at = wallsSnap(w); paintGesture = { kind: 'rect', a: at, b: at }; }
   else if (tool === 'poly') { if (!paintGesture || paintGesture.kind !== 'poly') paintGesture = { kind: 'poly', pts: [] }; paintGesture.down = true; }
   invalidate();
-});
-canvas.addEventListener('pointermove', ev => {
+}
+function paintPointerMove(ev) {
   if (!paintActive()) { paintPointer = null; return; }
   const { sx, sy, w } = paintAt(ev), g = paintGesture;
   paintPointer = w;
@@ -604,33 +660,34 @@ canvas.addEventListener('pointermove', ev => {
       const area = areaOfTarget(state.paint.target), got = area ? paintStrokeParts(area, g.stroke, paintBand()) : null;
       g.preview = got && got.parts ? got.parts : null;
     }
-  } else if (g.kind === 'rect') g.b = w;
-  else if (g.kind === 'vertex' || g.kind === 'move') {
+  } else if (g.kind === 'rect') g.b = wallsSnap(w);
+  else if (paintIsDrag(g)) {
     if (!g.saved && Math.hypot(sx - g.sx, sy - g.sy) < 4) return;
-    const h = areaHolder(state.paint.target), area = h && h.area;
+    const h = g.holder, area = h.area;
     if (!area) return;
+    const at = g.kind === 'vertex' ? wallsSnap(w) : w;
     if (!g.saved) {
-      if (g.kind === 'vertex' && g.hd.mid) {
-        const ring = paintRingOf(area.parts, g.hd.part, g.hd.ring);
-        if (ring.length >= AREA_MAX_RING) { paintGesture = null; return say('A ring has at most ' + AREA_MAX_RING + ' corners.'); }
-        pushUndo(); ring.splice(g.hd.k + 1, 0, [r2(w[0]), r2(w[1])]); g.hd = { part: g.hd.part, ring: g.hd.ring, k: g.hd.k + 1, mid: false };
-      } else pushUndo();
+      const ring = g.kind === 'vertex' && g.hd.mid ? paintRingOf(area.parts, g.hd.part, g.hd.ring) : null;
+      if (ring && ring.length >= AREA_MAX_RING) { paintGesture = null; return say('A ring has at most ' + AREA_MAX_RING + ' corners.'); }
+      txBegin((g.kind === 'move' ? 'Move the area of ' : 'Move a corner of ') + areaTargetName(g.target));
+      if (ring) { ring.splice(g.hd.k + 1, 0, [r2(at[0]), r2(at[1])]); g.hd = { part: g.hd.part, ring: g.hd.ring, k: g.hd.k + 1, mid: false }; }
       g.saved = true;
     }
-    if (g.kind === 'vertex') paintRingOf(area.parts, g.hd.part, g.hd.ring)[g.hd.k] = [r2(w[0]), r2(w[1])];
+    if (g.kind === 'vertex') paintRingOf(area.parts, g.hd.part, g.hd.ring)[g.hd.k] = [r2(at[0]), r2(at[1])];
     else {
       const dx = w[0] - g.from[0], dz = w[1] - g.from[1], shift = p => [p[0] + dx, p[1] + dz];
       for (const part of area.parts) { part.outline = part.outline.map(shift); part.holes = (part.holes || []).map(r => r.map(shift)); }
       if (isVec(h.pos)) h.pos = [h.pos[0] + dx, h.pos[1], h.pos[2] + dz];
       g.from = w;
     }
+    areaPrepare(area);    // the shape on screen and the one membership checks see stay the same while dragging
   }
   invalidate();
-});
-canvas.addEventListener('pointerup', ev => {
+}
+function paintPointerUp(ev) {
   const g = paintGesture;
   if (!g || !paintActive()) return;
-  const { sx, sy, w } = paintAt(ev), t = state.paint.target;
+  const { sx, sy, w } = paintAt(ev);
   if (g.kind === 'stroke') { paintGesture = null; paintStrokeCommit(g.stroke); invalidate(); return; }
   if (g.kind === 'rect') {
     paintGesture = null;
@@ -644,31 +701,33 @@ canvas.addEventListener('pointerup', ev => {
     if (g.pts.length >= 3 && (near(g.pts[0], 9) || near(g.pts[g.pts.length - 1], 5))) { paintGesture = null; paintPoly(g.pts); return; }
     if (g.pts.length && near(g.pts[g.pts.length - 1], 5)) return;
     if (g.pts.length >= AREA_MAX_RING) return say('A ring has at most ' + AREA_MAX_RING + ' corners. Close this one first.');
-    g.pts.push([r2(w[0]), r2(w[1])]); invalidate(); return;
+    const at = wallsSnap(w);
+    g.pts.push([r2(at[0]), r2(at[1])]); invalidate(); return;
   }
-  paintGesture = null;
-  const h = areaHolder(t), area = h && h.area;
-  if (!area) return;
-  if (g.saved) {          // a corner or the whole area was dragged: put the rings back in order, and that is the one undo step
-    if (isVec(h.pos)) h.pos = [r2(h.pos[0]), h.pos[1], r2(h.pos[2])];
-    h.area = { parts: area.parts.map(paintPart) }; areaPrepare(h.area); areaChanged(t);
-  } else if (g.kind === 'vertex' && g.hd.mid) areaInsertVertex(g.hd.part, g.hd.ring, g.hd.k, g.hd.p);
+  paintDragEnd(g);
   invalidate();
-});
-canvas.addEventListener('pointercancel', () => { if (paintGesture && paintGesture.kind !== 'poly') { paintGesture = null; invalidate(); } });
-window.addEventListener('keydown', ev => {
+}
+// The browser took the pointer away (a touch turned into a scroll, a window took focus): the drag did not finish.
+function paintPointerCancel() { if (paintGesture && paintGesture.kind !== 'poly') { paintGestureDrop(); invalidate(); } }
+function paintKey(ev) {
   if (!paintActive() || /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
   const g = paintGesture, key = ev.key;
   if (key === 'Enter' && g && g.kind === 'poly' && g.pts.length >= 3) { ev.preventDefault(); ev.stopImmediatePropagation(); paintGesture = null; paintPoly(g.pts); }
   else if (key === 'Backspace' && g && g.kind === 'poly') { ev.preventDefault(); ev.stopImmediatePropagation(); g.pts.pop(); invalidate(); }
-  else if (key === 'Escape' && g) { ev.stopImmediatePropagation(); paintGesture = null; invalidate(); say('Dropped.'); }
+  else if (key === 'Escape' && g) { ev.stopImmediatePropagation(); paintGestureDrop(); invalidate(); say('Dropped.'); }
   else if (key === 'Escape') areaEditStop();
   else if ((key === 'Delete' || key === 'Backspace') && state.paint.tool === 'vertex' && paintPointer) {
     ev.preventDefault(); ev.stopImmediatePropagation();          // never the selected enemy while painting
     const [sx, sy] = toScreen(paintPointer[0], paintPointer[1]), hd = paintHandleAt(sx, sy);
-    if (hd && !hd.mid) areaVertex(hd.part, hd.ring, hd.k, null);
+    if (hd && !hd.mid) { paintGestureDrop(); areaVertex(hd.part, hd.ring, hd.k, null); }
   }
-});
+}
+canvas.addEventListener('pointerdown', paintPointerDown);
+canvas.addEventListener('pointermove', paintPointerMove);
+canvas.addEventListener('pointerup', paintPointerUp);
+canvas.addEventListener('pointercancel', paintPointerCancel);
+window.addEventListener('keydown', paintKey);
+expose({ paintPointerDown, paintPointerMove, paintPointerUp, paintPointerCancel, paintKey, paintToolSet });   // gestures through the canvas's own handlers (ML-032), for automated tests
 
 // ----- the controls: one box, shown in the row of whatever is painted (the trigger list, or 29b's place panel)
 const paintUi = { box: $('paintBox'), home: $('paintHome') };
@@ -700,7 +759,7 @@ function syncPaint() {
     if (i >= 0) { t.index = i; h = list[i]; } else h = null;
   }
   if (!h) {
-    if (t) { state.paint.target = null; state.paint.tool = null; paintGesture = null; }
+    if (t) { state.paint.target = null; state.paint.tool = null; paintGestureDrop(); }
     if (paintUi.box.parentNode !== paintUi.home) paintUi.home.appendChild(paintUi.box);
     return;
   }
@@ -729,7 +788,7 @@ function syncPaint() {
   $('paintAnchor').hidden = !paintAnchorOutside(t);
   $('paintHint').textContent = (PAINT_HINTS[state.paint.tool] || 'Choose a tool.') + ' The game gets the whole shape at once, the next time the ' + (t.kind === 'trigger' ? 'triggers are' : 'scenario is') + ' sent.';
 }
-for (const b of document.querySelectorAll('#paintBox [data-paint]')) b.addEventListener('click', () => { state.paint.tool = b.dataset.paint; paintGesture = null; syncSide(); invalidate(); });
+for (const b of document.querySelectorAll('#paintBox [data-paint]')) b.addEventListener('click', () => paintToolSet(b.dataset.paint));
 $('paintSize').addEventListener('change', ev => { state.paint.size = Math.max(PAINT_SIZE_MIN, Math.min(PAINT_SIZE_MAX, r2(+ev.target.value || 1.5))); syncSide(); invalidate(); });
 $('paintTip').addEventListener('change', ev => { state.paint.tip = ev.target.value === 'square' ? 'square' : 'round'; invalidate(); });
 const paintBandEdit = () => { if (!setPaintBand($('paintBottom').value, $('paintTop').value)) { $('paintBottom').value = state.paint.bottom; $('paintTop').value = state.paint.top; } syncSide(); invalidate(); };

@@ -1,3 +1,98 @@
+# Co-op verification record (ML-037), 0.27.0 candidate
+
+One complete session of one host with MissionLab and one friend without any mod, on the exact 0.27.0 candidate. The
+record below the line, for 0.24.3 (ML-011), is kept as it was: copy a record for a new combination, never edit a filled
+one into another.
+
+| | |
+|---|---|
+| MissionLab | 0.27.0 candidate. Commit: ________ Build (ZIP name and its SHA-256): ________ |
+| OPERATOR | 0.09.5 (write the version the main menu shows if it differs): ________ |
+| BepInEx | 6.0.0-be.785 (IL2CPP) on the host; write what is installed if it differs: ________ |
+| Scenario | `examples/clean_house_acceptance.json` (missionlab-plan/2). Fingerprint from the run record: ________ |
+| Map, mode | Clean House, `suburbv2.bytes`; scene: Suburb Day / Suburb Night (strike one); mode as the mission laptop names it: ________ |
+| Host | Has MissionLab; hosts the mission and has the page open at `http://localhost:8765` |
+| Client | No mod of any kind: no BepInEx, no MissionLab, no other loader. Confirmed by the client: ________ |
+| Date, players | ________ |
+
+**How to read the columns.** "Host" and "Unmodded client" are what each player *saw* on their own screen. A line in the
+log or the recording ("accepted", "asked", "sent", "fired") is only the host's side and the requested call: it goes into
+"Result and evidence", never into a player's column. A row passes only when the player whose column it is confirms it,
+and a row needing the client passes only with the client's own word. Every row starts as Pending; at the end each is
+Pass, Fail, Untested (not reached, or the client did not say) or Unavailable (the base game does not offer it). A row
+that was not reached stays Untested, never Pass.
+
+| # | Check | How to check | Host | Unmodded client | Result and evidence (host side) |
+|---|---|---|---|---|---|
+| 1 | Startup notice and briefing | Both read the three briefing lines and the notice that the host runs MissionLab when the mission starts | Pending | Pending | Pending. Log: `notice to the other players:` with the player count; the briefing lines in the log, no `the briefing could not be shown` |
+| 2 | Chosen insertion for both players | Each player says which insertion they took and where they stood | Pending | Pending | Pending. Log: `insertion:` (and `insertion, second try:` if any) naming the spot per player |
+| 3 | Authored enemies and patrols | Five guards in the house, one patrol walking the yard north of it; the client says whether it walks and where the guards stand | Pending | Pending | Pending. Recording: the start positions and the patrol's positions over the first minute |
+| 4 | Delayed and triggered spawns | The wanderer at 60, 150 and 240 s (trigger 2, none at 330 s); two patrols from the north after the front door (trigger 1); one guard in the north yard 20 s after the house hold (trigger 10). Each player says what they saw and when | Pending | Pending | Pending. Log and recording: the fire time of triggers 1, 2 and 10 and the enemies each brought |
+| 5 | Door lock, unlock, open and close, walking through | The upstairs door "Door Interior Paneled_3" is locked at the start (try it), open after trigger 1 (both walk through); the back door "Door Exterior Paneled_3" is shut and locked after the phone (the client tries to open it) | Pending | Pending | Pending. Log: `doors at the start:`, `doors, a few seconds in:` and the `door '…'` lines with their result; no `a door could not be set by` |
+| 6 | Moved intel and collection | The phone lies upstairs at the north end, not in the game's place; the client picks it up if possible | Pending | Pending | Pending. Log and recording: trigger 3's time and who picked it up; the objective progress the game shows |
+| 7 | Messages taking turns | When the phone is taken: "Phone secured …" then, after it and not instead of it, "Second message: the extraction is open."; then the countdown lines. Each player writes the order they saw | Pending | Pending | Pending. Log: triggers 3 and 4 in the same moment and the 4.5 s turn of the second message |
+| 8 | Objective notices (ML-046) | Play `examples/clean_house_objectives.json` (missionlab-plan/3) as an extra mission. At the start no "New objective" notice: the briefing names the phone and the officer. Expected, in this order: "Objective complete: Recover the phone", then "New objective: Secure the upper floor", then "Objective complete: Secure the upper floor" after the 30 s hold by everyone ("Objective complete: Take down the officer" whenever the officer goes down). The extraction stays shut until both required goals are done, whatever happens to the optional officer. Each player writes which notices they saw and in what order | Pending | Pending | Pending. Log: `objective notice: ` per notice and `extraction: held back until every required objective is complete (…)`; no `an objective notice could not be shown: ` |
+| 9 | Held extraction, opening and extracting | Try to extract before the phone (it stays shut); after it, both extract | Pending | Pending | Pending. Log: `extraction: held back until trigger 4`, the opening line and the mission-wide `canExtract` it logs; the run record's result |
+| 10 | Success ending and what each screen shows | Phone taken and the officer (upstairs, middle of the floor) down: "Phone and officer: mission accomplished.", then the success screen. Each player writes the result screen, any "cheating detected", and where they land | Pending | Pending | Pending. Log: the ending waits for its messages; run record says "success" |
+| 11 | Failed ending and what each screen shows | Take the phone and let the three minutes run out: countdown at the start, one minute and ten seconds; "Out of time." in red; the failed screen | Pending | Pending | Pending. Log: trigger 5 and the ending call; run record says "failed" |
+| 12 | Extraction not read as death (0.26.2) | At the success by extraction, no "players are down" or reinforcement message on either screen | Pending | Pending | Pending. Log: no `reinforcement wave` line after the extraction starts; run record "success", not "over" |
+| 13 | Simultaneous deaths and a shared wave | Both die at the same moment (for example one grenade): both come back together 20 s later. Then a staggered pair: back 20 s after the first death. A third death after two waves: nobody comes back | Pending | Pending | Pending. Log: `reinforcement wave` lines with death and return times; the game's respawn setting put back |
+| 14 | Client enters and leaves the painted house through the doors | The client walks in through the front door, then out through the back door, then round the garden, along the railed veranda in front of the front wall, across the courtyard behind the back door and down to the basement. Trigger 8 "Inside the house." fires only on entering the house; the host watches the inspector's inside count for trigger 9 go up and down with the client | Pending | Pending | Pending. Recording: the client's positions against the painted area; the inspector's count; trigger 8's time against the moment the client crossed the door |
+| 15 | A hold surviving stair transitions | Both players inside, then go up and down the stairs during the 45 s: trigger 9 "House held by everyone for 45 seconds." fires 45 s after the second player went in, not later. Then a check that it restarts: in a second mission one player steps into the garden before 45 s | Pending | Pending | Pending. Log: trigger 9's fire time against both entry times; the inspector's time left during the stair climb |
+| 16 | Crouching inside the area | The client crouches (and goes prone) in a ground-floor room and upstairs during the hold; the count does not drop | Pending | Pending | Pending. Inspector: inside count while crouched; recording positions at feet height |
+| 17 | A live shape edit from the page | During a mission, reshape trigger 9's area on the page (shrink it to the upper floor only) and send it; the client stands downstairs and must drop out of the count, then upstairs and count again | Pending | Pending | Pending. Page: the change's result line (applied, failed, pending, unconfirmed); log: the command and its session |
+| 18 | A retried command on the page | Send the same change twice quickly (for example move a waiting enemy): it happens once | Pending | Pending | Pending. Page: the result line of each send; log and recording: the effect once, not twice |
+| 19 | A stale command on the page | Send a change, end the mission before it is carried out (or send it after the end): it is struck off and not carried out in the next mission | Pending | Pending | Pending. Page: stale or expired; log: no effect in the next mission |
+| 20 | Two consecutive missions, nothing inherited | After a mission, host the same mission again from the lobby: no trigger fires early, the hold starts from nothing, the game's keys work, no queued page command from the first mission happens | Pending | Pending | Pending. Log: the second mission's start lines and trigger times from 0; run records with different run ids |
+| 21 | Game Master controls released after a rules failure (ML-030) | Host opens Game Master (F8) with `BlockGameKeys` on; a rules failure is provoked the way ML-030's controlled game test does it. The game's keys work again and the camera is the player's. Without a way to provoke it in this build, open and close Game Master, check the keys and mark the failure half Untested | Pending | n/a | Pending. Log: the guard's pause and the release line; the host's keys working |
+
+## The mission
+
+`examples/clean_house_acceptance.json` puts these rows into one mission (its notes list every trigger):
+
+- start enemies, the yard patrol, the timer repeat (trigger 2), the front-door zone (trigger 1) with two patrols and the
+  upstairs door;
+- the moved phone (trigger 3), two messages at once (triggers 3 and 4), the countdown and failed ending (trigger 5), the
+  officer (trigger 6) and the success ending (trigger 7);
+- the painted house (trigger 8) and the hold by everyone across the stairs (trigger 9), both on one area of two floors
+  that leaves out the garden, veranda, courtyard and basement; a delayed standing guard after the hold (trigger 10);
+- the extraction held behind trigger 4, and shared waves 20 s after the first death, two at most.
+
+It uses nothing `docs/capabilities.json` marks failing: no hunters, no calling enemies, no Game Master orders to fresh
+enemies. It has no goals; row 8 is played on `examples/clean_house_objectives.json` (missionlab-plan/3), a separate
+mission with two required goals in a chain, one optional goal and the extraction waiting for the required ones.
+
+## Before the session
+
+1. Host: install the 0.27.0 candidate ZIP. Write the commit and the ZIP's SHA-256 into the header. Copy
+   `examples/clean_house_acceptance.json` and `examples/clean_house_objectives.json` into
+   `BepInEx/MissionLab/scenarios/`; move every other Clean House scenario into a subfolder so it is not picked.
+2. Host: in `BepInEx/config/missionlab.director.cfg`, `[General]`: `Scenario = clean_house_acceptance.json` (for row 8,
+   `Scenario = clean_house_objectives.json`), `FairPlay = Off`, `TellPlayers = true`; `[GameMaster]`:
+   `BlockGameKeys = true`. Leave the rest as shipped.
+3. Host: open the page, press "Is everything ready?" and paste "Copy a report" under the header.
+4. Client: a clean game with no mod at all. Both players note the time of each event (the mission clock or a stopwatch
+   started when the mission starts). If possible both record their screens.
+5. Copy `BepInEx/LogOutput.log` before every restart of the game; it starts afresh each time.
+
+## What the session must record
+
+- The commit and build of the header, and the "Copy a report" text.
+- The name of every run record (`BepInEx/MissionLab/runs`) and every recording (`BepInEx/MissionLab/replays`), one per
+  mission, with which rows each mission covered. At least: one mission to the success ending, one to the failed
+  ending, and two consecutive missions for row 20.
+- The copied logs, with the lines that back each result quoted next to the row.
+- For each row, the host's and the client's own words; a row the client did not comment on stays Untested on their side.
+
+## Failed rows
+
+A failed row is either fixed and rerun on a new candidate (a new record, with its own commit), or explicitly taken out of
+the supported scope: the README Status table and `docs/capabilities.json` then say so, and the starter mission does not
+rely on it. A row is never moved to Pass on the host's log alone. Afterwards update the README Status table,
+`docs/capabilities.json` and the ML-037 row of `docs/backlog-status.md` with exactly what this record shows.
+
+---
+
 # Co-op verification record (ML-011)
 
 One record per game / mod / map / mode combination. Copy this file for each further combination; never edit a filled-in

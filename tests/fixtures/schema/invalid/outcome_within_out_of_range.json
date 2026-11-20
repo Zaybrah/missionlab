@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/1", "triggers": [ { "id": 1, "when": "alert" }, { "id": 2, "when": "outcome", "after": 1, "outcome": "timeout", "within": 7200 } ], "spawns": [ { "pos": [0, 0, 0] } ] }

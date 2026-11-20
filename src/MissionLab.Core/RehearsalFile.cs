@@ -93,10 +93,33 @@ namespace MissionLab.Core
             {
                 StepResult x = r.Steps[i];
                 sb.Append(i > 0 ? "," : "").Append("{\"at\":").Append(Math.Round(x.At, 2).ToString(Inv))
-                  .Append(",\"what\":\"").Append(Guard.Esc(x.What)).Append("\",\"expected\":\"").Append(Guard.Esc(x.Expected))
+                  .Append(",\"what\":\"").Append(Guard.Esc(x.What)).Append("\",\"trigger\":").Append(x.Trigger.ToString(Inv)).Append(",\"invocation\":").Append(x.Invocation.ToString(Inv))
+                  .Append(",\"extraction\":").Append(x.Extraction ? "true" : "false").Append(",\"expected\":\"").Append(Guard.Esc(x.Expected))
                   .Append("\",\"actual\":\"").Append(Guard.Esc(x.Actual)).Append("\",\"ok\":").Append(x.Ok ? "true" : "false").Append('}');
             }
-            sb.Append("],\"findings\":");
+            sb.Append("],\"looks\":[");
+            for (int i = 0; i < r.Looks.Count; i++)
+            {
+                RehearsalLook l = r.Looks[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"at\":").Append(Math.Round(l.At, 2).ToString(Inv));
+                Phases(sb, "before", l.Before); Phases(sb, "after", l.After); Phases(sb, "inside", l.Inside);
+                if (plan.Goals.Count > 0) { States(sb, "goalsBefore", l.GoalsBefore); States(sb, "goalsAfter", l.GoalsAfter); }
+                sb.Append('}');
+            }
+            sb.Append(']');
+            // Every goal transition (ML-046), only for a scenario with goals, so the answer for any other stays as it was.
+            if (plan.Goals.Count > 0)
+            {
+                sb.Append(",\"goals\":[");
+                for (int i = 0; i < r.Goals.Count; i++)
+                {
+                    GoalEvent e = r.Goals[i];
+                    sb.Append(i > 0 ? "," : "").Append("{\"id\":\"").Append(Guard.Esc(e.Id)).Append("\",\"from\":\"").Append(e.From).Append("\",\"to\":\"").Append(e.To)
+                      .Append("\",\"at\":").Append(Math.Round(e.At, 2).ToString(Inv)).Append('}');
+                }
+                sb.Append(']');
+            }
+            sb.Append(",\"findings\":");
             var notes = new List<Finding>(read);
             notes.AddRange(heard);
             CatalogueInfo.WriteFindings(sb, notes);
@@ -161,6 +184,24 @@ namespace MissionLab.Core
         {
             Finding f = found.Find(x => x.Level == Finding.Error);
             return f == null ? "no reason given" : f.ToString() + (found.FindAll(x => x.Level == Finding.Error).Count > 1 ? " (and more)" : "");
+        }
+
+        // ,"key":{"1":"waiting","2":"fired"} in trigger order.
+        private static void Phases(StringBuilder sb, string key, SortedDictionary<int, string> byId)
+        {
+            sb.Append(",\"").Append(key).Append("\":{");
+            bool first = true;
+            foreach (KeyValuePair<int, string> p in byId) { sb.Append(first ? "" : ",").Append('"').Append(p.Key.ToString(Inv)).Append("\":\"").Append(Guard.Esc(p.Value)).Append('"'); first = false; }
+            sb.Append('}');
+        }
+
+        // ,"key":{"phone":"succeeded","upper":"active"} by goal id.
+        private static void States(StringBuilder sb, string key, SortedDictionary<string, string> byId)
+        {
+            sb.Append(",\"").Append(key).Append("\":{");
+            bool first = true;
+            foreach (KeyValuePair<string, string> p in byId) { sb.Append(first ? "" : ",").Append('"').Append(Guard.Esc(p.Key)).Append("\":\"").Append(Guard.Esc(p.Value)).Append('"'); first = false; }
+            sb.Append('}');
         }
 
         private static void Refused(StringBuilder sb, string which, string why, string hash, List<Finding> found)

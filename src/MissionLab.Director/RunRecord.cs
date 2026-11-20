@@ -10,10 +10,11 @@ namespace MissionLab
     /// <summary>
     /// What was actually played. One small file per mission in BepInEx/MissionLab/runs: which scenario (by a fingerprint of its text,
     /// and by its id and revision when it has them), the roll, how many players, what the dice left out, and the scenario as it stood
-    /// after the dice. A refused setup gets a record too. No player names and no folder names are written, so a record can be handed
-    /// to someone else as it is. "Repeat this run" takes the roll from a record and says afterwards whether the same setup came out.
-    /// When the mission is seen to end, "end" is filled in (it stays null otherwise): the catalogue's measured durations come only
-    /// from there, so a run whose end was never seen stays unmeasured.
+    /// after the dice. A generated layout also records its inputs (map fingerprint, enemy count, settings, generator version), which
+    /// a repeat checks before anything is changed. A refused setup gets a record too. No player names and no folder names are
+    /// written, so a record can be handed to someone else as it is. "Repeat this run" takes the roll from a record and says
+    /// afterwards whether the same setup came out. When the mission is seen to end, "end" is filled in (it stays null otherwise):
+    /// the catalogue's measured durations come only from there, so a run whose end was never seen stays unmeasured.
     /// </summary>
     internal static class RunRecord
     {
@@ -25,16 +26,23 @@ namespace MissionLab
         private static string _finished = "";           // the record whose end has been written, so it is written once
         private static string _session = "";            // the mission LastFile belongs to: a later mission without a record never ends it
 
-        internal sealed class Entry { public string File = "", Scenario = "", Hash = "", Outcome = "", Scene = "", Started = "", Resolved = "", Plugin = "", ScenarioId = "", EndedUtc = "", Result = ""; public long Roll; public int Players, Revision; public double Seconds = -1;
-                                      public Dictionary<string, int> Picks = new Dictionary<string, int>(); }     // the host options it was played with (ML-022)
+        internal sealed class Entry { public string File = "", Scenario = "", Hash = "", Outcome = "", Scene = "", Started = "", Resolved = "", Plugin = "", ScenarioId = "", EndedUtc = "", Result = "", Reason = ""; public long Roll; public int Players, Revision; public double Seconds = -1;
+                                      public Dictionary<string, int> Picks = new Dictionary<string, int>();      // the host options it was played with (ML-022)
+                                      public RepeatInputs Inputs;           // what a generated layout was made from (null: not recorded, before 0.27)
+                                      public bool Unreadable;               // chosen for a repeat but the file could not be read: that repeat is refused
+                                      internal RepeatSource Source() => new RepeatSource { Readable = !Unreadable, Outcome = Outcome, Scenario = Scenario, Roll = Roll, Inputs = Inputs }; }
 
         internal static string Sha(string text) => ScenarioFile.Hash(text);
 
         private static string Q(string s) => "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ") + "\"";
 
-        /// <summary>picks: the option chosen for every option of the scenario, by id (null or empty: it has none, and no "picks" key is written).</summary>
+        /// <summary>
+        /// picks: the option chosen for every option of the scenario, by id (null or empty: it has none, and no "picks" key is written).
+        /// inputs: what a generated layout was made from (null: not generated, and no "inputs" key is written). repeatOf: the record
+        /// this mission was to repeat ("": none, and no "repeatOf" key is written).
+        /// </summary>
         internal static void Write(string scene, string navFile, string scenario, string authoredText, long roll, int players, MissionPlan resolved, Variants.Out gone, List<string> notes, bool used, string reason,
-                                   IDictionary<string, int> picks = null)
+                                   IDictionary<string, int> picks = null, RepeatInputs inputs = null, string repeatOf = "")
         {
             LastFile = ""; _ending = ""; _finished = "";
             try
@@ -56,6 +64,8 @@ namespace MissionLab
                   .Append(",\"authoredHash\":").Append(Q(Sha(authoredText))).Append(",\"scenarioId\":").Append(Q(id)).Append(",\"revision\":").Append(revision.ToString(Inv))
                   .Append(",\"roll\":").Append(roll).Append(",\"players\":").Append(players);
                 if (picks != null && picks.Count > 0) sb.Append(",\"picks\":").Append(Picker.PicksJson(picks));
+                if (inputs != null) sb.Append(",\"inputs\":").Append(RepeatSetup.InputsJson(inputs));
+                if (!string.IsNullOrEmpty(repeatOf)) sb.Append(",\"repeatOf\":").Append(Q(repeatOf));
                 sb.Append(",\"outcome\":").Append(Q(used ? "used" : "refused")).Append(",\"reason\":").Append(Q(reason)).Append(",\"end\":null");
                 sb.Append(",\"leftOut\":{\"spawns\":[");
                 for (int i = 0; gone != null && i < gone.Spawns.Count; i++)
@@ -84,9 +94,10 @@ namespace MissionLab
 
         /// <summary>
         /// The mission is over: its end, how long it took from setup to end, and how it ended ("over" when the mod did not end it
-        /// and the game's own result is not known). Written once per record; an earlier record is never touched.
+        /// and the game's own result is not known). goals: every goal's final state as GoalBook.StatesJson writes it ("": the
+        /// scenario has none, and no "goals" key is written). Written once per record; an earlier record is never touched.
         /// </summary>
-        internal static void Finish()
+        internal static void Finish(string goals = "")
         {
             if (LastFile == "" || _finished == LastFile || _session != (Director.Session ?? "")) return;
             _finished = LastFile;
@@ -97,7 +108,8 @@ namespace MissionLab
                 if (at < 0) return;
                 DateTime now = DateTime.UtcNow;
                 double seconds = Math.Max(0, (now - _startedUtc).TotalSeconds);
-                string end = "\"end\":{\"utc\":" + Q(now.ToString("o", Inv)) + ",\"seconds\":" + Math.Round(seconds).ToString(Inv) + ",\"result\":" + Q(_ending == "" ? "over" : _ending) + "}";
+                string end = "\"end\":{\"utc\":" + Q(now.ToString("o", Inv)) + ",\"seconds\":" + Math.Round(seconds).ToString(Inv) + ",\"result\":" + Q(_ending == "" ? "over" : _ending)
+                           + (string.IsNullOrEmpty(goals) ? "" : ",\"goals\":" + goals) + "}";
                 File.WriteAllText(path, text.Substring(0, at) + end + text.Substring(at + 10));
             }
             catch (Exception e) { DirectorPlugin.L.LogWarning("the run record's end could not be written, so this run stays unmeasured: " + e.Message); }
@@ -141,11 +153,12 @@ namespace MissionLab
                     RunSummary sum = RunSummary.Read(Path.GetFileName(path), text) ?? new RunSummary();
                     var entry = new Entry
                     {
-                        File = Path.GetFileName(path), Scenario = S("scenario"), Hash = S("authoredHash"), Outcome = S("outcome"), Scene = S("scene"), Started = S("startedUtc"), Plugin = S("plugin"),
+                        File = Path.GetFileName(path), Scenario = S("scenario"), Hash = S("authoredHash"), Outcome = S("outcome"), Scene = S("scene"), Started = S("startedUtc"), Plugin = S("plugin"), Reason = S("reason"),
                         Roll = r.TryGetProperty("roll", out var roll) && roll.ValueKind == System.Text.Json.JsonValueKind.Number ? roll.GetInt64() : 0,
                         Players = r.TryGetProperty("players", out var pl) && pl.ValueKind == System.Text.Json.JsonValueKind.Number ? pl.GetInt32() : 0,
                         Resolved = r.TryGetProperty("resolved", out var res) && res.ValueKind == System.Text.Json.JsonValueKind.Object ? res.GetRawText() : "",
-                        ScenarioId = sum.ScenarioId, Revision = sum.Revision, EndedUtc = sum.Ended, Result = sum.Result, Seconds = sum.Seconds
+                        ScenarioId = sum.ScenarioId, Revision = sum.Revision, EndedUtc = sum.Ended, Result = sum.Result, Seconds = sum.Seconds,
+                        Inputs = RepeatSetup.ReadInputs(text)
                     };
                     // The options it was played with, so "Reproduce this setup" picks them again (records before 0.26 have none).
                     if (r.TryGetProperty("picks", out var picks) && picks.ValueKind == System.Text.Json.JsonValueKind.Object)
@@ -176,7 +189,7 @@ namespace MissionLab
                         sb.Append(n++ == 0 ? "" : ",").Append("{\"file\":").Append(Q(e.File)).Append(",\"scenario\":").Append(Q(e.Scenario)).Append(",\"scene\":").Append(Q(e.Scene))
                           .Append(",\"roll\":").Append(e.Roll).Append(",\"players\":").Append(e.Players).Append(",\"outcome\":").Append(Q(e.Outcome)).Append(",\"startedUtc\":").Append(Q(e.Started))
                           .Append(",\"scenarioId\":").Append(Q(e.ScenarioId)).Append(",\"revision\":").Append(e.Revision.ToString(Inv)).Append(",\"result\":").Append(Q(e.Result))
-                          .Append(",\"seconds\":").Append(e.Seconds >= 0 ? Math.Round(e.Seconds).ToString(Inv) : "null").Append('}');
+                          .Append(",\"seconds\":").Append(e.Seconds >= 0 ? Math.Round(e.Seconds).ToString(Inv) : "null").Append(",\"reason\":").Append(Q(e.Outcome == "refused" ? e.Reason : "")).Append('}');
                     }
                 }
             }

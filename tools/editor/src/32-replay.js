@@ -87,6 +87,8 @@ function replayStats(d) {
     if (gone.length) rows.push(['Gone for a reason not known', String(gone.length), gone[0][0], gone[0][3]]);
   } else if (taken.length) rows.push(['Taken out or made again by an edit', String(taken.length)]);
   if (asked.length) rows.push(['Game Master requests', String(asked.length)]);
+  const turns = kind('goal');      // objective transitions (ML-046), each told in the recording's own words in the list below
+  if (turns.length) rows.push(['Objective changes', String(turns.length) + ', the first at ' + mmss(turns[0][0]), turns[0][0], null]);
   if (ended.length) rows.push(['Recording ended', mmss(ended[ended.length - 1][0]) + ', ' + ended[ended.length - 1][2], ended[ended.length - 1][0], null]);
   if (!d.linked) rows.push(['Older recording' + (d.plugin ? ' (' + d.plugin + ')' : ''), 'enemies are linked by a guess, and every enemy that left counts as down' + (d.legacy ? ', even one an edit took out' : '')]);
   if (d.scenario) rows.push(['Scenario', d.scenario + (d.scenarioHash ? ' (' + d.scenarioHash.replace(/^[a-z0-9]+:/, '').slice(0, 8) + ')' : '')]);
@@ -124,6 +126,9 @@ function replayPlace(at) {
   if (!d || !Array.isArray(at) || (d.navFile && state.navFile && d.navFile.toLowerCase() !== state.navFile.toLowerCase())) return '';
   return placeWords(at);
 }
+// An event as the list shows it: the recorded text, with a label before it for kinds that read alike otherwise.
+const REPLAY_KINDS = { goal: 'Objective · ', pressure: 'Pressure director · ' };
+const replayEventText = ev => (Object.prototype.hasOwnProperty.call(REPLAY_KINDS, ev[1]) ? REPLAY_KINDS[ev[1]] : '') + ev[2];
 function syncReplay() {
   const d = replay.data; $('replayBox').hidden = !d; if (!d) return;
   $('rpName').textContent = replay.name + (d.scene ? ' · ' + d.scene : '');
@@ -145,7 +150,7 @@ function syncReplay() {
     ul.dataset.key = key; ul.textContent = '';
     d.events.forEach(ev => {
       const li = document.createElement('li'), b = document.createElement('button');
-      b.type = 'button'; b.textContent = mmss(ev[0]) + '  ' + ev[2] + replayPlace(ev[3]);
+      b.type = 'button'; b.textContent = mmss(ev[0]) + '  ' + replayEventText(ev) + replayPlace(ev[3]);
       b.addEventListener('click', () => { replay.t = Math.max(d.start, Math.min(d.end, ev[0] - 2)); if (Array.isArray(ev[3])) { state.view.cx = ev[3][0]; state.view.cz = ev[3][2]; } syncReplay(); invalidate(); });
       li.appendChild(b); ul.appendChild(li);
     });
@@ -246,6 +251,7 @@ async function applyLive(s) {
     const selId = state.enemies[state.selected] ? state.enemies[state.selected].id : 0, selIx = state.selected;
     state.zones = zonesIn(s.triggers); state.fired = Array.isArray(s.fired) ? s.fired : []; state.objectives = objectivesIn(s.objectives);
     settingsIn({ extraction: s.extraction, insertion: s.insertion, weather: s.weather, power: s.power, briefing: s.briefing, skill: s.skill, nvg: s.nvg, respawn: s.respawn, gameMaster: s.gameMaster });
+    goalsFromGame(s);           // the running plan's objectives (ML-046, 29o-goals.js)
     if (typeof s.night === 'boolean') state.night = s.night;
     if (Array.isArray(s.insertionSpots)) state.insertionSpots = s.insertionSpots.filter(q => q && q.name && isVec(q.pos));
     live.satOut = s.satOut | 0;
@@ -292,9 +298,10 @@ function restoreDraft() {
     const raw = localStorage.getItem(DRAFT_KEY); if (!raw) return false;
     const o = JSON.parse(raw); if (!o || !Array.isArray(o.spawns) || !o.spawns.length) return false;
     state.map = null; state.infils = []; state.authored = []; state.doors = state.doors.filter(d => !d.known); state.door = -1;
-    loadScenario(o, o.name || 'draft'); state.scene = typeof o.scene === 'string' ? o.scene : ''; undoStack.length = 0;
+    loadScenario(o, o.name || 'draft'); state.scene = typeof o.scene === 'string' ? o.scene : '';     // loadScenario starts the undo history afresh
     say('Your last scenario is back (' + o.spawns.length + ' enemies). Open ' + (state.navFile || 'its map file') + ' to see the ground.');
     return true;
   } catch (e) { return false; }
 }
+expose({ replayStats, replayEventText });   // goal events in a recording (ML-046), for automated tests
 

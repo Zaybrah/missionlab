@@ -8,6 +8,9 @@
 // "@ref" where it is used and listed under bindings. A copy put into a scenario must have each required one bound to
 // something on this map before the scenario can be saved: a guessed door or trigger would quietly do the wrong thing.
 // Inserting makes an independent copy with fresh trigger ids and fresh group, lot and either numbers; nothing links back.
+// A zone linked to a named place (ML-040) is saved with the place as a binding marked "link" and its shape as a hint, so a
+// copy never moves or reshapes a shared place: it waits until the author links it to a place of this map, or keeps its own
+// copy of the shape (detached).
 // Until a reference is bound, the enemy or trigger carries a mark ({ binds } on it, .bind on a trigger's door): the marks
 // live in the editor only, travel with Undo, and are never written to a file.
 const MODULE_SCHEMA = 'missionlab-module/1', MODULE_KINDS = ['door', 'objective', 'place', 'trigger', 'extraction'], MODULE_STORE = 'missionlab-modules';
@@ -57,16 +60,22 @@ function moduleProblems(obj) {
 // The module as a plan/2 scenario body, every outside reference replaced by a harmless value, for the scenario rules.
 function moduleStandIn(obj) {
   const c = JSON.parse(JSON.stringify({ spawns: obj.spawns, triggers: obj.triggers }));
+  // An outcome trigger must name a trigger, so one watching an outside trigger watches a stand-in for it instead: a hand-fired
+  // after trigger numbered above every other, added last so the findings' places are the module's own. Its outcome and
+  // window are then judged by the same rules as any other.
+  const top = c.triggers.reduce((m, t) => (t && typeof t === 'object' && Number.isInteger(t.id) ? Math.max(m, t.id) : m), 0), outside = top + 1;
+  let watchesOutside = false;
   for (const s of c.spawns) if (s && moduleRef(s.trigger)) s.trigger = 0;
   for (const t of c.triggers) {
     if (!t || typeof t !== 'object') continue;
     if (moduleRef(t.pos)) t.pos = [0, 0, 0];
-    if (moduleRef(t.after)) t.after = 0;
+    if (moduleRef(t.after)) { if (t.when === 'outcome') { t.after = outside; watchesOutside = true; } else t.after = 0; }
     if (Array.isArray(t.of)) t.of = t.of.filter(v => !moduleRef(v));
     if (moduleRef(t.item)) t.item = '';
     if (Array.isArray(t.doors)) for (const d of t.doors) if (d && moduleRef(d.pos)) d.pos = [0, 0, 0];
     delete t.place;
   }
+  if (watchesOutside) c.triggers.push({ id: outside, when: 'after', after: 0 });
   return { schema: 'missionlab-plan/2', mission: c };
 }
 
@@ -84,7 +93,7 @@ function moduleOfSelection(name) {
   const relArea = area => areaWrite({ parts: area.parts.map(part => ({ floor: [part.floor[0] - A[1], part.floor[1] - A[1]], outline: relRing(part.outline), holes: (part.holes || []).map(relRing) })) });
   const chosen = new Set(list), byId = id => state.zones.find(z => z.id === id);
   const bringsOnly = z => state.enemies.every((e, i) => e.trigger !== z.id || chosen.has(i));
-  const needs = z => (z.when === 'after' ? [z.after] : z.when === 'all' || z.when === 'any' ? z.of || [] : []).filter(id => id && id !== z.id && byId(id));
+  const needs = z => (z.when === 'after' || z.when === 'outcome' ? [z.after] : z.when === 'all' || z.when === 'any' ? z.of || [] : []).filter(id => id && id !== z.id && byId(id));
   const inside = new Set(list.map(i => state.enemies[i].trigger).filter(id => id && byId(id))), outside = new Set();
   const follow = z => { for (const id of needs(z)) { if (inside.has(id) || outside.has(id)) continue; if (bringsOnly(byId(id))) { inside.add(id); follow(byId(id)); } else outside.add(id); } };
   [...inside].forEach(id => follow(byId(id)));
@@ -108,12 +117,18 @@ function moduleOfSelection(name) {
     o.id = modId.get(id);
     if (o.when === 'door') { if (isVec(o.pos)) o.pos = doorRef(o.pos, ''); }
     else if (isVec(o.pos)) o.pos = rel(o.pos);
-    if (o.area && z.area) o.area = relArea(z.area);
+    if ((o.area || o.place) && z.area && z.area.parts && z.area.parts.length) o.area = relArea(z.area);     // a linked zone keeps its shape too, for a copy that is detached
     if (o.after) o.after = modId.get(o.after) || (outside.has(o.after) ? trigRef(o.after) : 0);
     if (Array.isArray(o.of)) o.of = o.of.map(v => modId.get(v) || trigRef(v));
     if (o.when === 'intel' && o.item && o.item !== 'all') o.item = bind('o' + o.item, 'objective', 'o', 'Intel item "' + o.item + '"', { hint: o.item });
     if (o.doors) for (const d of o.doors) d.pos = doorRef(d.pos, d.name);
-    if (o.when === 'zone' || o.when === 'hold') { const p = state.places.find(q => samePlace(q, z)); if (p) o.place = bind('p' + p.id, 'place', 'p', 'Place "' + p.name + '"', { hint: p.name }); }
+    // A linked zone binds its own place, marked as a link; a copied shape binds a place with the same shape, as before.
+    const linked = z.place > 0 ? placeById(z.place) : null;
+    delete o.place;
+    if (o.when === 'zone' || o.when === 'hold') {
+      const p = linked || state.places.find(q => samePlace(q, z));
+      if (p) o.place = bind('p' + p.id + (linked ? 'L' : ''), 'place', 'p', 'Place "' + p.name + '"', Object.assign({ hint: p.name }, linked ? { link: true } : {}));
+    }
     return o;
   });
   if (modId.has(state.extractionAfter)) bindings.push({ kind: 'extraction', ref: 'x1', label: 'The extraction waits for trigger ' + modId.get(state.extractionAfter) + ' of this module', required: false, trigger: modId.get(state.extractionAfter) });
@@ -138,7 +153,7 @@ function moduleInsert(mod, at, deg) {
   if (!isVec(at)) return { error: 'Choose where the module goes first.' };
   if (live.on && mod.bindings.some(moduleRequired)) return { error: 'This module has outside references to bind, and edits now go straight into the running mission. Insert it while editing offline, bind it, then load the scenario.' };
   deg = ((num(+deg, 0) % 360) + 360) % 360;
-  pushUndo();
+  willChange('Insert the module "' + (mod.name || 'module') + '"');
   const copy = state.moduleCopies = (state.moduleCopies || 0) + 1, key = ref => 'm' + copy + ':' + ref;
   const turn = moduleTurn(deg), put = p => { const q = turn(p[0], p[2]); return [r2(at[0] + q[0]), r2(at[1] + p[1]), r2(at[2] + q[1])]; };
   const ring = r => r.map(p => { const q = turn(p[0], p[1]); return [r2(at[0] + q[0]), r2(at[2] + q[1])]; });
@@ -204,7 +219,7 @@ function moduleInsert(mod, at, deg) {
     return e;
   });
   for (const b of mod.bindings) state.moduleBindings.push({ key: key(b.ref), copy, module: mod.name, kind: b.kind, ref: b.ref, label: typeof b.label === 'string' && b.label.trim() ? b.label.trim() : b.kind + ' ' + b.ref,
-    required: moduleRequired(b), hint: b.kind === 'door' ? (isVec(b.hint) ? put(b.hint) : null) : typeof b.hint === 'string' ? b.hint : '' });
+    required: moduleRequired(b), hint: b.kind === 'door' ? (isVec(b.hint) ? put(b.hint) : null) : typeof b.hint === 'string' ? b.hint : '', link: b.kind === 'place' && b.link === true });
 
   const first = state.enemies.length;
   state.enemies.push(...enemies); state.zones.push(...zones);
@@ -248,24 +263,30 @@ function moduleOpen() {
   }
   return state.moduleBindings.filter(b => used.has(b.key));
 }
-// Why the scenario cannot be saved yet, or '' when it can.
+// Why the scenario cannot be saved yet, or '' when it can: references of inserted modules still to bind, and zones linked to a
+// place that is gone or has no shape (29b-places.js), which the file rules would refuse.
 function moduleBlock() {
-  const open = moduleOpen().filter(b => b.required);
-  if (!open.length) return '';
+  const open = moduleOpen().filter(b => b.required), dangling = placeLinkProblems();
+  if (!open.length && !dangling.length) return '';
+  if (!open.length) return 'Not saved: ' + dangling.slice(0, 3).join('; ') + (dangling.length > 3 ? '; and more' : '') + '. Link it to another place, or detach it (Triggers tab).';
   return 'Not saved: ' + open.length + (open.length === 1 ? ' outside reference' : ' outside references') + ' of an inserted module must be bound first (' + open.slice(0, 3).map(b => b.label).join('; ')
     + (open.length > 3 ? '; and more' : '') + '). Bind them under Modules on the Triggers tab.';
 }
-// value: a door's place in state.doors, an intel item's name ('' for any), a place's id, a trigger's id, or true/false for the extraction.
+// value: a door's place in state.doors, an intel item's name ('' for any), a place's id or 'copy' (keep the module's own
+// shape, moved and turned with the copy, unlinked), a trigger's id, or true/false for the extraction.
 function moduleBind(key, value) {
   const b = moduleOpen().find(x => x.key === key), fail = text => { say(text); return false; };
   if (!b) return fail('That reference is bound already, or its module copy is gone.');
   let door = null, place = null;
   if (b.kind === 'door') { door = Number.isInteger(value) ? state.doors[value] : null; if (!door) return fail('Choose one of the map\'s doors for ' + b.label + '.'); }
-  else if (b.kind === 'place') { place = state.places.find(p => p.id === value); if (!place) return fail('Choose one of the named places for ' + b.label + '.'); }
+  else if (b.kind === 'place' && value !== 'copy') {
+    place = state.places.find(p => p.id === value); if (!place) return fail('Choose one of the named places for ' + b.label + '.');
+    if (b.link && !(place.area && place.area.parts && place.area.parts.length)) return fail(place.name + ' is a point: ' + b.label + ' was a painted place the zone shares. Choose a painted place, or keep the module\'s own shape.');
+  }
   else if (b.kind === 'trigger') { const z = state.zones.find(q => q.id === value); if (!z || z.moduleCopy === b.copy) return fail('Choose a trigger of the mission for ' + b.label + ', not one of the copy\'s own.'); }
   else if (b.kind === 'objective') { if (typeof value !== 'string') return fail('Name the intel item for ' + b.label + '.'); value = value.trim(); }
-  else value = value === true;
-  pushUndo();
+  else if (b.kind === 'extraction') value = value === true;
+  willChange(b.kind === 'place' && value === 'copy' ? 'Keep the module\'s own shape for ' + b.label : 'Bind ' + b.label);
   for (const e of state.enemies) if (e.binds && e.binds.trigger === key) { e.trigger = value; delete e.binds; }
   for (const z of state.zones) {
     const m = z.binds || {};
@@ -274,8 +295,16 @@ function moduleBind(key, value) {
     if (m.after === key) { z.after = value; delete m.after; }
     if (m.of && m.of.includes(key)) { if (!z.of.includes(value)) z.of.push(value); m.of = m.of.filter(k => k !== key); if (!m.of.length) delete m.of; }
     if (m.item === key) { z.item = value; delete m.item; }
-    // A zone that is a named place takes the place's shape on this map; a point place moves only the anchor.
-    if (m.place === key) { z.pos = place.pos.slice(0, 3); if (place.area) z.area = JSON.parse(JSON.stringify(place.area)); delete m.place; }
+    // A zone that shared a named place links the place chosen here; one that had a copy of a place's shape takes a copy of
+    // the chosen place's shape; a point place moves only the anchor. 'copy': the zone keeps the module's shape, unlinked.
+    if (m.place === key) {
+      if (place) {
+        z.pos = place.pos.slice(0, 3);
+        if (b.link) { z.place = place.id; z.area = placeAreaCopy(place.id); }
+        else if (place.area) z.area = JSON.parse(JSON.stringify(place.area));
+      }
+      delete m.place;
+    }
     if (m.extraction === key) { if (value) state.extractionAfter = z.id; delete m.extraction; }
     if (z.binds && !Object.keys(z.binds).length) delete z.binds;
   }
@@ -385,8 +414,9 @@ function syncModules() {
         choose(state.zones.filter(z => z.moduleCopy !== b.copy).map(z => [z.id, trigText(z) + (z.name ? ': ' + z.name : '')]), 'The mission has no other trigger yet: add the one it should wait for first.');
         read = () => parseInt(control.value, 10);
       } else if (b.kind === 'place') {
-        choose(state.places.map(p => [p.id, p.name]), 'This map has no named places yet: name the place first.');
-        read = () => parseInt(control.value, 10);
+        choose([...state.places.filter(p => !b.link || (p.area && p.area.parts && p.area.parts.length)).map(p => [p.id, p.name + (b.link ? ' (link to it)' : '')]), ...(b.link ? [['copy', 'Keep the module\'s own shape (not linked)']] : [])],
+          'This map has no named places yet: name the place first.');
+        read = () => (control.value === 'copy' ? 'copy' : parseInt(control.value, 10));
       } else if (b.kind === 'objective') {
         const names = [...new Set([b.hint, ...state.objectives.map(o => o.label)].filter(Boolean))];
         choose([...names.map(n => [n, n]), ['', 'Any intel item'], ['all', 'All intel items']], '');

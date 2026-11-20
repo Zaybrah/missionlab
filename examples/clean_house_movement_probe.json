@@ -1,0 +1,82 @@
+{
+  "schema": "missionlab-plan/1",
+  "name": "Clean House: movement probe",
+  "id": "sc-cleanhouse-movement-probe",
+  "briefing": [
+    "Clean House, movement probe. A test of whether enemies walk where MissionLab sends them.",
+    "Stand in the front yard, keep off the back yard, and follow the on-screen messages.",
+    "Host: Direct view, Fire now on triggers 2, 3, 4 in turn, then 5 to open the way out."
+  ],
+  "squad": [1, 2],
+  "minutes": 10,
+  "scene": "",
+  "navFile": "suburbv2.bytes",
+  "seed": 0,
+  "notes": [
+    "Made for ML-035: one fresh enemy sent at a player, one fresh enemy called to a spot it can reach, a fixed sentry that must not be sent, and a call to a spot nobody can stand on. Play it solo or with one friend, with the browser page open on Direct, then keep BepInEx/LogOutput.log.",
+    "Every order is logged in stages, one line each, all starting 'order N:'. 'accepted' is only the game taking it and shows the enemy's navigation as the game left it (state, path, working one out, searching, may move, stopped, top speed). Then 'path found', 'on its way' (3 m closer), and how it ended: 'arrived' is the only success; 'unreachable' (no path, or a path that ends short), 'no progress', 'stopped short', 'in a fight' and 'gone' are not.",
+    "Probe 1 (trigger 1, 30 s in): a guard appears on the street 30 m north of the yard and is sent at the nearest player. Stand still on open ground in the front yard until its message shows, wait five seconds, then step about ten metres aside out of its sight: its spot stays where you stood, so it can arrive there without a fight. Look for its 'order N:' lines within 90 s.",
+    "Probe 2 (trigger 2, Fire now): a second guard appears on the street east of the yard and stays put. Probe 3 (trigger 3, Fire now, once probe 1 has ended in the log): everyone within 30 m of a spot in the back yard is called there. The new guard should be accepted and followed; the fixed sentry beside the spot should be counted 'at a fixed post' and never ordered. Keep off that spot yourself, or the call goes to where you stand.",
+    "Probe 4 (trigger 4, Fire now, after probe 3): a call to a spot above the upper floor, on the roof, where nobody can stand. The call line should say 'not walkable ground: the nearest walkable ground is on another floor' and send nobody; the sentry is again counted at a fixed post.",
+    "The page's own order (select the guard of probe 2, then click a spot on the street) is followed the same way and is worth one try as well.",
+    "Completion: trigger 5 'Probe done' (Fire now) opens the extraction; extract, or end with the try-out 'complete'. Failure: everyone dead, as in the game. Nothing depends on any order working.",
+    "The probe guards see and hear only 5 m (detectionRange and hearingRange), so a fight does not end an order early; whether the game honours both for these guards is not checked here.",
+    "Write down with the log: the game build, the MissionLab version, Clean House by day or night, solo or host with a friend, and which probes were fired when."
+  ],
+  "triggers": [
+    {
+      "id": 1,
+      "name": "Probe 1: hunter",
+      "when": "time",
+      "delay": 30,
+      "hunt": true,
+      "facePlayer": true,
+      "message": "Probe 1: a guard on the street north is sent at you. Wait five seconds, then step aside."
+    },
+    {
+      "id": 2,
+      "name": "Probe 2: the walker",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "message": "Probe 2: a guard is on the street east of the yard."
+    },
+    {
+      "id": 3,
+      "name": "Probe 3: call to the back yard",
+      "when": "zone",
+      "pos": [-9.0, 0.27, -12.0],
+      "radius": 1.5,
+      "rally": 30,
+      "facePlayer": true,
+      "message": "Probe 3: everyone within 30 m is called to the back yard."
+    },
+    {
+      "id": 4,
+      "name": "Probe 4: call to the roof",
+      "when": "zone",
+      "pos": [-20.0, 7.5, 4.0],
+      "radius": 1,
+      "rally": 30,
+      "facePlayer": true,
+      "message": "Probe 4: a call to the roof, where nobody can stand. Nobody should be sent."
+    },
+    {
+      "id": 5,
+      "name": "Probe done",
+      "when": "after",
+      "after": 0,
+      "facePlayer": true,
+      "extraction": "open",
+      "message": "Probe done. The way out is open."
+    }
+  ],
+  "objectives": [],
+  "insertion": "Alpha 2",
+  "gameMaster": true,
+  "spawns": [
+    {"group": 0, "role": "Guard", "pos": [-3.0, 0.0, -12.0], "yaw": 90, "indoor": false, "defensive": true, "detectionRange": 5, "hearingRange": 5, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": true, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+    {"group": 1, "role": "Guard", "pos": [2.0, 0.03, 30.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 5, "hearingRange": 5, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": []},
+    {"group": 2, "role": "Guard", "pos": [2.0, 0.01, 8.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 5, "hearingRange": 5, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": []}
+  ]
+}

@@ -3,17 +3,22 @@
 
 The page stays one file that opens offline from disk; the parts only make it easier to work on. They are pieces of one
 page and one script, joined in file-name order exactly as they are: no part is valid on its own, and nothing is added
-or changed between them.
+or changed between them, with one exception. The literal '__ML_CAPABILITIES__' (in 20a-modes.js) is replaced by the
+capability list docs/capabilities.json, written as compact JSON, so the page, the plugin (which carries the same file
+as a resource) and the README Status table (tools/status.py) all read one source.
 
   python3 tools/editor/build.py           writes tools/editor/index.html
   python3 tools/editor/build.py --check   exit 1 when index.html is not what the parts make (edited by hand, or not rebuilt)
 """
+import json
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'src')
 PAGE = os.path.join(HERE, 'index.html')
+CAPABILITIES = os.path.join(HERE, '..', '..', 'docs', 'capabilities.json')
+CAPABILITY_MARK = b"'__ML_CAPABILITIES__'"
 
 
 def parts():
@@ -23,8 +28,25 @@ def parts():
     return names
 
 
+def capabilities():
+    """The capability list as one line of JSON. Read and written again, so line endings and spacing of the file (which
+    differ between checkouts) never change the page; ASCII only, and '</' escaped so no text can close the script."""
+    try:
+        with open(CAPABILITIES, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        sys.exit('docs/capabilities.json could not be read: ' + str(e))
+    if not isinstance(data, dict) or data.get('schema') != 'missionlab-capabilities/1' or not isinstance(data.get('capabilities'), list):
+        sys.exit('docs/capabilities.json is not a missionlab-capabilities/1 list')
+    text = json.dumps(data, ensure_ascii=True, separators=(',', ':'), sort_keys=False)
+    return text.replace('</', '<\\/').encode('ascii')
+
+
 def page():
-    return b''.join(open(os.path.join(SRC, n), 'rb').read() for n in parts())
+    made = b''.join(open(os.path.join(SRC, n), 'rb').read() for n in parts())
+    if made.count(CAPABILITY_MARK) != 1:
+        sys.exit('the parts must hold ' + CAPABILITY_MARK.decode() + ' exactly once; the page carries the capability list there')
+    return made.replace(CAPABILITY_MARK, capabilities())
 
 
 def main():

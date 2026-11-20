@@ -1,0 +1,108 @@
+{
+  "schema": "missionlab-plan/2",
+  "mission": {
+    "name": "Clean House: Intel Raid (recipe)",
+    "id": "sc-cleanhouse-recipe-raid",
+    "briefing": [
+      "Intel raid. Go in from Alpha 2, get into House and take the intel.",
+      "The way out stays shut until you have it.",
+      "You have 30 minutes, and an alarm brings more of them."
+    ],
+    "squad": [1, 4],
+    "minutes": 20,
+    "seed": 0,
+    "scene": "",
+    "navFile": "suburbv2.bytes",
+    "notes": [
+      "Made with the Intel raid recipe of the scenario editor (Map tab), with these answers: in at Alpha 2; any intel item; the building is the place 'House'; no encounters; Standard garrison, Regulars, a 30-minute time limit, the alarm bringing two more; about 20 minutes for 1 to 4 players. Everything below is ordinary scenario data.",
+      "Completion: the extraction stays shut until trigger 2 'Intel taken' fires (any intel item, wherever the game put it), then extract. Failure: trigger 4 'Out of time' at 30 minutes (told at five minutes, one minute and ten seconds left); everyone dead also ends it, as in the game. The host option 'Time limit: None' switches trigger 4 off.",
+      "Trigger 1 'Into House' only tells the squad they are in the right building; nothing on the way out depends on it. The house is the outline of the two-man job's placement area (basement, ground floor, upstairs), whose upstairs part every recorded player position upstairs lies inside.",
+      "Garrison: six guards on spots inside the house that guards of the quiet raid and the two-man job stood on in the game. Two are always there; lot 1 (two more) and lot 2 (two more) are dropped by the host option Garrison: Light keeps 2, Standard 4 (the default), Heavy 6.",
+      "Alarm (trigger 3): two patrols appear at the north end of the street, where the quiet raid's reinforcements appear, and walk a route into the house through the front. They never hunt or rally: enemies sent after a player just after they appeared stood still in the game (18 November), while patrol routes have been walked.",
+      "Minutes, squad and how hard the garrison options are, are the author's estimates; no playtest has measured them. The coordinates were chosen from the other Clean House examples, not worked out by the recipe on the real map, and this mission has not been played yet."
+    ],
+    "triggers": [
+      {
+        "id": 1,
+        "name": "Into House",
+        "when": "zone",
+        "pos": [-22.0, 0.68, -4.0],
+        "radius": 12,
+        "area": {"parts": [
+          {"floor": [-3.4, -1.2], "outline": [[-26.2, -3.4], [-17.5, -3.4], [-17.5, 9.6], [-26.2, 9.6]]},
+          {"floor": [0.2, 3.2], "outline": [[-26.2, -19.9], [-15.2, -19.9], [-15.2, -13.6], [-18.2, -13.6], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]},
+          {"floor": [3.18, 6.28], "outline": [[-26.2, -19.9], [-18.2, -19.9], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]}
+        ]},
+        "facePlayer": true,
+        "message": "You are in House. Find the intel."
+      },
+      {
+        "id": 2,
+        "name": "Intel taken",
+        "when": "intel",
+        "item": "",
+        "facePlayer": true,
+        "message": "Intel secured. The extraction is open: get out."
+      },
+      {
+        "id": 3,
+        "name": "Alarm",
+        "when": "alert",
+        "delay": 10,
+        "facePlayer": true,
+        "red": true,
+        "message": "They know you are here. More of them are on their way to House."
+      },
+      {
+        "id": 4,
+        "name": "Out of time",
+        "when": "time",
+        "delay": 1800,
+        "facePlayer": true,
+        "warn": true,
+        "red": true,
+        "message": "Out of time: the mission has failed.",
+        "end": "failed"
+      }
+    ],
+    "objectives": [],
+    "doors": [],
+    "places": [
+      {"id": 1, "name": "House", "pos": [-22.0, 0.68, -4.0], "area": {"parts": [
+        {"floor": [-3.4, -1.2], "outline": [[-26.2, -3.4], [-17.5, -3.4], [-17.5, 9.6], [-26.2, 9.6]]},
+        {"floor": [0.2, 3.2], "outline": [[-26.2, -19.9], [-15.2, -19.9], [-15.2, -13.6], [-18.2, -13.6], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]},
+        {"floor": [3.18, 6.28], "outline": [[-26.2, -19.9], [-18.2, -19.9], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]}
+      ]}}
+    ],
+    "options": [
+      {"id": "garrison", "name": "Garrison", "pick": 1, "choices": [
+        {"name": "Light", "drop": {"lots": [1, 2]}},
+        {"name": "Standard", "drop": {"lots": [2]}},
+        {"name": "Heavy"}
+      ]},
+      {"id": "skill", "name": "Enemy skill", "pick": 1, "choices": [
+        {"name": "Recruits", "skill": "recruit"},
+        {"name": "Regulars"},
+        {"name": "Veterans", "skill": "veteran"}
+      ]},
+      {"id": "clock", "name": "Time limit", "choices": [
+        {"name": "30 minutes"},
+        {"name": "None", "drop": {"triggers": [4]}}
+      ]}
+    ],
+    "extraction": {
+      "after": 2
+    },
+    "insertion": "Alpha 2",
+    "spawns": [
+      {"group": 0, "role": "Guard", "pos": [-18.0, 0.69, -17.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-23.0, 0.68, -14.5], "yaw": 0, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "lot": 1, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-22.5, 3.68, -1.0], "yaw": 90, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "lot": 1, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-21.0, 3.68, -16.0], "yaw": 0, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "lot": 2, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-21.0, -2.32, 6.0], "yaw": 180, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "lot": 2, "patrol": []},
+      {"group": 1, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 225, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 3, "hvt": false, "patrol": [[-20.5, 0.68, -4.0], [-23.0, 0.68, -14.5]]},
+      {"group": 1, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 225, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 3, "hvt": false, "patrol": [[-20.5, 0.68, -4.0], [-23.0, 0.68, -14.5]]}
+    ]
+  }
+}

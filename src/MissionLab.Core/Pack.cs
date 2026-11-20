@@ -53,8 +53,8 @@ namespace MissionLab.Core
         public const int MaxScenarioBytes = 4 * 1024 * 1024, MaxModuleBytes = 1 << 20;   // as the catalogue and the modules folder take them
 
         /// <summary>Every feature word this version knows (Capabilities.Of). A pack needing another one was made by a newer MissionLab.</summary>
-        public static readonly string[] Known = { "areas", "chance", "director", "door-trigger", "doors", "endings", "extraction-hold", "hunt", "hvt",
-            "insertion", "intel-move", "messages", "options", "places", "power", "rally", "repeat", "respawn", "scatter", "sealed", "teams", "things",
+        public static readonly string[] Known = { "areas", "chance", "director", "door-trigger", "doors", "endings", "extraction-hold", "goals", "hunt", "hvt",
+            "insertion", "intel-move", "messages", "options", "outcomes", "places", "power", "pressure", "rally", "repeat", "respawn", "scatter", "sealed", "teams", "things",
             "vehicles", "weather" };
 
         // What the game or MissionLab makes from the game: none of it may travel in a pack.

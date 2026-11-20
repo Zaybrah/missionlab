@@ -50,10 +50,19 @@ namespace MissionLab
         {
             if (string.IsNullOrEmpty(file)) { _repeat = null; return "the next mission gets a new roll"; }
             RunRecord.Entry e = RunRecord.Read(file);
-            if (e == null) return "that run record could not be read";
+            if (e == null)
+            {
+                // Kept as the choice all the same: the next mission is then left as the game ships it, rather than started anew under a
+                // repeat label the host would believe.
+                _repeat = new RunRecord.Entry { File = Path.GetFileName(file), Unreadable = true };
+                return "that run record could not be read, so the next mission is left as the game ships it; choose a new roll to play a new setup";
+            }
             _repeat = e;
-            return "the next mission repeats the run of roll " + e.Roll + " (" + (e.Scenario == "" ? "a generated layout" : "scenario '" + e.Scenario + "'") + ", " + e.Players + " player(s)" +
-                   (e.Picks.Count > 0 ? ", options " + Picker.PicksText(e.Picks) : "") + ")";
+            string said = "the next mission repeats the run of roll " + e.Roll + " (" + (e.Scenario == "" ? "a generated layout" : "scenario '" + e.Scenario + "'") + ", " + e.Players + " player(s)" +
+                          (e.Picks.Count > 0 ? ", options " + Picker.PicksText(e.Picks) : "") + ")";
+            if (e.Scenario == "" && e.Outcome != "used") said += "; but that run was refused, so the next mission is left as the game ships it unless you choose a new roll";
+            else if (e.Scenario == "" && e.Inputs == null) said += "; but that record does not hold the map and settings it was made with, so the next mission is left as the game ships it unless you choose a new roll";
+            return said;
         }
         private static string _refusedFile = "";            // set while a scenario asked for by name is read and found wrong
         internal static string Rejected = "";              // why the scenario was not used for this mission ("": it was, or there was none)
@@ -92,6 +101,12 @@ namespace MissionLab
                 _configReadFor = ptr;
                 try { DirectorPlugin.Settings.Reload(); }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("settings file could not be re-read (" + e.Message + "); keeping the previous settings"); }
+                // The playlist entry set up for this mission puts back the options and dice a restart lost (ML-049).
+                try { Playlists.BeforeMission(); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the playlist could not be read (" + e.Message + "); the next-mission choice is used as it stands"); }
+                // So does the operation's next mission, and the runs it was waiting on are counted first (ML-051).
+                try { Operations.BeforeMission(); }
+                catch (Exception e) { DirectorPlugin.L.LogWarning("the operation could not be read (" + e.Message + "); the next-mission choice is used as it stands"); }
             }
             bool done;
             try { done = TryApply(raid, via); }
@@ -200,6 +215,10 @@ namespace MissionLab
                 return true;
             }
 
+            // Missions with a target person (read before the plan: a generated layout records it among its inputs).
+            var hvtPoints = raid.hvtSpawnPoints; var hvtTypes = raid.hvtAI;
+            bool targetMission = hvtPoints != null && hvtPoints.Length > 0 && hvtTypes != null && hvtTypes.Length > 0 && gm != null && gm.botHVTAmount > 0;
+
             // 3. The plan: a scenario file if one is configured for this scene, otherwise generated.
             _refusedFile = ""; _scenarioText = "";
             MissionPlan plan = TryLoadScenario(scene, nav, out string scenarioName);
@@ -211,16 +230,24 @@ namespace MissionLab
                 RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, 0, 0, null, null, null, false, Rejected);
                 return true;
             }
+            if (plan != null && _repeat != null)
+            {
+                // Only a run of a scenario can be repeated by a scenario; whether the same setup came out is said after the setup, as before.
+                RepeatVerdict fits = RepeatSetup.ForScenario(_repeat.Source(), scenarioName);
+                if (!fits.Exact) { RefuseRepeat(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, fits, null); return true; }
+            }
             bool fromFile = plan != null;
             long seed; int enemies; string source;
             var later = new HashSet<SpawnPlan>();
             string scenarioScene = fromFile ? plan.Scene : "";
             Variants.Out rolledOut = null; long rolledWith = 0; int squad = 0; bool rolled = false;
             Dictionary<string, int> picks = null; var runNotes = new List<string>(); bool optionsTookTarget = false;
+            var needLook = new List<string>();                // what the scenario uses that is unproven or missing here, for the banner (ML-036)
+            RepeatInputs genInputs = null;                    // what a generated layout is made from besides its seed (null: a scenario)
             if (fromFile && (Variants.Any(plan) || MissionLab.Core.Scatter.Any(plan)))
             {
                 // What the scenario leaves to chance (dice and scatter) is rolled now, anew for every mission unless a seed is set.
-                rolledWith = _repeat != null ? _repeat.Roll : DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
+                rolledWith = RepeatSetup.Seed(_repeat != null ? _repeat.Roll : (long?)null, DirectorPlugin.Seed.Value, NewSeed);
                 rolled = true;
             }
             if (fromFile && Variants.Any(plan))
@@ -291,6 +318,39 @@ namespace MissionLab
                     _repeat = null;
                     return true;
                 }
+                // What the scenario needs of this very mission (ML-036). An intel item no candidate of the mission's objective sets
+                // is, or an item to move that the mission does not have, is a known incompatibility: refused as above, before
+                // anything is changed. Failing or experimental capabilities, an item this mission's roll switched off, and a target
+                // person in a mission without one are only told: using them is the host's experiment.
+                List<Finding> needs;
+                try
+                {
+                    MissionItems(raid, out List<string> candidates, out List<string> inPlay);
+                    var facts = new MapFacts { Source = "this mission", Items = candidates, ItemsComplete = candidates != null, TargetKnown = true, HasTarget = targetMission };
+                    needs = MissionLab.Core.Capabilities.Needs(plan, facts, CapabilityRegistry.Embedded(), DirectorPlugin.Version);
+                    if (inPlay != null)
+                        foreach (Finding f in MissionLab.Core.Capabilities.Needs(plan, new MapFacts { Source = "this mission's roll", Items = inPlay }, null, ""))
+                            if (!needs.Exists(n => n.Path == f.Path)) needs.Add(f);
+                }
+                catch (Exception e) { log.LogWarning("what the scenario needs of this mission could not be checked (" + e.Message + "); it is used without that check"); needs = new List<Finding>(); }
+                foreach (Finding f in needs)
+                {
+                    if (f.Level != Finding.Note) continue;
+                    log.LogInfo("scenario '" + scenarioName + "': " + f);
+                    runNotes.Add("needs: " + f);
+                    needLook.Add(f.Path.StartsWith("capabilities.", StringComparison.Ordinal) ? f.Path.Substring(13) : f.Code == "missing-item" ? "an item this mission left out" : f.Code == "no-target" ? "no target person" : f.Code);
+                }
+                List<Finding> unmet = needs.FindAll(f => f.Level == Finding.Error);
+                if (unmet.Count > 0)
+                {
+                    Rejected = "Scenario '" + scenarioName + "' was not used: " + string.Join("; ", unmet.ConvertAll(f => f.ToString())) + ". The game's own mission runs.";
+                    log.LogWarning(Rejected + " Nothing of the mission was changed.");
+                    Banner = "MissionLab: the scenario was not used (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
+                    SatOut.Clear(); DoorsOut.Clear(); ThingsOut.Clear();
+                    RunRecord.Write(scene, nav != null ? nav.SourceFile : "", scenarioName, _scenarioText, rolledWith, squad, plan, rolledOut, runNotes, false, Rejected, picks);
+                    _repeat = null;
+                    return true;
+                }
                 seed = plan.Seed;
                 source = "scenario '" + scenarioName + "'";
                 // Enemies of a chosen type cannot go through the game's own start-up spawn; they follow a few seconds later.
@@ -323,10 +383,28 @@ namespace MissionLab
                 enemies = DirectorPlugin.EnemyCount.Value > 0 ? DirectorPlugin.EnemyCount.Value : laptopCount;
                 if (enemies <= 0) enemies = 10;
                 enemies = Math.Max(1, Math.Min(60, enemies));
-                seed = DirectorPlugin.Seed.Value != 0 ? DirectorPlugin.Seed.Value : NewSeed();
-                source = "seed " + seed;
-                var input = new GeneratorInput { Nav = nav, Seed = seed, Scene = scene, Enemies = enemies, Infils = infils, Authored = authored };
+                var input = new GeneratorInput { Nav = nav, Scene = scene, Enemies = enemies, Infils = infils, Authored = authored };
                 if (infils.Count == 0) AddExfilBoxes(raid, input);
+                // Written into the run record, so that a later repeat is checked against them before anything is changed.
+                genInputs = new RepeatInputs
+                {
+                    Generator = RepeatSetup.GeneratorVersion, Scene = scene, NavFile = nav.SourceFile, MapPrint = MapPrintOf(nav),
+                    ScenePrint = RepeatSetup.ScenePrint(infils, authored, input.AvoidBoxes, TargetSpots(hvtPoints), tDetect, tHear, tFov),
+                    Enemies = enemies, RandomExtras = DirectorPlugin.RandomExtras.Value, RandomIntel = DirectorPlugin.RandomIntel.Value,
+                    MoveTarget = DirectorPlugin.MoveTarget.Value, Target = targetMission
+                };
+                if (_repeat != null)
+                {
+                    // A repeat is the same effective setup (positions, roles, routes, target pick, random extras) or nothing at all:
+                    // with an input changed or unknown the same seed would give another layout under the repeat's name, and the old
+                    // comparison afterwards would only notice once it was in place. So the mission is left exactly as shipped.
+                    RepeatVerdict verdict = RepeatSetup.ForGenerated(_repeat.Source(), genInputs);
+                    if (!verdict.Exact) { RefuseRepeat(scene, nav.SourceFile, "", "", verdict, genInputs); return true; }
+                }
+                // The chosen run's roll comes before the configured Seed, even one that says otherwise: the host picked that run on purpose.
+                seed = RepeatSetup.Seed(_repeat != null ? _repeat.Roll : (long?)null, DirectorPlugin.Seed.Value, NewSeed);
+                input.Seed = seed;
+                source = "seed " + seed;
                 plan = Generator.Generate(input);
                 if (plan.Spawns.Count < 3)
                 {
@@ -351,8 +429,6 @@ namespace MissionLab
             }
 
             // Missions with a target person: the plan may say where that person stands.
-            var hvtPoints = raid.hvtSpawnPoints; var hvtTypes = raid.hvtAI;
-            bool targetMission = hvtPoints != null && hvtPoints.Length > 0 && hvtTypes != null && hvtTypes.Length > 0 && gm != null && gm.botHVTAmount > 0;
             var targets = new List<SpawnPlan>();
             foreach (SpawnPlan s in plan.Spawns) { if (s.Hvt && targetMission && s.Trigger == 0) targets.Add(s); else s.Hvt = false; }
             if (targetMission && targets.Count == 0 && !fromFile && DirectorPlugin.MoveTarget.Value)
@@ -401,8 +477,9 @@ namespace MissionLab
             sw.Stop();
 
             // 5. Tell the player and leave a record. A record copied into the scenarios folder replays exactly.
-            Banner = "MissionLab: " + source + " | " + enemies + " enemies in " + plan.Groups + " groups | " + (nav != null ? nav.SourceFile : "no map file");
-            BannerUntil = Time.unscaledTime + 12f;
+            Banner = "MissionLab: " + source + " | " + enemies + " enemies in " + plan.Groups + " groups | " + (nav != null ? nav.SourceFile : "no map file")
+                   + (needLook.Count > 0 ? " | experimental here: " + string.Join(", ", needLook) : "");
+            BannerUntil = Time.unscaledTime + (needLook.Count > 0 ? 18f : 12f);
             log.LogInfo(Banner + " | via " + via + " | " + generated + " planned + " + toppedUp + " original spawn points | insertion: " + infilInfo +
                         " | map: " + navInfo + " | " + senses + " | " + sw.ElapsedMilliseconds + " ms");
             plan.Scene = scene;
@@ -412,10 +489,13 @@ namespace MissionLab
             {
                 if (fromFile && string.IsNullOrEmpty(_scenarioText) && _lastScenarioPath != null) _scenarioText = File.ReadAllText(_lastScenarioPath);
                 long usedRoll = rolled ? rolledWith : seed;
-                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", fromFile ? scenarioName : "", fromFile ? _scenarioText : "", usedRoll, squad, plan, rolledOut, runNotes, true, "", picks);
+                RunRecord.Write(scene, nav != null ? nav.SourceFile : "", fromFile ? scenarioName : "", fromFile ? _scenarioText : "", usedRoll, squad, plan, rolledOut, runNotes, true, "", picks,
+                                genInputs, _repeat != null ? _repeat.File : "");
                 if (_repeat != null)
                 {
-                    // Was this the same setup as the run it repeats? The inputs are compared first, then the result.
+                    // Was this the same setup as the run it repeats? A generated layout's inputs were checked before it was made; a
+                    // scenario's are compared here, then the result. "Same" is the effective setup only: what players, the AI and
+                    // physics do afterwards is outside it.
                     var changed = new List<string>();
                     if (_repeat.Hash != RunRecord.Sha(fromFile ? _scenarioText : "")) changed.Add("the scenario file has changed since");
                     if (_repeat.Players != squad && rolledOut != null) changed.Add(_repeat.Players + " player(s) then, " + squad + " now");
@@ -433,6 +513,47 @@ namespace MissionLab
             if (later.Count > 0) log.LogInfo(later.Count + " enemies are held back: a chosen type follows a few seconds after the start, zone enemies when a player reaches their zone");
             WriteRecord(scene, seed, via, source, enemies, laptopCount, generated, toppedUp, infils, infilInfo, navInfo, sw.ElapsedMilliseconds, plan);
             return true;
+        }
+
+        /// <summary>
+        /// What the running mission can give an intel trigger. candidates: the kinds of every item of every objective set and the
+        /// sets' own names; a kind not among them never appears in this mission. inPlay: the kinds still switched on, once the
+        /// game has switched off the copies it did not keep (null while nothing is off yet). Both null when the game has listed
+        /// no item yet or could not be read: then nothing is judged on them, and nothing is refused for it.
+        /// </summary>
+        private static void MissionItems(RaidManager raid, out List<string> candidates, out List<string> inPlay)
+        {
+            candidates = null; inPlay = null;
+            try
+            {
+                var sets = raid.objectives;
+                if (sets == null) return;
+                var all = new List<string>(); var on = new List<string>(); bool someOff = false;
+                for (int i = 0; i < sets.Length; i++)
+                {
+                    if (sets[i] == null) continue;
+                    AddKind(all, sets[i].name);
+                    var items = sets[i].objectives;
+                    for (int k = 0; items != null && k < items.Length; k++)
+                    {
+                        ObjectiveObject o = items[k];
+                        if (o == null) continue;
+                        string name = o.gameObject.name, shown = "";
+                        try { shown = o.DisplayName; } catch { }
+                        AddKind(all, name); AddKind(all, shown);
+                        if (o.gameObject.activeInHierarchy) { AddKind(on, name); AddKind(on, shown); } else someOff = true;
+                    }
+                }
+                if (all.Count == 0) return;
+                candidates = all; inPlay = someOff ? on : null;
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the mission's intel items could not be read, so a scenario's items are not checked: " + e.Message); candidates = null; inPlay = null; }
+        }
+
+        private static void AddKind(List<string> into, string name)
+        {
+            string kind = ObjectivePlan.Kind(name);
+            if (kind != "" && !into.Contains(kind)) into.Add(kind);
         }
 
         /// <summary>Bounds and size of the navigation graph the game has loaded for this scene.</summary>
@@ -575,6 +696,60 @@ namespace MissionLab
         {
             long t = DateTime.UtcNow.Ticks ^ (Environment.TickCount64 * 2654435761L);
             return 100000 + Math.Abs(t % 900000);   // six digits: easy to read out and share
+        }
+
+        // ----- repeating a run
+
+        /// <summary>
+        /// The chosen run cannot be repeated exactly. Nothing of the mission has been changed, and nothing is: the game's own mission
+        /// runs, the reason goes to the page and the log, and a refused record is written. The choice stays, so a later mission is
+        /// refused in the same way until the host picks a new roll: playing a new setup instead is the host's choice, not ours.
+        /// </summary>
+        private static void RefuseRepeat(string scene, string navFile, string scenario, string authoredText, RepeatVerdict verdict, RepeatInputs now)
+        {
+            string what = _repeat.Unreadable ? "run record " + _repeat.File : "the run of roll " + _repeat.Roll + " (" + _repeat.File + ")";
+            Rejected = "This mission was to repeat " + what + " exactly, and cannot: " + verdict.Text + ". Nothing of the mission was changed; the game's own mission runs. " +
+                       "Choose \"A new roll\" on the page to play a new setup instead.";
+            DirectorPlugin.L.LogWarning(Rejected);
+            Banner = "MissionLab: the chosen run cannot be repeated exactly (see the page or the log). The game's own mission runs."; BannerUntil = Time.unscaledTime + 20f;
+            RunRecord.Write(scene, navFile, scenario, authoredText, _repeat.Unreadable ? 0 : _repeat.Roll, 0, null, null, null, false, Rejected, null, now, _repeat.File);
+        }
+
+        private static readonly Dictionary<string, string> MapPrints = new Dictionary<string, string>();     // by navmesh file: NavPicker keeps the mesh it read, so the print stays with it
+
+        /// <summary>The fingerprint of the navmesh file in use ("": it could not be read, and a later repeat of this run is refused).</summary>
+        private static string MapPrintOf(NavMesh nav)
+        {
+            string name = nav.SourceFile ?? "";
+            if (MapPrints.TryGetValue(name, out string known)) return known;
+            try
+            {
+                string print = ScenarioFile.MapPrint(File.ReadAllBytes(Path.Combine(BepInEx.Paths.GameDataPath, "NavMeshData", Path.GetFileName(name))));
+                MapPrints[name] = print;
+                return print;
+            }
+            catch (Exception e)
+            {
+                DirectorPlugin.L.LogWarning("the map file " + name + " could not be read for its fingerprint, so this run cannot be repeated exactly later: " + e.Message);
+                return "";
+            }
+        }
+
+        /// <summary>Where the game's own target spots are, for the run's inputs (the target pick of a generated layout depends on them).</summary>
+        private static List<V3> TargetSpots(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject> points)
+        {
+            var spots = new List<V3>();
+            try
+            {
+                for (int i = 0; points != null && i < points.Length; i++)
+                {
+                    if (points[i] == null) continue;
+                    Vector3 p = points[i].transform.position;
+                    spots.Add(new V3(p.x, p.y, p.z));
+                }
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("the mission's target spots could not be read for the run's inputs: " + e.Message); }
+            return spots;
         }
 
         private static void AddUnique(List<V3> list, Vector3 p)

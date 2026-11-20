@@ -1,0 +1,234 @@
+{
+  "schema": "missionlab-plan/2",
+  "mission": {
+    "name": "Clean House: Two-Man Job",
+    "id": "sc-cleanhouse-twoman",
+    "briefing": [
+      "Clean House, a two-man job. The courier's intel is in the house: his phone or his SIM cards. Take it.",
+      "Two jobs, either order: take the intel, and hold the upstairs together for one minute to set up the relay.",
+      "Skip the hold and the intel cracks by itself, six minutes after you take it. Then out to the street."
+    ],
+    "squad": [2, 3],
+    "minutes": 20,
+    "mapPrint": "fnv1a64:7497f1523d227a00",
+    "sealed": true,
+    "scene": "",
+    "navFile": "suburbv2.bytes",
+    "seed": 0,
+    "notes": [
+      "Made for two players: host with the mod, a friend with or without it. Sealed, so the host finds the enemies with the squad. Any intel mission of Clean House, day or night; the intel is left where the game puts it (moved intel is unconfirmed for a friend without the mod).",
+      "Completion: the extraction stays shut until trigger 5 'Way out' fires, and trigger 5 opens it whatever the game's own rule says. Trigger 5 needs one of: trigger 3 'Both jobs' (intel taken, trigger 1, and everyone alive inside the painted upstairs for 60 s in one go, trigger 2; either order), or trigger 4 'Cracked anyway' six minutes after the intel. Trigger 4 is also the way out if a painted hold ever fails to count a client.",
+      "Failure: trigger 10 'Out of time' at 25 minutes (told at five minutes, one minute and ten seconds left: a clock that runs from the mission's start is not announced when it starts); everyone dead also ends it, as in the game. The host option 'Time limit: None' switches trigger 10 off.",
+      "Pressure: taking the intel brings two patrols into the south yard that walk to the back door. The alarm (trigger 6) brings two patrols (three on Heavy) down the street to the front; trigger 7 then sends two more round the west side of the yard to the back door 90 s after the alarm and again every 150 s (its 60 s rest plus its 90 s wait), three times in all, bringing back those that are down; a wave that would bring nobody shows no message. Trigger 8 cuts the power 25 s after the alarm, two missions in five (chance 40).",
+      "The courier (tag 'courier', veteran) is either upstairs in the west room (option A) or in the basement (option B). Trigger 9 'Courier down' brings back every dead player. Nothing on the way out needs him.",
+      "Host options: Garrison Light drops lots 1 and 2 and trigger 7 (7 enemies at the start), Standard drops lot 2 (9), Heavy drops nothing (11 and a third street patrol). Enemy skill, Second chances (shared respawn waves: none, two, five) and Time limit. 54 combinations in all.",
+      "Scatter: six house enemies (spawns 1, 2, 3, 5, 6 and 7; five on Standard) stand somewhere within 2 to 3 m of their spot each mission, inside placement 1 'House' and outside placement 2 'Stairs and doorways', so nobody starts on the stairs or in a doorway. 300 seeds on the real map: every one moved, none left the house, its floor or its room.",
+      "Game Master cards (optional, Direct pane): 6 points, 1 back a minute. 'Send a street patrol' (3) brings one patrol down the street, only when no player is within 30 m of it and nobody looks there; 'Cut the lights' (4).",
+      "Upstairs outline: every one of 3,317 recorded player positions upstairs on Clean House (15 to 18 November) lies inside it, and none at that height outside it. On 19 November (co-op, two players, Standard garrison) the hold counted the client too and fired 60 s after both were upstairs.",
+      "Messages hold in either order: the intel's and the hold's name what is left with an 'if', and 'Job done' comes with trigger 5 however it fired. Squad and minutes are the author's estimate; the one co-op run of 19 November took 11 minutes from setup to extraction, the hold before the intel."
+    ],
+    "places": [
+      {"id": 1, "name": "Front door", "pos": [-18.16, 0.7, -5.15], "floor": [0.2, 3.2]},
+      {"id": 2, "name": "Back door", "pos": [-19.55, 0.7, -19.57], "floor": [0.2, 3.2]},
+      {"id": 3, "name": "Upstairs", "pos": [-21.5, 3.68, -2.0], "area": {"parts": [{"floor": [3.18, 6.28], "outline": [[-26.2, -19.9], [-18.2, -19.9], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]}]}},
+      {"id": 4, "name": "Basement", "pos": [-22.0, -2.32, 4.5], "floor": [-3.4, -1.2]},
+      {"id": 5, "name": "South yard", "pos": [-25.0, 0.51, -30.0], "floor": [-0.5, 2.0]},
+      {"id": 6, "name": "North yard", "pos": [-23.0, 0.5, 18.0], "floor": [-0.5, 2.0]},
+      {"id": 7, "name": "Street", "pos": [-3.0, 0.17, 2.0], "floor": [-1.0, 2.0]},
+      {"id": 8, "name": "North end of the street", "pos": [3.0, 0.05, 46.0], "floor": [-1.0, 2.0]}
+    ],
+    "placement": [
+      {"id": 1, "name": "House", "mode": "allow", "area": {"parts": [
+        {"floor": [-3.4, -1.2], "outline": [[-26.2, -3.4], [-17.5, -3.4], [-17.5, 9.6], [-26.2, 9.6]]},
+        {"floor": [0.2, 3.2], "outline": [[-26.2, -19.9], [-15.2, -19.9], [-15.2, -13.6], [-18.2, -13.6], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]},
+        {"floor": [3.18, 6.28], "outline": [[-26.2, -19.9], [-18.2, -19.9], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]}
+      ]}},
+      {"id": 2, "name": "Stairs and doorways", "mode": "empty", "area": {"parts": [
+        {"floor": [0.2, 3.2], "outline": [[-26.2, -11.0], [-24.3, -11.0], [-24.3, -6.0], [-26.2, -6.0]]},
+        {"floor": [3.18, 6.28], "outline": [[-26.2, -11.0], [-24.3, -11.0], [-24.3, -6.0], [-26.2, -6.0]]},
+        {"floor": [-3.4, 3.2], "outline": [[-25.4, -3.6], [-23.6, -3.6], [-23.6, -0.2], [-25.4, -0.2]]},
+        {"floor": [0.2, 3.2], "outline": [[-20.2, -6.4], [-18.2, -6.4], [-18.2, -3.9], [-20.2, -3.9]]},
+        {"floor": [0.2, 3.2], "outline": [[-20.9, -19.9], [-18.2, -19.9], [-18.2, -17.9], [-20.9, -17.9]]}
+      ]}}
+    ],
+    "options": [
+      {"id": "garrison", "name": "Garrison", "pick": 1, "choices": [
+        {"name": "Light", "drop": {"lots": [1, 2], "triggers": [7]}},
+        {"name": "Standard", "drop": {"lots": [2]}},
+        {"name": "Heavy"}
+      ]},
+      {"id": "skill", "name": "Enemy skill", "pick": 1, "choices": [
+        {"name": "Recruits", "skill": "recruit"},
+        {"name": "Regulars"},
+        {"name": "Veterans", "skill": "veteran"}
+      ]},
+      {"id": "lives", "name": "Second chances", "pick": 1, "choices": [
+        {"name": "None", "respawnTimes": 0},
+        {"name": "Two"},
+        {"name": "Five", "respawnTimes": 5}
+      ]},
+      {"id": "clock", "name": "Time limit", "pick": 0, "choices": [
+        {"name": "25 minutes"},
+        {"name": "None", "drop": {"triggers": [10]}}
+      ]}
+    ],
+    "director": {
+      "budget": 6,
+      "regen": 1,
+      "actions": [
+        {"id": "street-patrol", "name": "Send a street patrol", "cost": 3, "cooldown": 120, "fire": 11, "minDistance": 30, "unseen": true},
+        {"id": "lights-out", "name": "Cut the lights", "cost": 4, "cooldown": 300, "fire": 12}
+      ]
+    },
+    "triggers": [
+      {
+        "id": 1,
+        "name": "Intel taken",
+        "when": "intel",
+        "item": "",
+        "facePlayer": true,
+        "message": "Intel secured. If you have not held the upstairs yet: hold it together for a minute, or last six minutes."
+      },
+      {
+        "id": 2,
+        "name": "Upstairs held",
+        "when": "hold",
+        "pos": [-21.5, 3.68, -2.0],
+        "radius": 10,
+        "area": {"parts": [{"floor": [3.18, 6.28], "outline": [[-26.2, -19.9], [-18.2, -19.9], [-18.2, 2.6], [-13.8, 2.6], [-13.8, 10.4], [-26.2, 10.4]]}]},
+        "hold": 60,
+        "everyone": true,
+        "facePlayer": true,
+        "message": "Upstairs held: the relay is up. If you do not have the intel yet, take it."
+      },
+      {
+        "id": 3,
+        "name": "Both jobs",
+        "when": "all",
+        "of": [1, 2],
+        "facePlayer": true
+      },
+      {
+        "id": 4,
+        "name": "Cracked anyway",
+        "when": "after",
+        "after": 1,
+        "delay": 360,
+        "facePlayer": true
+      },
+      {
+        "id": 5,
+        "name": "Way out",
+        "when": "any",
+        "of": [3, 4],
+        "facePlayer": true,
+        "message": "Job done: the extraction is open. Get out to the street to finish.",
+        "extraction": "open"
+      },
+      {
+        "id": 6,
+        "name": "Alarm",
+        "when": "alert",
+        "delay": 10,
+        "facePlayer": true,
+        "red": true,
+        "message": "They know you are here. Their friends are coming down the street."
+      },
+      {
+        "id": 7,
+        "name": "Yard waves",
+        "when": "after",
+        "after": 6,
+        "delay": 90,
+        "repeat": 60,
+        "times": 3,
+        "facePlayer": true,
+        "message": "More of them in the yard, heading for the back door. {enemies} left."
+      },
+      {
+        "id": 8,
+        "name": "Blackout",
+        "when": "after",
+        "after": 6,
+        "delay": 25,
+        "chance": 40,
+        "facePlayer": true,
+        "power": "off",
+        "message": "They cut the power."
+      },
+      {
+        "id": 9,
+        "name": "Courier down",
+        "when": "down",
+        "tag": "courier",
+        "count": 0,
+        "facePlayer": true,
+        "respawn": true,
+        "message": "The courier is down. Anyone you lost is back with you."
+      },
+      {
+        "id": 10,
+        "name": "Out of time",
+        "when": "time",
+        "delay": 1500,
+        "facePlayer": true,
+        "warn": true,
+        "red": true,
+        "message": "Out of time: they have the street.",
+        "end": "failed"
+      },
+      {
+        "id": 11,
+        "name": "Street patrol (card)",
+        "when": "after",
+        "after": 0,
+        "facePlayer": true
+      },
+      {
+        "id": 12,
+        "name": "Lights out (card)",
+        "when": "after",
+        "after": 0,
+        "facePlayer": true,
+        "power": "off",
+        "message": "The lights go out."
+      }
+    ],
+    "objectives": [],
+    "doors": [
+      {"name": "Door Exterior Paneled_2", "pos": [-18.16, 0.7, -5.15], "locked": false},
+      {"name": "Door Exterior Paneled_3", "pos": [-19.55, 0.7, -19.57], "locked": false},
+      {"name": "Wooden exterior fence door Variant", "pos": [-18.69, 0.61, -36.9], "locked": false}
+    ],
+    "extraction": {
+      "after": 5
+    },
+    "insertion": "Alpha 2",
+    "respawn": {
+      "after": 30,
+      "times": 2
+    },
+    "spawns": [
+      {"group": 0, "role": "Guard", "pos": [-15.0, 0.65, -6.0], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+      {"group": 0, "role": "Guard", "pos": [-18.0, 0.69, -17.0], "yaw": 180, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "scatter": 3, "within": 1},
+      {"group": 0, "role": "Wander", "pos": [-20.5, 0.68, -4.0], "yaw": 200, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 5, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "scatter": 3, "within": 1},
+      {"group": 0, "role": "Guard", "pos": [-23.0, 0.68, -14.5], "yaw": 0, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "lot": 1, "scatter": 2.5, "within": 1},
+      {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
+      {"group": 0, "role": "Wander", "pos": [-22.5, 3.68, -1.0], "yaw": 90, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 4, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "lot": 1, "scatter": 3, "within": 1},
+      {"group": 0, "role": "Guard", "pos": [-21.0, 3.68, -16.0], "yaw": 0, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "lot": 2, "scatter": 2, "within": 1},
+      {"group": 0, "role": "Guard", "pos": [-21.0, -2.32, 6.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "scatter": 2, "within": 1},
+      {"group": 0, "role": "Guard", "pos": [-20.0, 3.68, 0.5], "yaw": 270, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "either": 1, "option": 1, "skill": "veteran", "tag": "courier"},
+      {"group": 0, "role": "Guard", "pos": [-24.0, -2.32, 3.5], "yaw": 90, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [], "either": 1, "option": 2, "skill": "veteran", "tag": "courier"},
+      {"group": 1, "role": "Patrol", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},
+      {"group": 6, "role": "Patrol", "pos": [-24.0, 0.5, 17.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-30.5, 0.5, 15.0], [-30.5, 0.51, -10.0], [-30.5, 0.5, 15.0], [-17.0, 0.5, 16.0], [-24.0, 0.5, 17.0]], "lot": 2},
+      {"group": 4, "role": "Patrol", "pos": [-28.0, 0.51, -32.0], "yaw": 45, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[-22.0, 0.51, -24.0], [-18.0, 0.51, -22.0], [-28.0, 0.51, -32.0]]},
+      {"group": 4, "role": "Patrol", "pos": [-22.0, 0.51, -34.0], "yaw": 0, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[-30.5, 0.51, -12.0], [-30.5, 0.51, 5.0], [-22.0, 0.51, -34.0]]},
+      {"group": 2, "role": "Patrol", "pos": [2.0, 0.0, 45.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 6, "hvt": false, "patrol": [[2.0, 0.07, 30.0], [-3.0, 0.24, 8.0], [-9.0, 0.17, -2.0]]},
+      {"group": 2, "role": "Patrol", "pos": [5.0, 0.1, 46.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 6, "hvt": false, "patrol": [[4.0, 0.1, 32.0], [-3.0, 0.17, 2.0], [-10.0, 0.31, -10.0]]},
+      {"group": 2, "role": "Patrol", "pos": [0.0, 0.15, 52.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 6, "hvt": false, "patrol": [[0.0, 0.07, 34.0], [-9.0, 0.41, 8.0], [-3.0, 0.0, -12.0]], "lot": 2},
+      {"group": 3, "role": "Patrol", "pos": [-27.0, 0.51, 20.5], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 7, "hvt": false, "patrol": [[-30.5, 0.5, 15.0], [-30.5, 0.51, -12.0], [-22.0, 0.51, -24.0], [-18.0, 0.51, -22.0]]},
+      {"group": 3, "role": "Patrol", "pos": [-20.0, 0.51, 20.5], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 7, "hvt": false, "patrol": [[-30.5, 0.5, 15.0], [-30.5, 0.51, -12.0], [-22.0, 0.51, -24.0], [-20.0, 0.51, -21.0]]},
+      {"group": 5, "role": "Patrol", "pos": [8.0, 0.29, 40.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 11, "hvt": false, "patrol": [[2.0, 0.07, 20.0], [-9.0, 0.41, 8.0], [-9.0, 0.25, -12.0]]}
+    ]
+  }
+}

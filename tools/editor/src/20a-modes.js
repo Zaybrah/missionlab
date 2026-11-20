@@ -152,6 +152,214 @@ function syncModes(s) {
   syncStrip(); if (viewIs('play')) syncPlay();
 }
 
+// ------------------------------------------------------------------ what each capability has been seen to do (ML-036)
+// docs/capabilities.json, which tools/editor/build.py writes in place of the literal below; the plugin carries the same file,
+// and the README Status table is made from it. In the parts as they are (unbuilt) it stays a string and every capability
+// reads as unknown. capJudge and capNeeds mirror Core's Capabilities.Judge and Capabilities.Needs word for word.
+const CAPABILITY_LIST = '__ML_CAPABILITIES__';
+const CAP_STATUSES = ['supported', 'experimental', 'failing', 'untested', 'unavailable'];
+const CAP_SCOPES = ['solo', 'two-player-host-log', 'co-op-client'];
+const CAP_RESULTS = ['worked', 'failed', 'partial', 'not-seen'];
+const capText = v => (typeof v === 'string' ? v : '');
+function capVersion(s) { return typeof s === 'string' && /^\d{1,6}(\.\d{1,6})*$/.test(s.trim()) ? s.trim().split('.').map(Number) : null; }
+function capCompare(a, b) { for (let i = 0; i < Math.max(a.length, b.length); i++) { const x = a[i] || 0, y = b[i] || 0; if (x !== y) return x < y ? -1 : 1; } return 0; }
+function capSameBuild(a, b) { const x = capVersion(a), y = capVersion(b); return !!x && !!y && capCompare(x, y) === 0; }
+function capEvidenceProblem(x) {
+  if (x.build !== 'unrecorded' && !capVersion(x.build)) return 'build \'' + x.build + '\' is neither a version nor "unrecorded"';
+  if (x.date !== 'unrecorded' && !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) return 'date \'' + x.date + '\' is neither YYYY-MM-DD nor "unrecorded"';
+  if (!x.map || !x.mode) return 'map or mode is empty';
+  if (!CAP_SCOPES.includes(x.scope)) return 'scope \'' + x.scope + '\' is not one of ' + CAP_SCOPES.join(', ');
+  if (!CAP_RESULTS.includes(x.result)) return 'result \'' + x.result + '\' is not one of ' + CAP_RESULTS.join(', ');
+  return '';
+}
+// As Core reads it: a row with an unknown status counts as untested and evidence without a proper build, date or scope is
+// left out, so a broken list can only claim less.
+function capRead(src) {
+  const reg = { records: [], byWord: new Map(), problems: [] };
+  let root = src;
+  if (typeof src === 'string') { try { root = JSON.parse(src); } catch (e) { root = null; } }
+  if (!root || typeof root !== 'object' || Array.isArray(root)) { reg.problems.push('not a JSON object'); return reg; }
+  if (root.schema !== 'missionlab-capabilities/1') { reg.problems.push('schema is not missionlab-capabilities/1'); return reg; }
+  if (!Array.isArray(root.capabilities)) { reg.problems.push('no capabilities list'); return reg; }
+  const ids = new Set();
+  root.capabilities.forEach((c, n) => {
+    const at = 'capabilities[' + n + ']';
+    if (!c || typeof c !== 'object' || Array.isArray(c)) { reg.problems.push(at + ' is not an object'); return; }
+    const r = { id: capText(c.id), label: capText(c.label), status: capText(c.status), qualifier: capText(c.qualifier), where: capText(c.where), summary: capText(c.summary), uses: [], evidence: [] };
+    if (!r.id || ids.has(r.id)) { reg.problems.push(at + '.id is empty or used twice'); return; }
+    ids.add(r.id);
+    if (!CAP_STATUSES.includes(r.status)) { reg.problems.push(at + '.status \'' + r.status + '\' is not one of ' + CAP_STATUSES.join(', ') + '; read as untested'); r.status = 'untested'; }
+    for (const w of Array.isArray(c.uses) ? c.uses : []) {
+      if (typeof w !== 'string' || !w) continue;
+      if (reg.byWord.has(w)) { reg.problems.push(at + '.uses: \'' + w + '\' already belongs to ' + reg.byWord.get(w).id); continue; }
+      reg.byWord.set(w, r); r.uses.push(w);
+    }
+    (Array.isArray(c.evidence) ? c.evidence : []).forEach((e, k) => {
+      if (!e || typeof e !== 'object' || Array.isArray(e)) { reg.problems.push(at + '.evidence[' + k + '] is not an object'); return; }
+      const x = { build: capText(e.build), date: capText(e.date), map: capText(e.map), mode: capText(e.mode), scope: capText(e.scope), result: capText(e.result), note: capText(e.note) };
+      const why = capEvidenceProblem(x);
+      if (why) { reg.problems.push(at + '.evidence[' + k + ']: ' + why + '; left out'); return; }
+      r.evidence.push(x);
+    });
+    reg.records.push(r);
+  });
+  return reg;
+}
+const capList = capRead(CAPABILITY_LIST);
+// Newer build first; an unrecorded build is older than every recorded one; at the same build the later date wins.
+function capLater(a, b) {
+  const x = capVersion(a.build), y = capVersion(b.build);
+  if (x && !y) return true;
+  if (!x && y) return false;
+  const c = x ? capCompare(x, y) : 0;
+  if (c) return c > 0;
+  const d = v => (v === 'unrecorded' ? '' : v);
+  return d(a.date) > d(b.date);
+}
+function capNewest(r, result) { let best = null; for (const e of r.evidence) if (e.result === result && (!best || capLater(e, best))) best = e; return best; }
+const capBuildWords = b => (!b || b === 'unrecorded' ? 'an unrecorded build' : b);
+// Who saw it, where and when. Solo and host's-log evidence never reads as a client's.
+function capContext(e) {
+  const who = e.scope === 'co-op-client' ? 'seen by a client' : e.scope === 'two-player-host-log' ? 'two players, by the host\'s log only' : 'solo';
+  return who + (e.map ? ', ' + e.map : '') + (e.date && e.date !== 'unrecorded' ? ', ' + e.date : '');
+}
+// One capability word for the running build (current; '' when not known, as offline, and then nothing is confirmed).
+// Evidence confirms only the build it names: a newer build never inherits "supported" from an older one.
+function capJudge(word, current, reg) {
+  const list = reg === undefined ? capList : reg, cur = String(current || '').trim();
+  const st = { name: word, id: '', label: '', status: '', shown: '', build: '', scope: '', confirmed: false, client: false, words: '' };
+  const r = list && list.byWord ? list.byWord.get(word) : null;
+  if (!r) { st.shown = 'unknown'; st.words = 'not in this MissionLab\'s capability list, so nothing about it has been recorded in the game'; return st; }
+  st.id = r.id; st.label = r.label; st.status = r.status;
+  const best = capNewest(r, 'worked');
+  st.client = r.evidence.some(e => e.result === 'worked' && e.scope === 'co-op-client');
+  if (best) { st.build = best.build; st.scope = best.scope; }
+  const seen = best ? 'seen working on ' + capBuildWords(best.build) + ' (' + capContext(best) + ')' : '', noClient = st.client ? '' : '; no client has seen it';
+  if (r.status === 'supported') {
+    if (!best) { st.shown = 'untested'; st.words = 'recorded as supported, but no evidence says it worked: treat it as untested'; }
+    else if (cur && capSameBuild(best.build, cur)) { st.shown = 'supported'; st.confirmed = true; st.words = seen + noClient; }
+    else { st.shown = 'seen-earlier'; st.words = seen + (cur ? ', not yet on ' + cur : '; which build the game runs is not known here') + noClient; }
+  } else if (r.status === 'failing') {
+    const f = capNewest(r, 'failed');
+    st.shown = 'failing';
+    if (f) { st.build = f.build; st.scope = f.scope; }
+    st.words = 'failing: ' + (f ? (f.note || 'it did not work') + ' (' + capBuildWords(f.build) + ', ' + capContext(f) + ')' : 'tried in the game, and it did not work') + '. Using it is an experiment';
+  } else if (r.status === 'experimental') {
+    st.shown = 'experimental'; st.words = 'experimental: built, but not proven in the game' + (r.qualifier ? ' (' + r.qualifier + ')' : '') + '. Using it is an experiment';
+  } else if (r.status === 'unavailable') {
+    st.shown = 'unavailable'; st.words = 'unavailable: the game does not do it, so MissionLab does not use it (' + r.where + ')';
+  } else {
+    st.shown = 'untested'; st.words = 'untested in the game' + (best ? '; only ' + seen + ', which is not what this needs' : '');
+  }
+  return st;
+}
+// What an item is, whichever copy the mission uses: "Cell Phone_2" and "cell phone" are both "cell phone" (Core ObjectivePlan.Kind).
+function capKind(name) {
+  const s = capText(name);
+  if (!s) return '';
+  let end = s.length;
+  while (end > 0 && s[end - 1] >= '0' && s[end - 1] <= '9') end--;
+  if (end < s.length && end > 1 && (s[end - 1] === '_' || s[end - 1] === ' ')) end--; else end = s.length;
+  return s.slice(0, end).trim().toLowerCase();
+}
+const capStem = f => capText(f).trim().replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '');
+// What a scenario needs of the map and mode in hand (facts; any part may be unknown: '' or null). An error is a known
+// incompatibility; everything else is a note, and never stops anyone.
+function capFactNeeds(body, facts) {
+  const found = [], add = (level, code, path, text) => found.push({ level, code, path, text });
+  if (!facts) return found;
+  const b = body || {}, from = facts.source ? ' (' + facts.source + ')' : '';
+  if (facts.mode && !facts.pve) add('error', 'wrong-mode', '', 'this is a ' + facts.mode + ' mission, not a PvE raid' + from + ': MissionLab leaves it as the game made it, so this scenario is not used');
+  const scene = capText(b.scene).trim(), nav = capStem(b.navFile);
+  if (scene && facts.scene) {
+    if (!scene.split(',').some(p => p.trim() === '*' || p.trim().toLowerCase() === facts.scene.toLowerCase()))
+      add('error', 'wrong-scene', 'scene', 'the scenario is for \'' + scene + '\' and this is \'' + facts.scene + '\'' + from + ': MissionLab does not use it here');
+  } else if (!scene && nav && facts.mapFile && nav.toLowerCase() !== capStem(facts.mapFile).toLowerCase()) {
+    add('error', 'wrong-map', 'navFile', 'the scenario is for the map file \'' + b.navFile + '\' and this mission uses \'' + facts.mapFile + '\'' + from + ': MissionLab does not use it here');
+  }
+  if (Array.isArray(facts.items)) {
+    const kinds = new Set(facts.items.map(capKind).filter(Boolean)), level = facts.itemsComplete ? 'error' : 'note';
+    const missing = facts.itemsComplete ? 'which this map does not have' + from : 'which is not among this mission\'s intel items' + from + '; the game picks the items, so it may be there another time';
+    (Array.isArray(b.triggers) ? b.triggers : []).forEach((t, i) => {
+      if (!t || typeof t !== 'object' || t.when !== 'intel') return;
+      const k = capKind(t.item), any = !k || k === 'any' || k === 'all';
+      if (any ? !kinds.size : !kinds.has(k)) add(level, 'missing-item', 'triggers[' + i + '].item', 'trigger ' + t.id + ' waits for ' + (any ? 'intel' : 'the ' + k) + ', ' + missing);
+    });
+    (Array.isArray(b.objectives) ? b.objectives : []).forEach((o, i) => {
+      const k = capKind(o && o.name);
+      if (k && !kinds.has(k)) add(level, 'missing-item', 'objectives[' + i + '].name', 'the scenario moves the ' + k + ', ' + missing);
+    });
+  }
+  if (facts.targetKnown && !facts.hasTarget && (Array.isArray(b.spawns) ? b.spawns : []).some(s => s && s.hvt === true))
+    add('note', 'no-target', 'spawns', 'the scenario places the target person, and the game\'s mission had none' + from + '; whether the game makes one in another mode is untested');
+  return found;
+}
+function capNeeds(obj, facts, current, reg) {
+  const found = [];
+  for (const c of capabilitiesOf(obj).map(n => capJudge(n, current, reg))) {
+    const say = (code, text) => found.push({ level: 'note', code, path: 'capabilities.' + c.name, text: 'the scenario uses ' + c.name + ', which is ' + text });
+    if (c.shown === 'failing') say('capability-failing', c.words);
+    else if (c.shown === 'unavailable') say('capability-unavailable', c.words + '; that part of the scenario is left out');
+    else if (c.shown === 'experimental') say('capability-experimental', c.words);
+  }
+  return found.concat(capFactNeeds(planBody(obj), facts));
+}
+// Facts from a Recon file (missionlab-recon/1), as Core MapFacts.FromRecon: the objective sets list every candidate item of
+// the map, so the kinds are complete; target points from raid.hvtSpawnPoints. null when it is not one.
+function reconFacts(obj, name) {
+  if (!obj || typeof obj !== 'object' || obj.schema !== 'missionlab-recon/1' || !obj.raid || typeof obj.raid !== 'object') return null;
+  const raid = obj.raid, ng = obj.navGraphs && typeof obj.navGraphs === 'object' ? obj.navGraphs : {};
+  const f = { source: name || '', scene: capText(obj.scene), mapFile: '', navCache: capText(ng.cachedStartupFile), mode: '', pve: false, items: null, itemsComplete: false, targetKnown: false, hasTarget: false };
+  const add = n => { const k = capKind(n); if (k && !f.items.includes(k)) f.items.push(k); };
+  if (Array.isArray(raid.objectiveSets)) {
+    f.items = []; f.itemsComplete = true;
+    for (const set of raid.objectiveSets) {
+      if (!set || typeof set !== 'object') continue;
+      add(set.name);
+      for (const o of Array.isArray(set.objectives) ? set.objectives : []) if (o && typeof o === 'object') { add(o.name); add(o.displayName); }
+    }
+  }
+  if (Array.isArray(raid.hvtSpawnPoints)) { f.targetKnown = true; f.hasTarget = raid.hvtSpawnPoints.length > 0; }
+  return f;
+}
+// Whether recon facts are of the scenario's map, as Core MapFacts.Fits. A scenario that names neither scene nor map file is
+// judged against the recon file opened beside it: the author has opened it for the map in hand.
+function capFitting(facts, obj) {
+  if (!facts) return null;
+  const b = planBody(obj) || {}, scene = capText(b.scene).trim(), nav = capStem(b.navFile).toLowerCase();
+  if (scene) return facts.scene && scene.split(',').some(p => p.trim().toLowerCase() === facts.scene.toLowerCase()) ? facts : null;
+  if (!nav) return facts;
+  return (facts.navCache && capStem(facts.navCache).toLowerCase() === nav) || (facts.mapFile && capStem(facts.mapFile).toLowerCase() === nav) ? facts : null;
+}
+// A capability in a few words, for lists.
+function capShort(c) {
+  if (!c) return 'not known';
+  if (c.shown === 'supported') return 'seen working on this build';
+  if (c.shown === 'seen-earlier') return 'seen on ' + capBuildWords(c.build) + ', not confirmed on the build in use';
+  if (c.shown === 'failing') return 'failing when last tried' + (c.build ? ' (' + capBuildWords(c.build) + ')' : '');
+  if (c.shown === 'experimental') return 'experimental';
+  if (c.shown === 'unavailable') return 'unavailable in the game';
+  if (c.shown === 'untested') return 'untested in the game';
+  return 'not recorded';
+}
+const capRisky = e => ((e && e.capabilities) || []).filter(c => c && (c.shown === 'failing' || c.shown === 'experimental' || c.shown === 'unavailable'));
+// Readiness rows for the scenario chosen for the next mission: what it needs that is missing here (the game's catalogue
+// judged it against the recon files it has; the page adds the mode the game is set to), and which of its capabilities
+// are not confirmed on the plugin's build. 29-controls.js readyRows adds them.
+function scenarioReadyRows(st, s) {
+  const rows = [], add = (ok, text) => rows.push({ ok, text });
+  const sv = s || catalogue.s;
+  const e = st && st.role !== 'client' && sv ? entryByValue(sv.choice) : null;
+  if (!e || e.page) return rows;
+  const name = e.title || e.value;
+  const needs = (Array.isArray(e.needs) ? e.needs : []).concat(capFactNeeds({ navFile: e.navFile, scene: e.scene }, { source: 'the game now', mode: st.mode || '', pve: !!st.pve }));
+  for (const f of needs) add(false, (f.level === 'error' ? 'Will not run as written: ' : /^capability-/.test(f.code) ? 'Experimental: ' : 'Check: ') + name + ': ' + f.text + '.');
+  const caps = Array.isArray(e.capabilities) ? e.capabilities : [], open = caps.filter(c => !c.confirmed);
+  if (caps.length) add(!open.length, open.length ? name + ' uses ' + plural(caps.length, 'feature', 'features') + '; not confirmed on MissionLab ' + (st.plugin || '?') + ': ' + open.map(c => c.name + ' (' + capShort(c) + ')').join(', ') + '.'
+    : name + ': every feature it uses was seen working on MissionLab ' + (st.plugin || '?') + '.');
+  return rows;
+}
+
 // ------------------------------------------------------------------ the Play catalogue
 async function refreshCatalogue() {
   if (!live.on || catalogue.loading) return;
@@ -178,13 +386,16 @@ function pageEntry() {
   const obj = scenarioObject(), body = planBody(obj) || {}, name = fileName(), hides = state.sealed === true && !sealedPageRevealed();
   const found = scenarioProblems(obj).map(f => (hides ? Object.assign({}, f, { text: sealedStrip(f.text) }) : f));
   const errors = found.filter(f => f.level === 'error');
+  // Offline the plugin's build is not known, so nothing is confirmed; a recon file opened for this map supplies its items.
+  const needs = capNeeds(obj, capFitting(state.reconFacts || null, obj), '').map(f => (hides ? Object.assign({}, f, { text: sealedStrip(f.text) }) : f));
+  const block = needs.find(f => f.level === 'error');
   return {
-    page: true, file: name, value: name.replace(/\.json$/, ''), readable: !errors.length, usable: !errors.length && state.enemies.length > 0,
-    why: errors.length ? 'MissionLab would refuse it: ' + (errors[0].path ? errors[0].path + ': ' : '') + errors[0].text : '', findings: found,
+    page: true, file: name, value: name.replace(/\.json$/, ''), readable: !errors.length, usable: !errors.length && !block && state.enemies.length > 0,
+    why: errors.length ? 'MissionLab would refuse it: ' + (errors[0].path ? errors[0].path + ': ' : '') + errors[0].text : block ? 'it cannot run as written here: ' + (block.path ? block.path + ': ' : '') + block.text : '', findings: found,
     title: typeof body.name === 'string' ? body.name : '', id: typeof body.id === 'string' ? body.id : '', revision: body.revision | 0, sealed: state.sealed === true,
     briefing: Array.isArray(body.briefing) ? body.briefing : [], author: { squad: Array.isArray(body.squad) ? body.squad : null, minutes: num(body.minutes, 0) > 0 ? body.minutes : null },
     measured: null, navFile: typeof body.navFile === 'string' ? body.navFile : '', scene: typeof body.scene === 'string' ? body.scene : '', map: '', mode: 'pve',
-    compat: null, enemies: hides ? null : state.enemies.length, capabilities: capabilitiesOf(obj).map(n => ({ name: n, tested: null })), lastRun: undefined,
+    compat: null, enemies: hides ? null : state.enemies.length, capabilities: capabilitiesOf(obj).map(n => capJudge(n, '')), needs, lastRun: undefined,
     options: (state.options || []).map(o => ({ id: o.id, name: o.name, pick: o.pick | 0, choices: (o.choices || []).map(c => (c && c.name) || '') })),
   };
 }
@@ -224,11 +435,18 @@ function catalogueFacts(e, ctx) {
   if (Array.isArray(e.options) && e.options.length) {
     facts.push(['Options (the author\'s defaults)', e.options.map(o => (o.name || o.id) + ': ' + ((o.choices || [])[o.pick | 0] || 'choice ' + ((o.pick | 0) + 1))).join('; ')]);
   }
+  // Each capability with what was recorded for it in the game, and what the scenario needs that is missing here (ML-036).
+  const caps = Array.isArray(e.capabilities) ? e.capabilities : [];
+  if (caps.length) facts.push(['Features, as recorded in the game', caps.map(c => c.name + ': ' + capShort(c)).join('; ')]);
+  const needs = Array.isArray(e.needs) ? e.needs : [];
+  if (needs.length) facts.push(['Before you choose it', needs.map(f => (f.level === 'error' ? 'Will not run as written: ' : /^capability-/.test(f.code) ? 'Experimental: ' : 'Check: ') + f.text + '.').join(' ')]);
+  const risky = capRisky(e);
+  if (risky.length && e.usable) facts.push(['Choosing it', 'an experiment: ' + risky.map(c => c.name + ' is ' + capShort(c)).join(', ') + '. It can still be played; expect that part not to work']);
   const last = lastRunWords(e.lastRun, ctx);
   facts.push(['Last run', sealedEntryHides(e) ? sealedStrip(last) : last]);
   return facts;
 }
-function capabilityWords(c) { return c.name + (c.tested === true ? ': seen working in the game' : c.tested === false ? ': untested in the game' : ': not known without the game'); }
+function capabilityWords(c) { return c.name + ': ' + (c.words || capShort(c)); }
 function shortLastRun(r) {
   if (!r) return 'never played';
   if (r.outcome === 'refused') return 'last run refused';
@@ -243,7 +461,7 @@ function syncPlay() {
   $('catNote').textContent = !live.on ? '' : catalogue.error || (!catalogue.list ? 'Reading the scenarios folder...'
     : !list.length ? 'No scenario files in BepInEx/MissionLab/scenarios yet. Make one in Create and save it there.' : '');
   const picked = pickedEntry();
-  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.usable, e.compat, e.lastRun, e.sealed, sealedEntryHides(e)]), picked && picked.file, choice]);
+  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.usable, e.compat, e.lastRun, e.sealed, sealedEntryHides(e), capRisky(e).map(c => c.name)]), picked && picked.file, choice]);
   if (live.on && listKey !== catalogue.listKey) {
     catalogue.listKey = listKey;
     const ul = $('catList'); ul.textContent = '';
@@ -253,7 +471,8 @@ function syncPlay() {
       t.textContent = (e.title || e.value) + (choice !== null && String(e.value).toLowerCase() === choice ? '  · next mission' : '');
       meta.className = 'meta' + (e.usable ? '' : ' refused');
       const seal = e.sealed ? [sealedEntryHides(e) ? 'sealed' : 'sealed, revealed'] : [];
-      meta.textContent = e.usable ? [...seal, e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', shortLastRun(e.lastRun)].join(' · ')
+      const risky = capRisky(e).map(c => c.name + ' ' + c.shown);
+      meta.textContent = e.usable ? [...seal, e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', ...risky, shortLastRun(e.lastRun)].join(' · ')
         : (e.sealed ? seal[0] + ' · ' : '') + (sealedEntryHides(e) ? sealedStrip(e.why) : e.why);
       b.append(t, meta);
       b.addEventListener('click', () => { catalogue.pick = e.file; $('cdNote').textContent = ''; syncPlay(); });
@@ -280,16 +499,21 @@ function syncPlay() {
   for (const [label, text] of catalogueFacts(e, ctx)) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = text; dl.append(dt, dd); }
   const caps = $('cdCaps'); caps.textContent = '';
   for (const c of e.capabilities || []) {
-    const li = document.createElement('li'); li.className = 'chip' + (c.tested === true ? ' tested' : c.tested === false ? ' untested' : '');
-    li.textContent = (c.tested === true ? '✓ ' : c.tested === false ? '? ' : '') + c.name; li.title = capabilityWords(c); caps.appendChild(li);
+    // Confirmed only for the build in use; failing and unavailable are marked apart from merely unproven.
+    const bad = c.shown === 'failing' || c.shown === 'unavailable', known = !!c.shown && c.shown !== 'unknown';
+    const li = document.createElement('li'); li.className = 'chip' + (c.confirmed ? ' tested' : known ? ' untested' : '');
+    const tag = c.confirmed || !known ? '' : c.shown === 'seen-earlier' ? ' · seen on ' + capBuildWords(c.build) : ' · ' + c.shown;
+    li.textContent = (c.confirmed ? '✓ ' : bad ? '✗ ' : known ? '? ' : '') + c.name + tag; li.title = capabilityWords(c); caps.appendChild(li);
   }
   const fl = $('cdFindings'); fl.textContent = '';
   const told = t => (hides ? sealedStrip(t) : t);
   for (const f of (e.findings || []).slice(0, 5)) { const li = document.createElement('li'); li.className = f.level === 'error' ? 'error' : 'note'; li.textContent = (f.level === 'error' ? 'Problem: ' : 'Note: ') + (f.path ? f.path + ': ' : '') + told(f.text); fl.appendChild(li); }
   if (!e.usable && e.why) { const li = document.createElement('li'); li.className = 'error'; li.textContent = told(e.why); fl.appendChild(li); }
-  const chosen = choice !== null && String(e.value).toLowerCase() === choice;
+  const chosen = choice !== null && String(e.value).toLowerCase() === choice, risky = capRisky(e);
   $('cdPlay').hidden = !live.on; $('cdPlay').disabled = !e.usable || chosen;
-  $('cdPlay').textContent = chosen ? 'Chosen for the next mission' : 'Play this next';
+  // Choosing a scenario with something failing or experimental stays possible, and the button says it is an experiment.
+  $('cdPlay').textContent = chosen ? 'Chosen for the next mission' + (risky.length ? ' (experimental)' : '') : risky.length ? 'Play this next (experimental)' : 'Play this next';
+  $('cdPlay').title = risky.length ? 'Uses ' + risky.map(c => c.name + ' (' + capShort(c) + ')').join(', ') + ': that part may not work.' : '';
   $('cdEdit').disabled = !!(live.on && live.mission && !e.page);
   $('cdEdit').title = $('cdEdit').disabled ? 'A mission is running and the page shows it. Open this scenario after the mission.' : 'Open this scenario in Create to change it';
 }
@@ -300,8 +524,9 @@ $('cdPlay').addEventListener('click', async () => {
   try {
     const s = await api('/api/choose', { value: e.value });
     syncChoices(s); syncModes(s);
-    const ok = s && typeof s.choice === 'string' && s.choice.toLowerCase() === String(e.value).toLowerCase();
+    const ok = s && typeof s.choice === 'string' && s.choice.toLowerCase() === String(e.value).toLowerCase(), risky = capRisky(e);
     $('cdNote').textContent = ok ? 'Chosen. Host a mission' + (e.map || e.navFile ? ' on ' + (e.map || e.navFile) : '') + ' in the game: it uses ' + (e.title || e.value) + '.'
+        + (risky.length ? ' This is an experiment: ' + risky.map(c => c.name + ' is ' + capShort(c)).join(', ') + '.' : '')
       : 'The game did not take this choice: it does not list ' + e.file + '. Is the file still in the scenarios folder?';
   } catch (err) { $('cdNote').textContent = liveTrouble(err); }
 });
@@ -364,3 +589,4 @@ async function saveToCatalogue(replace) {
   $('saveMsg').textContent = 'Not saved: ' + ((body && body.why) || 'the game answered with status ' + r.status) + (first.length ? '. ' + first.join('; ') : '') + '. The Mission tab\'s check lists what to fix.';
 }
 $('saveCat').addEventListener('click', () => saveToCatalogue(false));
+expose({ capList, capRead, capJudge, capNeeds, capFactNeeds, capKind, capFitting, reconFacts, scenarioReadyRows });

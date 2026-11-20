@@ -54,8 +54,8 @@ function optionsPicksBody(options, picks) {
 const optionsPicksWords = (options, picks) => (options || []).map(o => (o.name || o.id) + ': ' + (o.choices[optionChosen(o, picks)].name || 'choice ' + (optionChosen(o, picks) + 1))).join('; ');
 
 // ------------------------------------------------------------------ Create: the author's options
-// Lots the file actually writes: a lot only counts on an enemy left to chance (spawnOf), so only those are offered.
-const optionLots = () => [...new Set(state.enemies.filter(e => e.chance < 100 && e.lot > 0).map(e => e.lot))].sort((a, b) => a - b);
+// Lots the file writes: every enemy with a lot, whatever its chance (the plugin drops a lot an option names either way).
+const optionLots = () => [...new Set(state.enemies.filter(e => e.lot > 0).map(e => e.lot))].sort((a, b) => a - b);
 // What the author should know before saving: the file rules, and choices that take out what the mission needs.
 function optionWarnings(o, i) {
   const out = [], name = o.name || o.id || 'Option ' + (i + 1);
@@ -68,9 +68,9 @@ function optionWarnings(o, i) {
     const cn = name + ', ' + (c.name || 'choice ' + (j + 1));
     if (!c.name.trim()) out.push(name + ': choice ' + (j + 1) + ' has no name; the game refuses the file.');
     for (const lot of c.lots) {
-      const members = state.enemies.filter(e => e.chance < 100 && e.lot === lot);
+      const members = state.enemies.filter(e => e.lot === lot);
       if (!members.length) out.push(cn + ' drops lot ' + lot + ', which no enemy has: it changes nothing.');
-      if (targets.length && members.some(e => e.hvt && !e.trigger) && targets.every(e => e.chance < 100 && c.lots.includes(e.lot)))
+      if (targets.length && members.some(e => e.hvt && !e.trigger) && targets.every(e => e.lot > 0 && c.lots.includes(e.lot)))
         out.push(cn + ' drops lot ' + lot + ', which holds the target person: with this choice the game refuses the mission and plays its own.');
     }
     for (const id of c.triggers) {
@@ -100,7 +100,7 @@ function syncOptionsAuthor() {
 }
 // One option's editor. Every change is one undo step.
 function optionItem(o, i, lots) {
-  const li = document.createElement('li'), edit = fn => { pushUndo(); fn(); changed(); };
+  const li = document.createElement('li'), edit = fn => { willChange('Change option "' + o.name + '"'); fn(); changed(); };
   const input = (k, type, value, label, set, more) => { const el = Object.assign(document.createElement('input'), { type, value }, more || {}); el.dataset.k = k; el.setAttribute('aria-label', label); el.addEventListener('change', () => edit(() => set(el))); return el; };
   const head = document.createElement('div'); head.className = 'row';
   head.append(input(i + 'n', 'text', o.name, 'Option name', el => { o.name = el.value.slice(0, 80); }, { placeholder: 'Garrison size', maxLength: 80 }),
@@ -135,7 +135,7 @@ function optionItem(o, i, lots) {
       return r;
     };
     const flip = (list, v, on) => { const k = list.indexOf(v); if (on && k < 0) { list.push(v); list.sort((a, b) => a - b); } if (!on && k >= 0) list.splice(k, 1); };
-    box.appendChild(ticks('Drop lots', lots.map(l => [l, 'lot ' + l]), v => c.lots.includes(v), (v, on) => flip(c.lots, v, on), 'no enemy has a lot yet (Enemies tab, chance below 100 %)'));
+    box.appendChild(ticks('Drop lots', lots.map(l => [l, 'lot ' + l]), v => c.lots.includes(v), (v, on) => flip(c.lots, v, on), 'no enemy has a lot yet (Enemies tab: a squad left to chance shares one)'));
     box.appendChild(ticks('Drop triggers', state.zones.map(z => [z.id, trigTitle(z) + (z.name ? ' ' + z.name : '')]), v => c.triggers.includes(v), (v, on) => flip(c.triggers, v, on), 'no triggers yet'));
     const words = document.createElement('p'); words.className = 'hint'; words.textContent = optionLabel(c, j) + (j === optionDefault(o) ? ' (the default)' : '');
     box.appendChild(words); li.appendChild(box);
@@ -147,7 +147,7 @@ function optionItem(o, i, lots) {
 }
 function optionAdd() {
   let n = state.options.length + 1; while (state.options.some(o => o.id === 'option' + n)) n++;
-  pushUndo(); state.options.push({ id: 'option' + n, name: 'Option ' + n, pick: 0, choices: [newChoice(1), newChoice(2)] }); changed();
+  willChange('Add option ' + n); state.options.push({ id: 'option' + n, name: 'Option ' + n, pick: 0, choices: [newChoice(1), newChoice(2)] }); changed();
 }
 
 // "Check every combination": what is sent, and the game's answer as rows. Unfinishable combinations come first with the
@@ -181,7 +181,7 @@ function optionsWithDefaults(fn) {
     if (c.skill) skill = c.skill;
   }
   try {
-    state.enemies = state.enemies.filter(e => !(e.chance < 100 && e.lot > 0 && lots.has(e.lot)) && !(e.trigger && trigs.has(e.trigger)));
+    state.enemies = state.enemies.filter(e => !(e.lot > 0 && lots.has(e.lot)) && !(e.trigger && trigs.has(e.trigger)));
     state.zones = state.zones.filter(z => !trigs.has(z.id));
     state.things = state.things.filter(t => !(t.trigger && trigs.has(t.trigger)));
     if (times !== null) state.respawnTimes = times;
@@ -371,7 +371,8 @@ async function quickGenerate() {
   }
   quick.result = d; quick.note = quickWords(d); syncSide(); invalidate(); syncQuick();
 }
-// Keep: the layout becomes the page's scenario, new and unsaved, with an identity of its own. Undo brings back what was here.
+// Keep: the layout becomes the page's scenario, new and unsaved, with an identity of its own. Unsaved work that was on the
+// page is kept under Revisions as a separate draft (historyReplaced, 27-editing.js).
 function quickKeep(d) {
   if (!d || !d.plan) return { kept: false, text: 'Generate a layout first.' };
   if (live.on && live.mission) return { kept: false, text: 'A mission is running and the page shows it. Keep the layout after the mission.' };
@@ -381,7 +382,7 @@ function quickKeep(d) {
   if (live.on) catalogue.lobbyFile = fileName();                  // between missions the page keeps it until saved
   quick.result = null;
   setView('create', true); showTab('enemies', true); changed();
-  return { kept: true, text: said + ' It is a new scenario (id ' + state.scenarioId + '), not saved yet: Save keeps it. Undo brings back what was on the page.' };
+  return { kept: true, text: said + ' It is a new scenario (id ' + state.scenarioId + '), not saved yet: Save keeps it.' };
 }
 function syncQuick() {
   if (!$('quickBox')) return;

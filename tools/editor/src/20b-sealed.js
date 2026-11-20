@@ -45,6 +45,11 @@ function sealedEntryHides(e) {
   if (!e || e.sealed !== true) return false;
   return e.page ? !sealedPageRevealed() : !sealing.keys.has(sealedEntryKey(e));
 }
+// Objectives (ML-046) reach players as the mission gives them. While a sealed mission is hidden, only goals the game reports
+// as active, succeeded or failed are shown: an inactive goal names what comes later, which is the spoiler being avoided.
+// Without a live state (before the run, or offline) nothing is shown at all. list: the game's [{id, name, required, state}].
+const SEAL_GOAL_SHOWN = ['active', 'succeeded', 'failed'];
+const sealedGoals = (list, hides) => (Array.isArray(list) ? list : []).filter(g => g && typeof g === 'object' && (!hides || SEAL_GOAL_SHOWN.includes(g.state)));
 // A run of this entry has ended: its last run is not the mission running now, or the page saw it end.
 function sealedRunOver(e) {
   if (!e || !e.sealed) return false;

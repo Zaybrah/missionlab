@@ -9,8 +9,8 @@
 // does not have, whether the positions were made on the same map file as the one open here, and names or ids that are
 // already in the scenarios folder (copy, new revision or skip). The game installs; it never writes over a file.
 const PACK_SCHEMA = 'missionlab-pack/1', PACK_SUFFIX = '.mlpack.json', PACK_MODULE = '.module.json', PACK_PVE = 'pve', PACK_MAX_FILES = 64;
-const PACK_KNOWN = ['areas', 'chance', 'director', 'door-trigger', 'doors', 'endings', 'extraction-hold', 'hunt', 'hvt', 'insertion', 'intel-move', 'messages',
-  'options', 'places', 'power', 'rally', 'repeat', 'respawn', 'scatter', 'sealed', 'teams', 'things', 'vehicles', 'weather'];
+const PACK_KNOWN = ['areas', 'chance', 'director', 'door-trigger', 'doors', 'endings', 'extraction-hold', 'goals', 'hunt', 'hvt', 'insertion', 'intel-move', 'messages',
+  'options', 'outcomes', 'places', 'power', 'pressure', 'rally', 'repeat', 'respawn', 'scatter', 'sealed', 'teams', 'things', 'vehicles', 'weather'];
 const PACK_FORBIDDEN = ['.bytes', '.binary', '.mlgeo', '.dll', '.zip', '.assets', '.bundle', '.exe'];
 const PACK_FORBIDDEN_SCHEMAS = ['missionlab-replay/', 'missionlab-recon/', 'missionlab-movement/'];
 const packs = { extra: [], include: new Set(), text: '', fileName: '', preview: null, choices: {}, key: '', busy: false, lastExport: null };
@@ -291,7 +291,8 @@ async function packInstall(post) {
     if (state.refused) return packNote('pack', said);
     setView('create'); changed();
     const rest = p.files.filter(f => f.name !== read[0].name).map(f => f.name);
-    return packNote('pack', 'Opened ' + read[0].name + ' in Create; nothing was installed (that needs the game). Undo brings back what was here. '
+    const note = historyList().note;
+    return packNote('pack', 'Opened ' + read[0].name + ' in Create; nothing was installed (that needs the game). ' + (note ? note + ' ' : '')
       + (rest.length ? 'Also in the pack: ' + rest.join(', ') + '. ' : '') + 'Save it to keep it.');
   }
   if (packs.busy) return '';
@@ -325,11 +326,15 @@ async function packModuleText(key) {
   const f = packs.extra[+key.slice(2)]; if (!f) throw new Error('the file is gone'); return f.text;
 }
 const packDay = () => new Date().toISOString().slice(0, 10);
-async function packExport() {
+// The scenario goes in as it is saved: links to named places stay links, and the places they name are in the same text
+// (ML-040). Flattened (the box under the module list, or opts.flat), each linked zone carries its own copy of its shape
+// instead, as missionlab-plan/2, for players whose MissionLab cannot read links.
+async function packExport(opts) {
   const held = moduleBlock();
   if (held) return packNote('export', held);
   if (state.example || !state.enemies.length) return packNote('export', state.example ? 'Open a real map file first: the example cannot be exported.' : 'Place at least one enemy first: a pack carries a scenario.');
-  const text = scenarioText(), wrong = scenarioProblems(text).filter(f => f.level === 'error');
+  const flat = opts && typeof opts.flat === 'boolean' ? opts.flat : $('packFlat').checked === true;
+  const text = flat ? scenarioText(scenarioFlatObject()) : scenarioText(), wrong = scenarioProblems(text).filter(f => f.level === 'error');
   if (wrong.length) return packNote('export', 'Not exported: MissionLab would refuse the scenario (' + packFindingText(wrong[0]) + '). The Mission tab lists every problem.');
   const files = [[fileName(), text]];
   try {
@@ -361,6 +366,7 @@ async function packDownload(name, text) {
 function syncPacks() {
   if (!state.packsReady) return;      // syncSide can run before this part has started
   const choices = packChoices(), key = choices.map(c => c.key).join('|'), list = $('packModules');
+  $('packFlatRow').hidden = !state.zones.some(z => z.place > 0);
   if (list.dataset.key !== key) {
     list.dataset.key = key; list.textContent = '';
     for (const k of [...packs.include]) if (!choices.some(c => c.key === k)) packs.include.delete(k);

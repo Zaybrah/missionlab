@@ -23,6 +23,7 @@ namespace MissionLab.Core
         public const string OnAll = "all";        // every trigger listed in Of has fired
         public const string OnAny = "any";        // one of the triggers listed in Of has fired
         public const string OnDoor = "door";      // the door whose hinge is at Pos has been opened or broken
+        public const string OnOutcome = "outcome"; // the latest firing of trigger After came to Outcome (or had no answer Within seconds after it, for "timeout")
 
         public int Id;
         public string When = OnZone;
@@ -49,7 +50,7 @@ namespace MissionLab.Core
             return text.Length > MessageLength ? text.Substring(0, MessageLength) : text;
         }
 
-        public static bool Known(string when) => when == OnZone || when == OnAlert || when == OnIntel || when == OnTime || when == OnAfter || when == OnHold || when == OnDown || when == OnAll || when == OnAny || when == OnDoor;
+        public static bool Known(string when) => when == OnZone || when == OnAlert || when == OnIntel || when == OnTime || when == OnAfter || when == OnHold || when == OnDown || when == OnAll || when == OnAny || when == OnDoor || when == OnOutcome;
         /// <summary>Kinds that are a place on the map.</summary>
         public static bool Placed(string when) => when == OnZone || when == OnHold;
         public float Hold = 30f;          // seconds, for OnHold
@@ -67,8 +68,55 @@ namespace MissionLab.Core
         public bool Respawn;              // it brings dead players back
         public bool Off;                  // lost its roll this mission: only "Fire now" sets it off. Not written to the file.
         public AreaPlan Area;             // zone and hold: a shaped place that replaces the circle for who is inside (null: the circle). Pos stays the anchor
+        public int Place;                 // zone and hold: the named place whose painted area it uses (0: none). Area then holds that place's shape, resolved when the plan is read; only the link is written
+        public string Outcome = "";       // OnOutcome: one of Outcomes, what the watched firing has to come to
+        public float Within = WithinDefault;   // OnOutcome with "timeout": seconds the watched firing has to be answered in
+
+        public const string Applied = "applied", Failed = "failed", Partial = "partial", Unconfirmed = "unconfirmed", Timeout = "timeout";
+        /// <summary>The words an outcome trigger may wait for. The first four are what the runtime reports; timeout is the absence of any report.</summary>
+        public static readonly string[] Outcomes = { Applied, Failed, Partial, Unconfirmed, Timeout };
+        public const float WithinDefault = 30f;
+        public const int WithinLeast = 1, WithinMost = 3600;
+        public static string OutcomeWord(string v) => v != null && System.Array.IndexOf(Outcomes, v) >= 0 ? v : "";
         /// <summary>A zone or hold with a shaped area: only then is the file written as missionlab-plan/2.</summary>
         public bool Shaped => Placed(When) && Area != null && Area.Parts.Count > 0;
+        /// <summary>A zone or hold linked to a named place: only then is the file written as missionlab-plan/3.</summary>
+        public bool Linked => Placed(When) && Place > 0;
+
+        /// <summary>
+        /// Does firing it do anything besides bringing its enemies and showing its message? Things are placed once, so a repeat
+        /// never places them again and they do not count.
+        /// </summary>
+        public bool ActsBeyondEnemies => Respawn || Rally > 0f || !string.IsNullOrEmpty(Power) || !string.IsNullOrEmpty(End) || OpensExtraction || Doors.Exists(d => d.Locked.HasValue || d.Open.HasValue);
+
+        /// <summary>
+        /// Is its message left out of this firing? Only for a repeat of a trigger that has enemies of its own, brings none of them
+        /// back (none is down) and does nothing else: that firing changes nothing, and its message would announce enemies who do
+        /// not come (19 November 2026: "More of them in the yard" twice, with nobody new). broughtBack: its enemies on their way now.
+        /// </summary>
+        public static bool MessageLeftOut(TriggerPlan t, bool again, bool hasEnemies, int broughtBack) =>
+            again && hasEnemies && broughtBack == 0 && !t.ActsBeyondEnemies;
+
+        /// <summary>
+        /// Why a firing of t can never come to outcome, or "" when it can. enemies: its own enemies in this mission, without the
+        /// target person and gun trucks (the runtime never re-makes those). The runtime reports a firing as unconfirmed as soon
+        /// as any part of it cannot be seen to take (a door, a call, bringing players back, ending the mission, a message, sending
+        /// enemies after the players), so "applied" is out of reach for such a trigger, except on a repeat that brings nobody
+        /// back: that firing leaves its message out and does nothing. "partial" needs two enemies, one made and one not.
+        /// </summary>
+        public static string NeverSeen(TriggerPlan t, int enemies, string outcome)
+        {
+            if (outcome == Partial) return enemies < 2 ? (enemies == 0 ? "it brings no enemies" : "it brings only one enemy") + ", so it cannot be partly made" : "";
+            if (outcome != Applied) return "";
+            if (t.Doors.Exists(d => d.Locked.HasValue || d.Open.HasValue)) return "its doors cannot be seen to change";
+            if (t.Rally > 0f) return "its call to the enemies cannot be seen to take";
+            if (t.Respawn) return "bringing players back cannot be seen to take";
+            if (Ending(t.End) != "") return "ending the mission cannot be seen to take";
+            bool quietRepeat = enemies > 0 && t.Repeat > 0f && !t.ActsBeyondEnemies;
+            if (Clean(t.Message) != "" && !quietRepeat) return "its message cannot be seen to take";
+            if (t.Hunt && enemies > 0 && !quietRepeat) return "sending its enemies after the players cannot be seen to take";
+            return "";
+        }
     }
 
     /// <summary>Where one of the mission's own objective items (intel to pick up) should lie.</summary>
@@ -177,7 +225,8 @@ namespace MissionLab.Core
 
     /// <summary>
     /// A named place on the map ("Rear stairs"), so that logs, replays and explanations can say where something happened
-    /// in words. A place is a label only: nothing in the mission depends on it, so older versions may ignore it safely.
+    /// in words. A place with a painted area may also be linked by zones and holds (TriggerPlan.Place), which then use its shape;
+    /// such a file is missionlab-plan/3, so older versions, which would read those triggers as circles, refuse it.
     /// </summary>
     public sealed class PlacePlan
     {
@@ -188,13 +237,52 @@ namespace MissionLab.Core
         public float? Bottom, Top;        // world Y band for a point place; without it, the circle's height rule applies
         public AreaPlan Area;             // a shaped place; then Pos only labels it
 
+        public bool Shaped => Area != null && Area.Parts.Count > 0;
+
         public bool Contains(V3 p)
         {
-            if (Area != null && Area.Parts.Count > 0) return Area.Contains(p);
+            if (Shaped) return Area.Contains(p);
             float dx = p.X - Pos.X, dz = p.Z - Pos.Z;
             if (dx * dx + dz * dz > Reach * Reach) return false;
             if (Bottom.HasValue && Top.HasValue) return p.Y >= Bottom.Value && p.Y <= Top.Value;
             return System.Math.Abs(p.Y - Pos.Y) <= Membership.CircleHeight;
+        }
+    }
+
+    /// <summary>
+    /// A player goal ("Recover the phone"): a stable id, a name players see, and the triggers that move it from inactive to
+    /// active, succeeded or failed (GoalBook runs it). Distinct from ObjectivePlan, which only places the game's intel items.
+    /// Any goal makes the file missionlab-plan/3, so older versions refuse it instead of running the mission without its goals.
+    /// </summary>
+    public sealed class GoalPlan
+    {
+        public const int IdLength = 32, NameLength = 80;
+        public string Id = "";
+        public string Name = "";
+        public bool Required = true;          // the extraction (with "goals": true) waits for it; an optional goal never holds anything up
+        public List<string> After = new List<string>();   // goals that must have succeeded before this one can become active
+        public int Activate;                  // a trigger that must also have fired before it becomes active (0: none)
+        public int Succeed;                   // the trigger whose firing completes it
+        public int Fail;                      // the trigger whose firing fails it (0: none)
+        public bool Notify = true;            // players see "New objective", "Objective complete" and "Objective failed"
+
+        /// <summary>Active as soon as the mission starts: the briefing covers it, so no "New objective" message is shown.</summary>
+        public bool FromStart => After.Count == 0 && Activate == 0;
+
+        /// <summary>Whether a text can be a goal id: 1 to 32 of a-z, 0-9 and '-', not starting with '-'.</summary>
+        public static bool IdOk(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length > IdLength || id[0] == '-') return false;
+            foreach (char c in id) if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+            return true;
+        }
+
+        /// <summary>A goal's name as players see it: cleaned as messages are, and at most 80 characters.</summary>
+        public static string Clean(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            text = text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
+            return text.Length > NameLength ? text.Substring(0, NameLength) : text;
         }
     }
 
@@ -258,6 +346,40 @@ namespace MissionLab.Core
         public int Budget;
         public int Regen;                 // points per minute
         public List<ActionPlan> Actions = new List<ActionPlan>();
+        public PressurePlan Pressure;     // null: no automatic pacing (ML-052)
+    }
+
+    /// <summary>
+    /// One authored pressure band (ML-052): when it applies (time since the start, goals that must be active, living players
+    /// seen) and how the director may spend while it does. The first band in the author's order whose conditions hold is used.
+    /// </summary>
+    public sealed class PressureBand
+    {
+        public const float FromLimit = 36000f, EveryLeast = 10f, EveryMost = 600f, EveryDefault = 60f;
+        public const int PlayersLimit = 16;
+        public string Name = "";
+        public float From;                // seconds since the start before the band can apply
+        public List<string> Goals = new List<string>();   // goal ids that must all be active
+        public int MinPlayers;            // living players seen, at least
+        public int Spend = -1;            // most points one decision may spend (-1: the whole budget)
+        public float Every = EveryDefault;    // seconds between decisions while the band applies
+    }
+
+    /// <summary>
+    /// The author's bounds for the pressure director (ML-052), inside the director block. It only ever plays the block's own
+    /// action cards through the budget, so it can neither invent an encounter nor spend past the budget. Older versions
+    /// ignore the key and play the mission without pacing, which is acceptable for an optional aid: no format change.
+    /// </summary>
+    public sealed class PressurePlan
+    {
+        public const string Off = "off", Preview = "preview", On = "on";
+        public static readonly string[] Modes = { Off, Preview, On };
+        public const int MostBands = 6, EnemiesLimit = 500;
+        public const float RestLimit = 600f, RestDefault = 60f;
+        public string Mode = Off;
+        public List<PressureBand> Bands = new List<PressureBand>();
+        public int MaxEnemies;            // living enemies the director never pushes past (0: no cap)
+        public float Rest = RestDefault;  // seconds without spending after a player goes down
     }
 
     /// <summary>A complete enemy layout for one mission, reproducible from Seed.</summary>
@@ -265,6 +387,7 @@ namespace MissionLab.Core
     {
         public const string Schema = "missionlab-plan/1";
         public const string Schema2 = "missionlab-plan/2";    // the envelope, written only when a trigger has a shaped area
+        public const string Schema3 = "missionlab-plan/3";    // the same envelope, written only when a trigger links a named place or the mission has goals
         public string Id = "";            // a stable identity across renames: 1 to 64 of A-Z, a-z, 0-9, _ and -
         public int Revision;              // the author's save counter
         public int SquadMin, SquadMax;    // the author's recommended squad size, 1 to 16 (0: not said)
@@ -275,6 +398,7 @@ namespace MissionLab.Core
         public List<OptionPlan> Options = new List<OptionPlan>();
         public List<PlacementPlan> Placement = new List<PlacementPlan>();
         public DirectorPlan Director;     // null: no Game Master budget
+        public List<GoalPlan> Goals = new List<GoalPlan>();   // player goals in the order the author lists them (ML-046)
         public const int IdLength = 64, SquadLimit = 16;
         public const float MinutesLimit = 600f;
 
@@ -304,11 +428,15 @@ namespace MissionLab.Core
         /// <summary>
         /// Copies onto a plan the Game Master is about to save everything of the authored scenario it cannot change during a
         /// mission, so the saved file keeps the author's alternatives and metadata. Kept as the author wrote them: id, scene,
-        /// navFile (when the author named one), seed, squad, minutes, mapPrint, places, sealed, options, placement and director;
+        /// navFile (when the author named one), seed, squad, minutes, mapPrint, places, sealed, options, placement, director,
+        /// goals and whether the extraction waits for them (with KeepGoals, so no goal names a trigger the save no longer has);
         /// the author's notes come first, then the saved plan's own. The revision is the authored one plus one.
         /// Left as the Game Master has them, because it edits them live: name, briefing, enemies (and groups and
         /// requestedEnemies), triggers with their areas, doors, things, objectives, extraction, insertion, weather, power,
         /// skill, nvg, gameMaster and respawn.
+        /// A place whose linked triggers were all given one new shape live (the page edited the place) is saved with that
+        /// shape, so the links stand; a linked trigger whose shape is then not its place's is saved with its own copy and no
+        /// link, so the saved file plays what was played and never points at a place that is not there.
         /// </summary>
         public static void CarryAuthored(MissionPlan authored, MissionPlan saved)
         {
@@ -320,11 +448,29 @@ namespace MissionLab.Core
             saved.SquadMin = authored.SquadMin; saved.SquadMax = authored.SquadMax;
             saved.Minutes = authored.Minutes;
             saved.MapPrint = authored.MapPrint;
-            saved.Places = authored.Places;
+            saved.Places = new List<PlacePlan>(authored.Places);
+            for (int i = 0; i < saved.Places.Count; i++)
+            {
+                PlacePlan place = saved.Places[i];
+                List<TriggerPlan> users = saved.Triggers.FindAll(t => t.Linked && t.Place == place.Id && t.Area != null && t.Area.Parts.Count > 0);
+                if (users.Count == 0 || !place.Shaped || users.Count != saved.Triggers.FindAll(t => t.Linked && t.Place == place.Id).Count) continue;
+                string shape = users[0].Area.Signature();
+                if (shape == place.Area.Signature() || !users.TrueForAll(t => t.Area.Signature() == shape)) continue;
+                saved.Places[i] = new PlacePlan { Id = place.Id, Name = place.Name, Pos = place.Pos, Bottom = place.Bottom, Top = place.Top, Area = users[0].Area };
+            }
+            foreach (TriggerPlan t in saved.Triggers)
+            {
+                if (t.Place == 0) continue;
+                PlacePlan place = t.Linked ? saved.Places.Find(p => p.Id == t.Place) : null;
+                bool same = place != null && place.Shaped && t.Area != null && t.Area.Signature() == place.Area.Signature();
+                if (!same) { if (t.Area != null) t.Area = t.Area.Copy(); t.Place = 0; }
+            }
             saved.Sealed = authored.Sealed;
             saved.Options = authored.Options;
             saved.Placement = authored.Placement;
             saved.Director = authored.Director;
+            saved.ExtractionGoals = authored.ExtractionGoals;
+            saved.Goals = KeepGoals(authored.Goals, id => saved.Triggers.Exists(t => t.Id == id));
             var notes = new List<string>(authored.Notes);
             foreach (string n in saved.Notes) if (!notes.Contains(n)) notes.Add(n);
             saved.Notes = notes;
@@ -339,6 +485,7 @@ namespace MissionLab.Core
         public List<ObjectivePlan> Objectives = new List<ObjectivePlan>();
         public List<DoorPlan> Doors = new List<DoorPlan>();
         public int ExtractionAfter;       // extraction stays shut until this trigger has fired (0: the mission's own rule alone)
+        public bool ExtractionGoals;      // extraction also stays shut until every required goal has succeeded
         public bool GameMaster;           // the mission is meant to be run by a Game Master: triggers fired by hand are part of its plan
         public string Insertion = "";     // the insertion every player gets, by name ("": each player's own choice)
         public WeatherPlan Weather = new WeatherPlan();
@@ -430,9 +577,15 @@ namespace MissionLab.Core
                 sb.Append(i > 0 ? "," : "").Append("{\"id\":").Append(z.Id).Append(",\"name\":\"").Append(Text(z.Name)).Append("\",\"when\":\"").Append(z.When).Append('"');
                 if (TriggerPlan.Placed(z.When) || z.When == TriggerPlan.OnDoor)
                     sb.Append(",\"pos\":[").Append(F(z.Pos.X)).Append(',').Append(F(z.Pos.Y)).Append(',').Append(F(z.Pos.Z)).Append("],\"radius\":").Append(F(z.Radius));
-                if (z.Shaped) { sb.Append(",\"area\":"); z.Area.Write(sb); }
+                if (z.Linked) sb.Append(",\"place\":").Append(z.Place);
+                else if (z.Shaped) { sb.Append(",\"area\":"); z.Area.Write(sb); }
                 if (z.When == TriggerPlan.OnIntel) sb.Append(",\"item\":\"").Append(Text(z.Item)).Append('"');
                 if (z.When == TriggerPlan.OnAfter) sb.Append(",\"after\":").Append(z.After);
+                if (z.When == TriggerPlan.OnOutcome)
+                {
+                    sb.Append(",\"after\":").Append(z.After).Append(",\"outcome\":\"").Append(TriggerPlan.OutcomeWord(z.Outcome)).Append('"');
+                    if (F(z.Within) != F(TriggerPlan.WithinDefault)) sb.Append(",\"within\":").Append(F(z.Within));
+                }
                 if (z.When == TriggerPlan.OnHold) sb.Append(",\"hold\":").Append(F(z.Hold));
                 if (z.When == TriggerPlan.OnDown) sb.Append(",\"count\":").Append(z.Count);
                 if (z.When == TriggerPlan.OnAll || z.When == TriggerPlan.OnAny) sb.Append(",\"of\":[").Append(string.Join(",", z.Of)).Append(']');
@@ -504,7 +657,8 @@ namespace MissionLab.Core
         {
             var sb = new StringBuilder(96);
             var inv = CultureInfo.InvariantCulture;
-            if (p.ExtractionAfter != 0) sb.Append(",\"extraction\":{\"after\":").Append(p.ExtractionAfter).Append('}');
+            if (p.ExtractionAfter != 0 || p.ExtractionGoals)
+                sb.Append(",\"extraction\":{").Append(p.ExtractionAfter != 0 ? "\"after\":" + p.ExtractionAfter : "").Append(p.ExtractionAfter != 0 && p.ExtractionGoals ? "," : "").Append(p.ExtractionGoals ? "\"goals\":true" : "").Append('}');
             if (!string.IsNullOrEmpty(p.Insertion)) sb.Append(",\"insertion\":\"").Append(Guard.Esc(p.Insertion)).Append('"');
             if (p.GameMaster) sb.Append(",\"gameMaster\":true");
             if (TriggerPlan.OnOff(p.Power) != "") sb.Append(",\"power\":\"").Append(p.Power).Append('"');
@@ -608,7 +762,65 @@ namespace MissionLab.Core
                 if (a.Fallback == ActionPlan.Cancel) sb.Append(",\"fallback\":\"").Append(ActionPlan.Cancel).Append('"');
                 sb.Append('}');
             }
-            return sb.Append("]}").ToString();
+            sb.Append(']');
+            if (d.Pressure != null) sb.Append(",\"pressure\":").Append(PressureJson(d.Pressure));
+            return sb.Append('}').ToString();
+        }
+
+        /// <summary>The pressure bounds (ML-052) in a fixed key order, each key left out when it holds its default.</summary>
+        public static string PressureJson(PressurePlan p)
+        {
+            var sb = new StringBuilder(128);
+            var inv = CultureInfo.InvariantCulture;
+            string F(float f) => System.Math.Round(f, 2).ToString(inv);
+            sb.Append('{');
+            if (p.Mode == PressurePlan.Preview || p.Mode == PressurePlan.On) sb.Append("\"mode\":\"").Append(p.Mode).Append("\",");
+            sb.Append("\"bands\":[");
+            for (int i = 0; i < p.Bands.Count; i++)
+            {
+                PressureBand b = p.Bands[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"name\":\"").Append(Guard.Esc(b.Name)).Append('"');
+                if (b.From > 0f) sb.Append(",\"from\":").Append(F(b.From));
+                if (b.Goals.Count > 0)
+                {
+                    sb.Append(",\"goals\":[");
+                    for (int j = 0; j < b.Goals.Count; j++) sb.Append(j > 0 ? "," : "").Append('"').Append(Guard.Esc(b.Goals[j])).Append('"');
+                    sb.Append(']');
+                }
+                if (b.MinPlayers > 0) sb.Append(",\"minPlayers\":").Append(b.MinPlayers);
+                if (b.Spend >= 0) sb.Append(",\"spend\":").Append(b.Spend);
+                if (b.Every != PressureBand.EveryDefault) sb.Append(",\"every\":").Append(F(b.Every));
+                sb.Append('}');
+            }
+            sb.Append(']');
+            if (p.MaxEnemies > 0) sb.Append(",\"maxEnemies\":").Append(p.MaxEnemies);
+            if (p.Rest != PressurePlan.RestDefault) sb.Append(",\"rest\":").Append(F(p.Rest));
+            return sb.Append('}').ToString();
+        }
+
+        /// <summary>The goals, keys in a fixed order, each left out when it holds its default.</summary>
+        public static string GoalsJson(List<GoalPlan> goals)
+        {
+            var sb = new StringBuilder(128);
+            sb.Append('[');
+            for (int i = 0; i < goals.Count; i++)
+            {
+                GoalPlan g = goals[i];
+                sb.Append(i > 0 ? "," : "").Append("{\"id\":\"").Append(Guard.Esc(g.Id)).Append("\",\"name\":\"").Append(Guard.Esc(GoalPlan.Clean(g.Name))).Append('"');
+                if (!g.Required) sb.Append(",\"required\":false");
+                if (g.After.Count > 0)
+                {
+                    sb.Append(",\"after\":[");
+                    for (int k = 0; k < g.After.Count; k++) sb.Append(k > 0 ? "," : "").Append('"').Append(Guard.Esc(g.After[k])).Append('"');
+                    sb.Append(']');
+                }
+                if (g.Activate > 0) sb.Append(",\"activate\":").Append(g.Activate);
+                sb.Append(",\"succeed\":").Append(g.Succeed);
+                if (g.Fail > 0) sb.Append(",\"fail\":").Append(g.Fail);
+                if (!g.Notify) sb.Append(",\"notify\":false");
+                sb.Append('}');
+            }
+            return sb.Append(']').ToString();
         }
 
         public string ToJson()
@@ -640,6 +852,7 @@ namespace MissionLab.Core
             if (Placement.Exists(p => p.Area != null && p.Area.Parts.Count > 0)) sb.Append(",\"placement\":").Append(PlacementJson(Placement));
             if (Options.Count > 0) sb.Append(",\"options\":").Append(OptionsJson(Options));
             if (Director != null) sb.Append(",\"director\":").Append(DirectorJson(Director));
+            if (Goals.Count > 0) sb.Append(",\"goals\":").Append(GoalsJson(Goals));
             sb.Append(SettingsJson(this));
             sb.Append(",\"spawns\":[");
             for (int i = 0; i < Spawns.Count; i++)
@@ -649,13 +862,49 @@ namespace MissionLab.Core
             }
             sb.Append("\n]}");
             // A shaped area goes under "mission": v0.23 finds no root "spawns" there and skips the file, instead of
-            // quietly reading the shape as its anchor circle.
-            if (Triggers.Exists(t => t.Shaped))
+            // quietly reading the shape as its anchor circle. A link to a place raises the number again, because v0.26 reads
+            // plan/2 and would take a linked trigger for its circle; it refuses plan/3 as a newer format. Goals do the same:
+            // v0.26 would run the mission without them, and would open an extraction that waits for them.
+            bool three = Triggers.Exists(t => t.Linked) || Goals.Count > 0 || ExtractionGoals;
+            string envelope = three ? Schema3 : Triggers.Exists(t => t.Shaped) ? Schema2 : null;
+            if (envelope != null)
             {
                 string plain = "{\"schema\":" + S(Schema) + ",";
-                sb.Remove(0, plain.Length).Insert(0, "{\"schema\":" + S(Schema2) + ",\"mission\":{").Append('}');
+                sb.Remove(0, plain.Length).Insert(0, "{\"schema\":" + S(envelope) + ",\"mission\":{").Append('}');
             }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Gives every zone and hold that links a named place that place's painted area, so the engine, Completion, rehearsal
+        /// and the plugin keep working on TriggerPlan.Area alone. All triggers linked to one place share its one AreaPlan: they
+        /// can never disagree about the shape. A link to a place that is not there, or to a point, is dropped and the trigger
+        /// keeps its own area or circle: this is the lenient reading; the strict reader refuses such a file.
+        /// </summary>
+        public void ResolveLinks()
+        {
+            foreach (TriggerPlan t in Triggers)
+            {
+                if (t.Place == 0) continue;
+                PlacePlan place = t.Linked ? Places.Find(p => p.Id == t.Place) : null;
+                if (place != null && place.Shaped) t.Area = place.Area;
+                else t.Place = 0;
+            }
+        }
+
+        /// <summary>
+        /// Drops every link to a named place, each trigger keeping its own copy of the exact shape it had: the flattened
+        /// export for versions without links. The result is written as missionlab-plan/2 (or /1 when nothing is shaped), unless
+        /// the mission has goals, which only missionlab-plan/3 can hold.
+        /// </summary>
+        public void Flatten()
+        {
+            foreach (TriggerPlan t in Triggers)
+            {
+                if (t.Place == 0) continue;
+                if (t.Area != null) t.Area = t.Area.Copy();
+                t.Place = 0;
+            }
         }
 
         /// <summary>
@@ -721,7 +970,7 @@ namespace MissionLab.Core
                 if (root.TryGetProperty("placement", out JsonElement placement) && placement.ValueKind == JsonValueKind.Array) ReadPlacement(placement, plan.Placement);
                 if (root.TryGetProperty("options", out JsonElement options) && options.ValueKind == JsonValueKind.Array) ReadOptions(options, plan.Options);
                 if (root.TryGetProperty("director", out JsonElement director) && director.ValueKind == JsonValueKind.Object) plan.Director = ReadDirector(director);
-                if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0));
+                if (root.TryGetProperty("extraction", out JsonElement ex) && ex.ValueKind == JsonValueKind.Object) { plan.ExtractionAfter = System.Math.Max(0, (int)Num(ex, "after", 0)); plan.ExtractionGoals = Bool(ex, "goals"); }
                 if (root.TryGetProperty("weather", out JsonElement we) && we.ValueKind == JsonValueKind.Object)
                 {
                     if (we.TryGetProperty("hour", out JsonElement wh) && wh.ValueKind == JsonValueKind.Number) plan.Weather.Hour = System.Math.Min(24f, System.Math.Max(0f, wh.GetSingle()));
@@ -787,6 +1036,11 @@ namespace MissionLab.Core
                                                   Delay = System.Math.Min(7200f, System.Math.Max(0f, Num(z, "delay", 0))), Item = Str(z, "item") ?? "", After = (int)Num(z, "after", 0) };
                         if (z.TryGetProperty("doors", out JsonElement zd) && zd.ValueKind == JsonValueKind.Array) ReadDoors(zd, t.Doors);
                         t.OpensExtraction = Str(z, "extraction") == "open";
+                        if (when == TriggerPlan.OnOutcome)
+                        {
+                            t.Outcome = TriggerPlan.OutcomeWord(Str(z, "outcome"));
+                            t.Within = System.Math.Min(TriggerPlan.WithinMost, System.Math.Max(TriggerPlan.WithinLeast, Num(z, "within", TriggerPlan.WithinDefault)));
+                        }
                         t.Hold = System.Math.Min(3600f, System.Math.Max(1f, Num(z, "hold", 30))); t.Count = System.Math.Max(0, (int)Num(z, "count", 0));
                         t.Chance = System.Math.Max(1, System.Math.Min(100, (int)Num(z, "chance", 100))); t.Warn = Bool(z, "warn");
                         t.Everyone = Bool(z, "everyone"); t.Tag = SpawnPlan.CleanTag(Str(z, "tag")); t.Red = Bool(z, "red"); t.Hunt = Bool(z, "hunt"); t.Respawn = Bool(z, "respawn");
@@ -798,6 +1052,7 @@ namespace MissionLab.Core
                         t.Power = TriggerPlan.OnOff(Str(z, "power")); t.Message = TriggerPlan.Clean(Str(z, "message")); t.End = TriggerPlan.Ending(Str(z, "end"));
                         t.Doors.RemoveAll(d => !d.Locked.HasValue && !d.Open.HasValue);
                         if (TriggerPlan.Placed(when) && z.TryGetProperty("area", out JsonElement za) && za.ValueKind == JsonValueKind.Object) t.Area = AreaPlan.Read(za);
+                        if (TriggerPlan.Placed(when)) t.Place = System.Math.Max(0, (int)Num(z, "place", 0));
                         plan.Triggers.Add(t);
                     }
                 if (root.TryGetProperty("objectives", out JsonElement items) && items.ValueKind == JsonValueKind.Array)
@@ -818,14 +1073,76 @@ namespace MissionLab.Core
                     }
                 // An enemy that names a zone that does not exist is simply there from the start.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Trigger != 0 && !plan.Triggers.Exists(t => t.Id == s.Trigger)) s.Trigger = 0;
+                // A trigger that waits for (after) or watches (outcome) a trigger that does not exist, as a Game Master save leaves
+                // it when that trigger was deleted, could only ever be fired by hand; it becomes what says so, "after": 0, keeping
+                // its actions. The engine behaves the same either way, and the file stays one the strict reader takes.
+                foreach (TriggerPlan t in plan.Triggers)
+                {
+                    if ((t.When != TriggerPlan.OnAfter && t.When != TriggerPlan.OnOutcome) || t.After == 0 || plan.Triggers.Exists(o => o.Id == t.After)) continue;
+                    t.When = TriggerPlan.OnAfter; t.After = 0; t.Outcome = ""; t.Within = TriggerPlan.WithinDefault;
+                }
                 // Links to things that are not there are dropped: such an enemy scatters anywhere the other rules allow, a choice
                 // switches off only triggers that exist, and an action with nothing to fire is no action.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Within != 0 && !plan.Placement.Exists(p => p.Id == s.Within && p.Mode == PlacementPlan.Allow)) s.Within = 0;
                 foreach (OptionPlan o in plan.Options) foreach (ChoicePlan c in o.Choices) c.DropTriggers.RemoveAll(id => !plan.Triggers.Exists(t => t.Id == id));
                 if (plan.Director != null) plan.Director.Actions.RemoveAll(a => !plan.Triggers.Exists(t => t.Id == a.Fire));
+                if (root.TryGetProperty("goals", out JsonElement goals) && goals.ValueKind == JsonValueKind.Array) plan.Goals = KeepGoals(ReadGoals(goals), id => plan.Triggers.Exists(t => t.Id == id));
+                // A pressure band that waits for a goal the plan does not have could never be judged as the author meant: it is
+                // left out rather than made to apply without that goal. Without a band there is nothing to pace by.
+                if (plan.Director != null && plan.Director.Pressure != null)
+                {
+                    plan.Director.Pressure.Bands.RemoveAll(b => b.Goals.Exists(g => !plan.Goals.Exists(x => x.Id == g)));
+                    if (plan.Director.Pressure.Bands.Count == 0) plan.Director.Pressure = null;
+                }
+                plan.ResolveLinks();
                 plan.RequestedEnemies = plan.Spawns.Count;
                 return plan;
             }
+        }
+
+        private static List<GoalPlan> ReadGoals(JsonElement list)
+        {
+            var read = new List<GoalPlan>();
+            foreach (JsonElement g in list.EnumerateArray())
+            {
+                if (g.ValueKind != JsonValueKind.Object) continue;
+                var goal = new GoalPlan { Id = Str(g, "id") ?? "", Name = Str(g, "name") ?? "", Required = !(g.TryGetProperty("required", out JsonElement rq) && rq.ValueKind == JsonValueKind.False),
+                                          Notify = !(g.TryGetProperty("notify", out JsonElement nt) && nt.ValueKind == JsonValueKind.False) };
+                if (g.TryGetProperty("after", out JsonElement after) && after.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement a in after.EnumerateArray()) if (a.ValueKind == JsonValueKind.String) goal.After.Add(a.GetString());
+                goal.Activate = WholeOf(g, "activate"); goal.Succeed = WholeOf(g, "succeed"); goal.Fail = WholeOf(g, "fail");
+                read.Add(goal);
+            }
+            return read;
+        }
+
+        private static int WholeOf(JsonElement o, string name) =>
+            o.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
+
+        /// <summary>
+        /// The lenient reading of goals, kept in order: a goal without a good unique id, a name or a succeed trigger that exists
+        /// is dropped; an activate or fail trigger that does not exist becomes 0 (none); an "after" entry that names no kept goal,
+        /// the goal itself or one already listed is dropped. The strict reader refuses all of these instead.
+        /// </summary>
+        public static List<GoalPlan> KeepGoals(List<GoalPlan> goals, System.Predicate<int> trigger)
+        {
+            var kept = new List<GoalPlan>();
+            var ids = new HashSet<string>(System.StringComparer.Ordinal);
+            foreach (GoalPlan g in goals)
+            {
+                string name = GoalPlan.Clean(g.Name);
+                if (!GoalPlan.IdOk(g.Id) || ids.Contains(g.Id) || name == "" || g.Succeed <= 0 || !trigger(g.Succeed)) continue;
+                ids.Add(g.Id);
+                kept.Add(new GoalPlan { Id = g.Id, Name = name, Required = g.Required, After = new List<string>(g.After), Notify = g.Notify, Succeed = g.Succeed,
+                                        Activate = g.Activate > 0 && trigger(g.Activate) ? g.Activate : 0, Fail = g.Fail > 0 && trigger(g.Fail) ? g.Fail : 0 });
+            }
+            foreach (GoalPlan g in kept)
+            {
+                var after = new List<string>();
+                foreach (string a in g.After) if (a != g.Id && ids.Contains(a) && !after.Contains(a)) after.Add(a);
+                g.After = after;
+            }
+            return kept;
         }
 
         private static string Str(JsonElement o, string name) =>
@@ -903,7 +1220,37 @@ namespace MissionLab.Core
                         Fallback = Str(a, "fallback") == ActionPlan.Cancel ? ActionPlan.Cancel : ActionPlan.Wait,
                     });
                 }
+            if (d.TryGetProperty("pressure", out JsonElement pressure) && pressure.ValueKind == JsonValueKind.Object) director.Pressure = ReadPressure(pressure);
             return director;
+        }
+
+        /// <summary>The lenient reading of the pressure bounds: values clamped, at most six bands, each goal id once. Null without a band.</summary>
+        private static PressurePlan ReadPressure(JsonElement p)
+        {
+            string mode = Str(p, "mode");
+            var pressure = new PressurePlan
+            {
+                Mode = mode == PressurePlan.Preview || mode == PressurePlan.On ? mode : PressurePlan.Off,
+                MaxEnemies = Clamp(Num(p, "maxEnemies", 0), 0, PressurePlan.EnemiesLimit),
+                Rest = Clamp(Num(p, "rest", PressurePlan.RestDefault), 0f, PressurePlan.RestLimit),
+            };
+            if (p.TryGetProperty("bands", out JsonElement bands) && bands.ValueKind == JsonValueKind.Array)
+                foreach (JsonElement b in bands.EnumerateArray())
+                {
+                    if (b.ValueKind != JsonValueKind.Object || pressure.Bands.Count == PressurePlan.MostBands) continue;
+                    var band = new PressureBand
+                    {
+                        Name = (Str(b, "name") ?? "").Trim(), From = Clamp(Num(b, "from", 0), 0f, PressureBand.FromLimit),
+                        MinPlayers = Clamp(Num(b, "minPlayers", 0), 0, PressureBand.PlayersLimit),
+                        Spend = b.TryGetProperty("spend", out JsonElement sp) && sp.ValueKind == JsonValueKind.Number ? Clamp(sp.GetSingle(), 0, DirectorPlan.BudgetLimit) : -1,
+                        Every = Clamp(Num(b, "every", PressureBand.EveryDefault), PressureBand.EveryLeast, PressureBand.EveryMost),
+                    };
+                    if (b.TryGetProperty("goals", out JsonElement goals) && goals.ValueKind == JsonValueKind.Array)
+                        foreach (JsonElement g in goals.EnumerateArray())
+                            if (g.ValueKind == JsonValueKind.String && !band.Goals.Contains(g.GetString())) band.Goals.Add(g.GetString());
+                    pressure.Bands.Add(band);
+                }
+            return pressure.Bands.Count == 0 ? null : pressure;
         }
 
         private static void ReadDoors(JsonElement list, List<DoorPlan> into)

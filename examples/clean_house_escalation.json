@@ -13,9 +13,9 @@
   "navFile": "suburbv2.bytes",
   "seed": 0,
   "notes": [
-    "Pacing: rising pressure. Few enemies at the start, then a wave of two patrols at 90 s and every 75 s after it, four waves in all, and one last push at 7 minutes.",
+    "Pacing: rising pressure. Few enemies at the start, then a wave of two patrols at 90 s and every 75 s after it, four waves in all, and one last push at 7 minutes. Every wave and the last push walk patrol routes from the north round the house and up to its doors; they do not hunt, because enemies sent after a player just after they appeared stood still in the game (18 November), while patrol routes have been walked.",
     "Completion: a player stays inside the upper floor's north room for 180 s without leaving (trigger 3 'Hold the floor'); trigger 4 'Held' then ends the mission as a success. Failure: trigger 6 'Overrun' at 15 minutes ends it as failed (with a warning at one minute and at ten seconds); everyone dead also ends it, as in the game.",
-    "Rally: reaching the north room (trigger 1 'Upstairs') calls every enemy within 25 m to it, so the hold starts with a fight.",
+    "No calls: reaching the north room (trigger 1 'Upstairs') only tells the players to hold it. The pressure comes from the waves and the last push, whose patrol routes lead from the north round the house to its front and back doors; whether they come inside depends on the game's own fighting once they see or hear the players, and routes through the house have not been watched in the game yet.",
     "Optional content: the third patrol of each wave comes one mission in two (chance 50). The hold and both endings do not depend on it.",
     "Minutes and squad are the author's estimate; no playtest has measured them yet."
   ],
@@ -26,9 +26,8 @@
       "when": "zone",
       "pos": [-20.0, 3.68, 4.0],
       "radius": 4.5,
-      "rally": 25,
       "facePlayer": true,
-      "message": "This is the room. Hold it for three minutes: they are coming to you."
+      "message": "This is the room. Hold it for three minutes: more are coming from the north."
     },
     {
       "id": 2,
@@ -37,7 +36,6 @@
       "delay": 90,
       "repeat": 75,
       "times": 4,
-      "hunt": true,
       "facePlayer": true,
       "message": "{time} in: another wave from the north. {enemies} left."
     },
@@ -66,7 +64,6 @@
       "name": "Last push",
       "when": "time",
       "delay": 420,
-      "hunt": true,
       "red": true,
       "facePlayer": true,
       "message": "Everything they have left is coming now."
@@ -93,11 +90,11 @@
     {"group": 0, "role": "Wander", "pos": [-20.5, 0.68, -4.0], "yaw": 200, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 5, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
     {"group": 0, "role": "Guard", "pos": [-19.0, 3.68, 4.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
     {"group": 0, "role": "Guard", "pos": [-21.0, -2.32, 6.0], "yaw": 180, "indoor": true, "defensive": true, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
-    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
-    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]},
-    {"group": 2, "role": "Patrol", "pos": [0.0, 0.0, 70.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "chance": 50, "patrol": [[0.0, 0.08, 34.0], [-9.0, 0.36, 8.0], [-3.0, 0.0, -12.0]]},
-    {"group": 3, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []},
-    {"group": 3, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []},
-    {"group": 3, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": []}
+    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.01, 8.0], [-9.0, 0.17, -2.0], [-10.0, 0.31, -10.0], [-18.0, 0.51, -22.0], [-9.0, 0.27, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0], [-25.0, 0.5, 14.0], [-30.5, 0.51, -12.0], [-22.0, 0.51, -24.0]]},
+    {"group": 2, "role": "Patrol", "pos": [0.0, 0.0, 70.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "chance": 50, "patrol": [[-9.0, 0.41, 8.0], [-30.5, 0.5, 15.0], [-30.5, 0.51, -12.0], [-20.0, 0.51, -21.0], [-3.0, 0.0, -12.0]]},
+    {"group": 3, "role": "Patrol", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": [[-3.0, 0.18, 8.0], [-9.0, 0.17, -2.0], [-18.0, 0.51, -22.0]]},
+    {"group": 3, "role": "Patrol", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": [[-9.0, 0.36, 8.0], [-25.0, 0.5, 14.0], [-30.5, 0.51, -12.0]]},
+    {"group": 3, "role": "Patrol", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 5, "hvt": false, "patrol": [[-30.5, 0.5, 15.0], [-30.5, 0.51, -12.0], [-20.0, 0.51, -21.0]]}
   ]
 }

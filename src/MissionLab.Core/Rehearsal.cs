@@ -14,6 +14,7 @@ namespace MissionLab.Core
         public SortedDictionary<int, string> Phase = new SortedDictionary<int, string>();   // trigger -> phase word (TriggerEngine.Waiting ...)
         public string Extraction = "";                                             // Rehearsal.Open, Rehearsal.Held, or "" (not checked)
         public int Enemies = -1;                                                   // enemies in the mission by now (-1: not checked)
+        public SortedDictionary<string, string> Goals = new SortedDictionary<string, string>(StringComparer.Ordinal);   // goal id -> GoalBook state
     }
 
     /// <summary>One moment of a rehearsal: players move, something happens, a trigger is set off by hand, or something is checked.</summary>
@@ -27,6 +28,8 @@ namespace MissionLab.Core
         public int Count;                     // down: how many (0: every enemy there is, with that tag)
         public V3 Pos;                        // door: its hinge
         public int Fire;                      // a trigger set off by hand (0: none)
+        public int OutcomeOf;                 // a trigger whose latest firing is reported (0: none); the rehearsal never assumes an outcome
+        public string Outcome = "";           // what that firing came to: applied, failed, partial or unconfirmed
         public RehearsalExpect Expect;        // null: nothing is checked
     }
 
@@ -48,9 +51,29 @@ namespace MissionLab.Core
     {
         public float At;
         public string What = "";
+        /// <summary>The trigger this step is about (0: none, or more than one), so the page need not read it from What.</summary>
+        public int Trigger;
+        /// <summary>Which firing of Trigger this step is about (0: none): the one set off by hand, or the one an outcome is reported for.</summary>
+        public int Invocation;
+        /// <summary>True when this step checks the extraction.</summary>
+        public bool Extraction;
         public string Expected = "";
         public string Actual = "";
         public bool Ok;
+    }
+
+    /// <summary>
+    /// The triggers just before and just after one moment of the script (a time at which some step happens), so the page
+    /// can show what that moment changed and find where two runs of one script first part ways.
+    /// </summary>
+    public sealed class RehearsalLook
+    {
+        public float At;
+        public SortedDictionary<int, string> Before = new SortedDictionary<int, string>();   // trigger -> phase, before the moment's steps happen
+        public SortedDictionary<int, string> After = new SortedDictionary<int, string>();    // trigger -> phase, once the engine has looked
+        public SortedDictionary<int, string> Inside = new SortedDictionary<int, string>();   // zone and hold: "inside/alive" players after the moment
+        public SortedDictionary<string, string> GoalsBefore = new SortedDictionary<string, string>(StringComparer.Ordinal);   // goal id -> state, before the moment
+        public SortedDictionary<string, string> GoalsAfter = new SortedDictionary<string, string>(StringComparer.Ordinal);    // goal id -> state, once the goals have been looked at
     }
 
     public sealed class RehearsalResult
@@ -58,6 +81,8 @@ namespace MissionLab.Core
         public bool Passed;                   // every step was as expected, and the rolled mission can be finished
         public string Blocked = "";           // why the Director would refuse this roll ("": it would not)
         public List<StepResult> Steps = new List<StepResult>();
+        public List<RehearsalLook> Looks = new List<RehearsalLook>();   // one per time at which a step happens, in time order
+        public List<GoalEvent> Goals = new List<GoalEvent>();          // every goal transition, in the order they happened
         public string Assumptions = "";
     }
 
@@ -75,8 +100,10 @@ namespace MissionLab.Core
         public const float DoorReach = 0.5f;        // metres: a door event opens the door whose hinge is this close
         private const string Prefix = "missionlab-rehearsal/";
         private static readonly string[] Events = { Alert, Intel, Down, Door };
+        private static readonly string[] Results = { TriggerPlan.Applied, TriggerPlan.Failed, TriggerPlan.Partial, TriggerPlan.Unconfirmed };   // what the runtime reports; a timeout is no report
         private static readonly string[] Phases = { TriggerEngine.Off, TriggerEngine.Circle, TriggerEngine.Waiting, TriggerEngine.Holding, TriggerEngine.Counting,
                                                     TriggerEngine.Fired, TriggerEngine.Cooling, TriggerEngine.Exhausted };
+        private static readonly string[] GoalStates = { GoalBook.Inactive, GoalBook.Active, GoalBook.Succeeded, GoalBook.Failed };
 
         // ----- reading
 
@@ -196,13 +223,32 @@ namespace MissionLab.Core
                                 if (plan != null && !plan.Triggers.Exists(t => t.Id == st.Fire)) Bad("missing-ref", at + ".fire", "there is no trigger " + st.Fire);
                             }
                         }
+                        if (Has(e, "outcome", out JsonElement oc))
+                        {
+                            any = true;
+                            if (oc.ValueKind != JsonValueKind.Object) Bad("wrong-type", at + ".outcome", "\"outcome\" is an object: {\"trigger\": number, \"result\": \"applied\"}");
+                            else
+                            {
+                                if (!Has(oc, "trigger", out JsonElement ot)) Bad("missing-field", at + ".outcome.trigger", "an outcome names the trigger whose latest firing it reports");
+                                else if (!Whole(ot) || ot.GetInt64() < 1 || ot.GetInt64() > int.MaxValue) Bad("wrong-type", at + ".outcome.trigger", "\"trigger\" is a trigger number, a whole number from 1");
+                                else
+                                {
+                                    st.OutcomeOf = (int)ot.GetInt64();
+                                    if (plan != null && !plan.Triggers.Exists(t => t.Id == st.OutcomeOf)) Bad("missing-ref", at + ".outcome.trigger", "there is no trigger " + st.OutcomeOf);
+                                }
+                                if (!Has(oc, "result", out JsonElement res)) Bad("missing-field", at + ".outcome.result", "an outcome says what the firing came to: " + string.Join(", ", Results));
+                                else if (res.ValueKind != JsonValueKind.String) Bad("wrong-type", at + ".outcome.result", "\"result\" must be text");
+                                else if (Array.IndexOf(Results, res.GetString()) < 0) Bad("unknown-value", at + ".outcome.result", "\"" + res.GetString() + "\" is not an outcome the runtime reports (" + string.Join(", ", Results) + ")");
+                                else st.Outcome = res.GetString();
+                            }
+                        }
                         if (Has(e, "expect", out JsonElement ex))
                         {
                             any = true;
                             if (ex.ValueKind != JsonValueKind.Object) Bad("wrong-type", at + ".expect", "\"expect\" is an object");
                             else st.Expect = ReadExpect(ex, at + ".expect", plan, Bad);
                         }
-                        if (!any) Bad("missing-field", at, "a step needs \"players\", \"event\", \"fire\" or \"expect\"");
+                        if (!any) Bad("missing-field", at, "a step needs \"players\", \"event\", \"fire\", \"outcome\" or \"expect\"");
                         s.Steps.Add(st);
                     }
                 }
@@ -257,6 +303,21 @@ namespace MissionLab.Core
                 if (!Whole(en)) bad("wrong-type", at + ".enemies", "\"enemies\" must be a whole number");
                 else if (en.GetInt64() < 0 || en.GetInt64() > 10000) bad("out-of-range", at + ".enemies", "\"enemies\" is from 0 to 10000");
                 else x.Enemies = (int)en.GetInt64();
+            }
+            if (Has(ex, "goals", out JsonElement goals))
+            {
+                if (goals.ValueKind != JsonValueKind.Object) bad("wrong-type", at + ".goals", "\"goals\" is an object: goal id -> state");
+                else
+                    foreach (JsonProperty p in goals.EnumerateObject())
+                    {
+                        string op = at + ".goals." + p.Name;
+                        string word = p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() : null;
+                        if (!GoalPlan.IdOk(p.Name)) bad("bad-id", op, "\"" + p.Name + "\" is not a goal id");
+                        else if (word == null) bad("wrong-type", op, "a goal's state is text");
+                        else if (Array.IndexOf(GoalStates, word) < 0) bad("unknown-value", op, "\"" + word + "\" is not a goal state (" + string.Join(", ", GoalStates) + ")");
+                        else if (plan != null && !plan.Goals.Exists(g => g.Id == p.Name)) bad("missing-ref", op, "there is no goal \"" + p.Name + "\"");
+                        else x.Goals[p.Name] = word;
+                    }
             }
             return x;
         }
@@ -316,6 +377,7 @@ namespace MissionLab.Core
                     if (st.Event == Door) { sb.Append(",\"pos\":"); P(st.Pos); }
                 }
                 if (st.Fire > 0) sb.Append(",\"fire\":").Append(st.Fire.ToString(inv));
+                if (st.OutcomeOf > 0) sb.Append(",\"outcome\":{\"trigger\":").Append(st.OutcomeOf.ToString(inv)).Append(",\"result\":\"").Append(Guard.Esc(st.Outcome)).Append("\"}");
                 if (st.Expect != null)
                 {
                     RehearsalExpect x = st.Expect;
@@ -329,6 +391,13 @@ namespace MissionLab.Core
                         Key("phase"); sb.Append('{');
                         bool one = true;
                         foreach (KeyValuePair<int, string> p in x.Phase) { sb.Append(one ? "" : ",").Append('"').Append(p.Key.ToString(inv)).Append("\":\"").Append(Guard.Esc(p.Value)).Append('"'); one = false; }
+                        sb.Append('}');
+                    }
+                    if (x.Goals.Count > 0)
+                    {
+                        Key("goals"); sb.Append('{');
+                        bool one = true;
+                        foreach (KeyValuePair<string, string> g in x.Goals) { sb.Append(one ? "" : ",").Append('"').Append(Guard.Esc(g.Key)).Append("\":\"").Append(Guard.Esc(g.Value)).Append('"'); one = false; }
                         sb.Append('}');
                     }
                     if (!string.IsNullOrEmpty(x.Extraction)) { Key("extraction"); sb.Append('"').Append(Guard.Esc(x.Extraction)).Append('"'); }
@@ -368,6 +437,8 @@ namespace MissionLab.Core
             engine.Reset(0f);
             engine.Sync(p.Triggers);
             var w = new ScriptWorld(p, engine);
+            var book = new GoalBook();               // the same goal rules the plugin runs, looked at after every engine look
+            book.Sync(p.Goals);
             var order = new List<int>();
             for (int i = 0; i < s.Steps.Count; i++) order.Add(i);
             order.Sort((a, b) => s.Steps[a].At != s.Steps[b].At ? s.Steps[a].At.CompareTo(s.Steps[b].At) : a.CompareTo(b));    // stable: steps at one time keep their order
@@ -382,9 +453,24 @@ namespace MissionLab.Core
             {
                 // What happens at this time comes first, then the engine looks, then the checks: an event and what it sets off are seen together.
                 int first = next;
-                for (; next < order.Count && s.Steps[order[next]].At <= now; next++) Happen(s.Steps[order[next]], order[next] + 1, now, w, engine, r);
+                RehearsalLook look = next < order.Count && s.Steps[order[next]].At <= now ? new RehearsalLook { At = now } : null;
+                if (look != null) foreach (TriggerPlan t in p.Triggers) look.Before[t.Id] = engine.Explain(t, now, w).Phase;
+                if (look != null) foreach (GoalPlan g in p.Goals) look.GoalsBefore[g.Id] = book.State(g.Id);
+                for (; next < order.Count && s.Steps[order[next]].At <= now; next++) Happen(s.Steps[order[next]], order[next] + 1, now, p, w, engine, r);
                 engine.Step(now, w);
-                for (int i = first; i < next; i++) if (s.Steps[order[i]].Expect != null) Expect(s.Steps[order[i]], order[i] + 1, now, p, w, engine, r);
+                r.Goals.AddRange(book.Step(now, engine.EverFired));
+                if (look != null)
+                {
+                    foreach (TriggerPlan t in p.Triggers)
+                    {
+                        TriggerView v = engine.Explain(t, now, w);
+                        look.After[t.Id] = v.Phase;
+                        if (v.Alive >= 0) look.Inside[t.Id] = v.Inside.ToString(CultureInfo.InvariantCulture) + "/" + v.Alive.ToString(CultureInfo.InvariantCulture);
+                    }
+                    foreach (GoalPlan g in p.Goals) look.GoalsAfter[g.Id] = book.State(g.Id);
+                    r.Looks.Add(look);
+                }
+                for (int i = first; i < next; i++) if (s.Steps[order[i]].Expect != null) Expect(s.Steps[order[i]], order[i] + 1, now, p, w, engine, book, r);
             }
             r.Passed = r.Blocked == "" && r.Steps.TrueForAll(x => x.Ok);
             return r;
@@ -405,8 +491,8 @@ namespace MissionLab.Core
             return "trigger " + id + (t == null || string.IsNullOrEmpty(t.Name) ? "" : " '" + t.Name + "'");
         }
 
-        // The script's inputs: players move, an event happens, a trigger is set off by hand.
-        private static void Happen(RehearsalStep st, int number, float now, ScriptWorld w, TriggerEngine engine, RehearsalResult r)
+        // The script's inputs: players move, an event happens, a trigger is set off by hand, a firing's outcome is reported.
+        private static void Happen(RehearsalStep st, int number, float now, MissionPlan p, ScriptWorld w, TriggerEngine engine, RehearsalResult r)
         {
             string step = Step(number, st.At);
             if (st.Players != null)
@@ -421,44 +507,67 @@ namespace MissionLab.Core
             }
             if (st.Fire > 0)
             {
-                bool ok = engine.FireNow(st.Fire, now, out _, out string why);
-                r.Steps.Add(new StepResult { At = st.At, What = step + ": trigger " + st.Fire + " is fired by hand", Expected = "it fires", Actual = ok ? "it fired" : "refused: " + why, Ok = ok });
+                bool ok = engine.FireNow(st.Fire, now, out TriggerEvent fired, out string why);
+                r.Steps.Add(new StepResult { At = st.At, What = step + ": trigger " + st.Fire + " is fired by hand", Trigger = st.Fire, Invocation = ok ? fired.Invocation : 0, Expected = "it fires", Actual = ok ? "it fired" : "refused: " + why, Ok = ok });
+            }
+            if (st.OutcomeOf > 0)
+            {
+                // Told for the firing that is latest now, as the runtime tells it; outcome triggers watching it look at the same moment.
+                int y = st.OutcomeOf, n = engine.Fires(y);
+                var watchers = new List<string>();
+                foreach (TriggerPlan t in p.Triggers) if (t.When == TriggerPlan.OnOutcome && t.After == y) watchers.Add(Name(p, t.Id) + " (waits for " + t.Outcome + ")");
+                string watched = watchers.Count == 0 ? "" : "; watched by " + string.Join(", ", watchers);
+                Invocation inv = n > 0 ? engine.Report(y, n, st.Outcome, "told by the rehearsal") : null;
+                if (inv == null)
+                    r.Steps.Add(new StepResult { At = st.At, What = step + ": " + Name(p, y) + " is reported " + st.Outcome + watched, Trigger = y, Expected = "a firing to report on",
+                                                 Actual = "it has not fired, so there is no firing to report on", Ok = false });
+                else
+                    r.Steps.Add(new StepResult { At = st.At, What = step + ": firing " + n + " of " + Name(p, y) + " is reported " + st.Outcome + watched, Trigger = y, Invocation = n,
+                                                 Expected = "recorded", Actual = inv.Late ? "recorded as " + engine.State(y).Late : "recorded", Ok = true });
             }
         }
 
-        private static void Expect(RehearsalStep st, int number, float now, MissionPlan p, ScriptWorld w, TriggerEngine engine, RehearsalResult r)
+        private static void Expect(RehearsalStep st, int number, float now, MissionPlan p, ScriptWorld w, TriggerEngine engine, GoalBook book, RehearsalResult r)
         {
             RehearsalExpect x = st.Expect;
             string step = Step(number, st.At);
-            void Add(string what, string expected, string actual, bool ok) => r.Steps.Add(new StepResult { At = st.At, What = step + ": " + what, Expected = expected, Actual = actual, Ok = ok });
+            void Add(string what, string expected, string actual, bool ok, int trigger = 0, bool extraction = false) =>
+                r.Steps.Add(new StepResult { At = st.At, What = step + ": " + what, Trigger = trigger, Extraction = extraction, Expected = expected, Actual = actual, Ok = ok });
             TriggerPlan Find(int id) => p.Triggers.Find(t => t.Id == id);
 
             foreach (int id in x.Fired)
             {
                 TriggerPlan t = Find(id);
-                if (t == null) { Add(Name(p, id) + " has fired", "fired", "there is no trigger " + id, false); continue; }
+                if (t == null) { Add(Name(p, id) + " has fired", "fired", "there is no trigger " + id, false, id); continue; }
                 bool ok = engine.EverFired(id);
-                Add(Name(p, id) + " has fired", "fired", ok ? "fired" : "not fired: " + engine.Explain(t, now, w).Why, ok);
+                Add(Name(p, id) + " has fired", "fired", ok ? "fired" : "not fired: " + engine.Explain(t, now, w).Why, ok, id);
             }
             foreach (int id in x.NotFired)
             {
                 TriggerPlan t = Find(id);
-                if (t == null) { Add(Name(p, id) + " has not fired", "not fired", "there is no trigger " + id, false); continue; }
+                if (t == null) { Add(Name(p, id) + " has not fired", "not fired", "there is no trigger " + id, false, id); continue; }
                 bool fired = engine.EverFired(id);
                 TriggerState s = engine.State(id);
-                Add(Name(p, id) + " has not fired", "not fired", fired ? "fired " + (s.ByHand ? "by hand " : "") + "at " + Secs(s.LastFiredAt ?? 0f) : "not fired", !fired);
+                Add(Name(p, id) + " has not fired", "not fired", fired ? "fired " + (s.ByHand ? "by hand " : "") + "at " + Secs(s.LastFiredAt ?? 0f) : "not fired", !fired, id);
             }
             foreach (KeyValuePair<int, string> want in x.Phase)
             {
                 TriggerPlan t = Find(want.Key);
-                if (t == null) { Add(Name(p, want.Key) + " is " + want.Value, want.Value, "there is no trigger " + want.Key, false); continue; }
+                if (t == null) { Add(Name(p, want.Key) + " is " + want.Value, want.Value, "there is no trigger " + want.Key, false, want.Key); continue; }
                 TriggerView v = engine.Explain(t, now, w);
-                Add(Name(p, want.Key) + " is " + want.Value, want.Value, v.Phase + ": " + v.Why, v.Phase == want.Value);
+                Add(Name(p, want.Key) + " is " + want.Value, want.Value, v.Phase + ": " + v.Why, v.Phase == want.Value, want.Key);
+            }
+            foreach (KeyValuePair<string, string> want in x.Goals)
+            {
+                GoalPlan g = book.Find(want.Key);
+                string what = "goal " + want.Key + (g == null ? "" : " '" + g.Name + "'") + " is " + want.Value;
+                if (g == null) { Add(what, want.Value, "there is no goal \"" + want.Key + "\"", false); continue; }
+                Add(what, want.Value, book.State(want.Key), book.State(want.Key) == want.Value);
             }
             if (x.Extraction != "")
             {
-                string actual = ExtractionOf(p, engine, out string why);
-                Add("the extraction is " + x.Extraction, x.Extraction, actual + ": " + why, actual == x.Extraction);
+                string actual = ExtractionOf(p, engine, book, out string why);
+                Add("the extraction is " + x.Extraction, x.Extraction, actual + ": " + why, actual == x.Extraction, 0, true);
             }
             if (x.Enemies >= 0)
             {
@@ -468,14 +577,22 @@ namespace MissionLab.Core
             }
         }
 
-        // Open when the scenario does not hold it, when what it waits for has fired, or when a fired trigger opens it.
-        private static string ExtractionOf(MissionPlan p, TriggerEngine engine, out string why)
+        // Open when the scenario does not hold it, when what it waits for has fired and every required goal has succeeded (as
+        // the scenario asks), or when a fired trigger opens it.
+        private static string ExtractionOf(MissionPlan p, TriggerEngine engine, GoalBook book, out string why)
         {
-            if (p.ExtractionAfter == 0) { why = "the scenario does not hold it"; return Open; }
-            if (engine.EverFired(p.ExtractionAfter)) { why = Name(p, p.ExtractionAfter) + " has fired"; return Open; }
+            if (p.ExtractionAfter == 0 && !p.ExtractionGoals) { why = "the scenario does not hold it"; return Open; }
+            bool waits = p.ExtractionAfter != 0 && !engine.EverFired(p.ExtractionAfter);
+            string goals = p.ExtractionGoals ? book.Holding() : "";
+            if (!waits && goals == "")
+            {
+                why = p.ExtractionAfter == 0 ? "every required objective is complete"
+                    : Name(p, p.ExtractionAfter) + " has fired" + (p.ExtractionGoals ? " and every required objective is complete" : "");
+                return Open;
+            }
             TriggerPlan opener = p.Triggers.Find(t => t.OpensExtraction && engine.EverFired(t.Id));
             if (opener != null) { why = Name(p, opener.Id) + " opened it"; return Open; }
-            why = "it waits for " + Name(p, p.ExtractionAfter);
+            why = waits ? "it waits for " + Name(p, p.ExtractionAfter) + (goals == "" ? "" : "; " + goals) : goals;
             return Held;
         }
 

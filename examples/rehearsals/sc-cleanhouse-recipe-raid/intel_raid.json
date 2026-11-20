@@ -1,0 +1,14 @@
+{"schema":"missionlab-rehearsal/1","name":"Intel raid: in, intel, out","scenario":"fnv1a64:147feefb96ff789b","players":1,"steps":[
+{"at":0,"players":[[-40.3,0.6,-61.2]]},
+{"at":0,"expect":{"notFired":[1]}},
+{"at":0,"expect":{"extraction":"held"}},
+{"at":25,"players":[[-20.5,0.68,-4]]},
+{"at":26,"expect":{"fired":[1]}},
+{"at":26,"expect":{"extraction":"held"}},
+{"at":55,"event":"intel"},
+{"at":56,"expect":{"fired":[2]}},
+{"at":56,"expect":{"extraction":"open"}},
+{"at":81,"players":[[-40.3,0.6,-61.2]]},
+{"at":82,"expect":{"extraction":"open"}},
+{"at":82,"expect":{"notFired":[4]}}
+]}

@@ -1,0 +1,16 @@
+{"schema":"missionlab-rehearsal/1","name":"the front door counts","players":1,"steps":[
+{"at":0,"players":[[10,0,-6]]},
+{"at":0.5,"players":[[10,0,-5]]},
+{"at":1,"players":[[10,0,-4]]},
+{"at":1.5,"players":[[10,0,-3]]},
+{"at":2,"players":[[10,0,-2]]},
+{"at":2.5,"players":[[10,0,-1]]},
+{"at":2.5,"expect":{"notFired":[1]}},
+{"at":2.5,"expect":{"phase":{"1":"waiting"}}},
+{"at":3,"players":[[10,0,0]]},
+{"at":3,"expect":{"fired":[1]}},
+{"at":3.5,"players":[[10,0,1]]},
+{"at":4,"players":[[10,0,2]]},
+{"at":4.5,"players":[[10,0,3]]},
+{"at":5,"players":[[10,0,4]]}
+]}

@@ -14,7 +14,8 @@
   "seed": 0,
   "notes": [
     "Pacing: set by the host. Triggers 1 to 5 never fire by themselves; the host fires them by hand with Fire now while the mission runs.",
-    "1 'GM: patrol from the north' brings two patrols. 2 'GM: lights out' cuts the power, 3 'GM: lights on' brings it back. 4 'GM: hunters' brings two enemies that walk to the nearest player. 5 'GM: open the way out' opens the extraction at once.",
+    "1 'GM: patrol from the north' brings two patrols. 2 'GM: lights out' cuts the power, 3 'GM: lights on' brings it back. 4 'GM: patrols to the house' brings two enemies that walk a patrol route to the house's doors. 5 'GM: open the way out' opens the extraction at once.",
+    "Trigger 4 used to bring hunters sent at the nearest player; those stood still in the game (18 November), so it now uses patrol routes, which have been walked. The page's order (select enemies, then click a spot) is logged order by order, from taken to arrived or why not; it has moved enemies after a fight, not yet fresh ones.",
     "Completion: extract once the extraction is open. It opens by itself when the phone is taken (trigger 6) or 20 minutes in (trigger 7, which the extraction waits for), so the mission can be finished with no host action at all. Failure: everyone dead, as in the game.",
     "Optional content: one wanderer in the yard at (-4, -2) is there one mission in two (chance 50).",
     "Minutes and squad are the author's estimate; no playtest has measured them yet."
@@ -48,13 +49,12 @@
     },
     {
       "id": 4,
-      "name": "GM: hunters",
+      "name": "GM: patrols to the house",
       "when": "after",
       "after": 0,
-      "hunt": true,
       "red": true,
       "facePlayer": true,
-      "message": "Someone is hunting you."
+      "message": "More of them are walking to the house."
     },
     {
       "id": 5,
@@ -100,7 +100,7 @@
     {"group": 1, "role": "Wander", "pos": [-4.0, 0.08, -2.0], "yaw": 270, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 10, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "chance": 50, "patrol": []},
     {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
     {"group": 2, "role": "Patrol", "pos": [0.0, 0.0, 70.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 1, "hvt": false, "patrol": [[0.0, 0.08, 34.0], [-9.0, 0.36, 8.0], [-3.0, 0.0, -12.0]]},
-    {"group": 3, "role": "Wander", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": []},
-    {"group": 3, "role": "Wander", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 12, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": []}
+    {"group": 3, "role": "Patrol", "pos": [5.0, 0.08, 20.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": [[-3.0, 0.18, 8.0], [-9.0, 0.17, -2.0], [-18.0, 0.51, -22.0]]},
+    {"group": 3, "role": "Patrol", "pos": [3.0, 0.0, 26.0], "yaw": 200, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 4, "hvt": false, "patrol": [[-9.0, 0.36, 8.0], [-25.0, 0.5, 14.0], [-30.5, 0.51, -12.0], [-20.0, 0.51, -21.0]]}
   ]
 }

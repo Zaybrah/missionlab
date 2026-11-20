@@ -17,6 +17,7 @@
     "A sealed copy of Clean House: Quiet Raid, with the same positions, for hosts who want to find the enemies along with their squad.",
     "Sealed is spoiler avoidance in the editor's Play and Direct views, not secrecy: this file stays readable, and opening it in Create asks before it shows the enemies.",
     "Completion: take the phone (trigger 1 'Phone taken'), which opens the extraction, then extract. Failure: four minutes after the alarm (trigger 3 'Too late').",
+    "Alarm (trigger 2): two patrols from the north walk a route round the house. They do not hunt: enemies sent after a player just after they appeared stood still in the game (18 November), while patrol routes have been walked.",
     "Minutes and squad are the author's estimate; no playtest has measured them yet."
   ],
   "triggers": [
@@ -34,7 +35,6 @@
       "when": "alert",
       "delay": 10,
       "facePlayer": true,
-      "hunt": true,
       "red": true,
       "message": "They know you are here. More are coming: four minutes."
     },
@@ -69,7 +69,7 @@
     {"group": 0, "role": "Wander", "pos": [-22.5, 3.68, -1.0], "yaw": 90, "indoor": true, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 4, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": []},
     {"group": 1, "role": "Patrol", "pos": [-9.0, 0.36, 8.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 3, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "patrol": [[-9.0, 0.27, -12.0], [-3.0, 0.0, -12.0], [-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0]]},
     {"group": 1, "role": "Wander", "pos": [-25.0, 0.5, 14.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 8, "patrolWaitSeconds": 4, "fixed": false, "prone": false, "type": "", "trigger": 0, "hvt": false, "chance": 50, "patrol": []},
-    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.03, 30.0], [2.0, 0.01, 8.0], [-3.0, 0.0, -12.0]]},
-    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[4.0, 0.07, 32.0], [-3.0, 0.18, 8.0], [-9.0, 0.27, -12.0]]}
+    {"group": 2, "role": "Patrol", "pos": [2.0, 0.03, 62.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[2.0, 0.01, 8.0], [-9.0, 0.17, -2.0], [-10.0, 0.31, -10.0], [-18.0, 0.51, -22.0], [-9.0, 0.27, -12.0]]},
+    {"group": 2, "role": "Patrol", "pos": [6.0, 0.11, 66.0], "yaw": 180, "indoor": false, "defensive": false, "detectionRange": 0, "hearingRange": 0, "fov": 0, "wanderDistance": 0, "patrolWaitSeconds": 2, "fixed": false, "prone": false, "type": "", "trigger": 2, "hvt": false, "patrol": [[-3.0, 0.18, 8.0], [-9.0, 0.36, 8.0], [-25.0, 0.5, 14.0], [-30.5, 0.51, -12.0], [-22.0, 0.51, -24.0]]}
   ]
 }

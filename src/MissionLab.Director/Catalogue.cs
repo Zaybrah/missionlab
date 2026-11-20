@@ -21,20 +21,59 @@ namespace MissionLab
         private const int MaxFiles = 200;                  // more than this and the folder is not a catalogue any more; the rest is left out
         private const long MaxBytes = 4L * 1024 * 1024;    // a scenario this large is not one the page made
 
-        // Capabilities seen working in the game with MissionLab (docs/findings.md and docs/backlog-status.md). Anything else a
-        // scenario uses is shown as untested, so a host knows what has not been proven before relying on it. A word is added
-        // here only after it was seen in a run.
-        private static readonly HashSet<string> Seen = new HashSet<string>(StringComparer.Ordinal)
+        // What each capability has been seen to do in the game, with build, map, mode and who saw it (docs/capabilities.json,
+        // built into this DLL by tools/build.py). Read once; a broken list only means less is claimed, never more.
+        private static readonly CapabilityRegistry Registry = LoadRegistry();
+
+        private static CapabilityRegistry LoadRegistry()
         {
-            "doors",        // the intel trigger changed its door (third run)
-            "things",       // placed rifles lay there and could be used (fourth run)
-            "teams",        // a second enemy side fought the first (fourth and fifth runs)
-            "chance",       // chance and either/or rolled differently between missions (fourth run)
-            "messages",     // trigger messages appeared on screen (after the fourth run)
-            "vehicles",     // the gun truck was placed when the game's spawner brought none (fourth run)
-            "power",        // "lights out" made the house go dark (third run)
-            "respawn",      // a shared wave was announced and a player seen back (0.24.0)
-        };
+            CapabilityRegistry r = CapabilityRegistry.Embedded();
+            foreach (string p in r.Problems) DirectorPlugin.L.LogWarning("capability list: " + p + "; the catalogue claims less for it");
+            return r;
+        }
+
+        // Recon files (BepInEx/MissionLab/recon, written by MissionLab.Recon when it is installed) tell which intel items and
+        // target points a map has, so a scenario that needs one the map lacks is named before it is chosen. Each file is
+        // parsed again only when its size or time changes; several worker threads may ask at once, hence the lock.
+        private static readonly object ReconLock = new object();
+        private static readonly Dictionary<string, KeyValuePair<string, MapFacts>> ReconSeen = new Dictionary<string, KeyValuePair<string, MapFacts>>(StringComparer.OrdinalIgnoreCase);
+        private const int MaxRecon = 40;
+        private const long MaxReconBytes = 64L * 1024 * 1024;
+
+        private static List<MapFacts> Recon()
+        {
+            var list = new List<MapFacts>();
+            try
+            {
+                string dir = Path.Combine(DirectorPlugin.BaseDir, "recon");
+                if (!Directory.Exists(dir)) return list;
+                var files = new List<string>();
+                foreach (string f in Directory.GetFiles(dir, "*.json", SearchOption.TopDirectoryOnly))
+                    if (!f.EndsWith(".movement.json", StringComparison.OrdinalIgnoreCase)) files.Add(f);
+                files.Sort(StringComparer.OrdinalIgnoreCase);
+                lock (ReconLock)
+                {
+                    for (int i = 0; i < files.Count && i < MaxRecon; i++)
+                    {
+                        try
+                        {
+                            var info = new FileInfo(files[i]);
+                            if (info.Length > MaxReconBytes) continue;
+                            string stamp = info.Length + "-" + info.LastWriteTimeUtc.Ticks;
+                            if (!ReconSeen.TryGetValue(files[i], out KeyValuePair<string, MapFacts> had) || had.Key != stamp)
+                            {
+                                had = new KeyValuePair<string, MapFacts>(stamp, MapFacts.FromRecon("recon/" + info.Name, File.ReadAllText(files[i])));
+                                ReconSeen[files[i]] = had;
+                            }
+                            if (had.Value != null) list.Add(had.Value);
+                        }
+                        catch (Exception) { }     // a recon file being written right now is read next time
+                    }
+                }
+            }
+            catch (Exception e) { DirectorPlugin.L.LogWarning("recon files could not be read for the catalogue: " + e.Message); }
+            return list;
+        }
 
         /// <summary>Worker thread. null: not a catalogue request.</summary>
         internal static HttpResponse Handle(HttpRequest r)
@@ -71,6 +110,7 @@ namespace MissionLab
                 if (Directory.Exists(Dir))
                 {
                     List<RunSummary> runs = Runs();
+                    List<MapFacts> maps = Recon();
                     var files = new List<string>(Directory.GetFiles(Dir, "*.json", SearchOption.TopDirectoryOnly));
                     files.Sort(StringComparer.OrdinalIgnoreCase);
                     foreach (string path in files)
@@ -84,11 +124,12 @@ namespace MissionLab
                         }
                         catch (Exception) { skipped++; continue; }
                         CatalogueEntry e = CatalogueInfo.Build(file, text, runs);
+                        CatalogueInfo.Check(e, Registry, DirectorPlugin.Version, maps);
                         // The compatibility table judges a map file; a scenario naming none cannot be judged, so it stays unknown ("").
                         string compat = e.NavFile != "" ? LiveLink.CompatFor(Path.GetFileName(e.NavFile), "", true, "host") : "";
                         string map = e.NavFile != "" || e.Scene != "" ? Picker.MapName(e.NavFile, e.Scene) : "";
                         sb.Append(n++ > 0 ? "," : "");
-                        CatalogueInfo.Write(e, sb, compat, Seen, map);
+                        CatalogueInfo.Write(e, sb, compat, map);
                     }
                 }
             }

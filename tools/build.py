@@ -95,15 +95,18 @@ def main():
         for p in dlls: f.write('"-r:' + os.path.abspath(p) + '"\n')
     print('csc: ' + csc + '  (' + str(len(dlls)) + ' managed references)')
     src = lambda name: sorted(glob.glob(os.path.join(HERE, 'src', name, '*.cs')))
-    builds = [('MissionLab.Recon.dll', src('MissionLab.Recon')),
-              ('MissionLab.Director.dll', src('MissionLab.Core') + src('MissionLab.Director'))]
-    for name, files in builds:
+    # The capability list goes into the Director as a resource, under the name Core's CapabilityRegistry.Embedded reads
+    # (tests/Pure/Pure.csproj embeds the same file under the same name).
+    capabilities = '-resource:' + os.path.join(HERE, 'docs', 'capabilities.json') + ',MissionLab.capabilities.json'
+    builds = [('MissionLab.Recon.dll', src('MissionLab.Recon'), []),
+              ('MissionLab.Director.dll', src('MissionLab.Core') + src('MissionLab.Director'), [capabilities])]
+    for name, files, extra in builds:
         target = os.path.join(out, name)
-        code = subprocess.run(['dotnet', csc, '@' + rsp] + FLAGS + ['-out:' + target] + files).returncode
+        code = subprocess.run(['dotnet', csc, '@' + rsp] + FLAGS + extra + ['-out:' + target] + files).returncode
         if code != 0:
             print('Building ' + name + ' failed (exit ' + str(code) + ').', file=sys.stderr)
             sys.exit(1)
-    for name, _ in builds:
+    for name, _, _ in builds:
         p = os.path.join(out, name)
         print('%-28s %d bytes' % (os.path.relpath(p, HERE), os.path.getsize(p)))
 

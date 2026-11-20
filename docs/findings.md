@@ -316,7 +316,46 @@ reads (`body.transform.position`), and it is at the feet: 0.68–0.70 on the gro
 - **The old circle would have been wrong.** A 10 m circle at the same anchor fired 53 s early on 18 November (in the
   front garden at 57.7 s; the house was entered at 111.2 s), counted 259 positions outside the house (doorstep,
   veranda, garden) and flickered on and off in the north rooms at its edge.
-- **Still for the game:** a shape sent live from the page during a mission, and a client inside the area.
+- **Still for the game:** a shape sent live from the page during a mission. (A second player inside a painted hold: seen
+  on 19 November, below.)
+
+## Run of 19 November 2026 (0.26.1, Clean House by night, two players)
+
+One mission of `clean_house_two_man_job` (sealed), the host and one friend, 11:15 from setup to the end. Picks: Garrison
+Standard, Regulars, Second chances Two, Time limit 25 minutes; option A rolled (the courier upstairs). No MissionLab
+warning or error in the log. Only the host's log, run record and recording were kept: what the friend saw, and whether
+they had the mod, is not recorded, so none of this is a client's word.
+- **Setup.** 9 enemies at the start, scatter moved all 5 that could move, both players given Alpha 2 when the mission was
+  set up, the extraction held until trigger 5, the notice that the host runs MissionLab sent with 2 players in.
+- **A painted hold by everyone counted both players.** Both were upstairs from about 219 s; "Upstairs held" fired at
+  279.2 s, 60 s after the second one went up.
+- **Triggers.** The alarm fired at 66.8 s (10 s after the first alert) and brought the two street patrols; "Courier down"
+  at 132.7 s (nobody was dead, so its respawn brought nobody); "Yard waves" at 157.1, 307.3 and 457.6 s and then no
+  more; the intel at 286.3 s fired "Both jobs" and "Way out" in the same look, and the extraction opened.
+- **Messages that did not fit the order of play.** The hold came before the intel, so the intel's message ("Now hold the
+  upstairs together for a minute, or last six minutes while it cracks") went out at 286.3 s, after the hold was done,
+  and the way-out message waited its 4.5 s behind it. The host fired "Cracked anyway" by hand at 605.8 s; it has no
+  message and the way out had already fired, so nothing visible happened. The squad walked to the street at about 656 s.
+  The scenario's messages now read right in either order, and the way out says "Job done".
+- **Repeats that brought nobody still spoke.** At 307 and 457 s both enemies of "Yard waves" were alive (they went down at
+  475 and 478 s), so the repeat brought nobody but still showed "More of them in the yard…". From 0.26.2 such a repeat
+  leaves its message out when it does nothing else.
+- **Cards.** "Cut the lights" (4 points) at 350.3 s: the breaker answered off. "Send a street patrol" (3 points, 2.09
+  left) at 535.9 s: one enemy appeared 0.04 s later.
+- **Extraction read as death.** Both players stood in the extraction zone on the street (-8.7, -5 and -7.3, -6.7) from
+  about 660 s, the game's 15 s extraction timer, and both bodies were gone at 674.0 s. At 673.96 s the respawn rule
+  counted "2 dead", announced a wave and sent "2 players are down. Reinforcement wave in 30 seconds." to every screen; the
+  mission was over at 675.45 s. The same announcement followed every success ending recorded before (17 November at
+  249.2 s, 18 November at 138.6 and 239.0 s). The run record said "over", not "success". 0.26.2 hooks the game's
+  `GameManagerNetwork.ServerCompleteExfil`: from there nobody counts as dead, no trigger fires and the record says
+  "success"; no wave is counted either while `GameManagerNetwork.isExtracting` is on.
+- **Extraction opened "set on each extraction zone", as in every run before.** The zones' `canExtract` was still off right
+  after the game's own `EnableGlobalExtraction()`; the fallback set it and the squad extracted. `GameManagerNetwork` also
+  has a mission-wide `canExtract`; 0.26.2 logs it when the extraction opens, so a run can tell which one the game uses.
+- **Facing.** Enemies of a trigger with `facePlayer` are turned toward a player, but the facing check logged the plan's
+  yaw as "planned" (270 against an object at 181 looked like a failure). From 0.26.2 it logs the facing asked for.
+- **A timer from the start is not told when it starts** (by design, pinned by a test); the scenario's note claimed it was.
+  Nothing in the mission names the 25-minute limit before five minutes are left.
 
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than

@@ -78,6 +78,49 @@ function membershipInside(trigger, p) {
   return dx * dx + dz * dz <= trigger.radius * trigger.radius && Math.abs(p[1] - trigger.pos[1]) <= 2;
 }
 
+// Why a point is inside or outside a trigger's place (ML-043's probe), worked out by the same rules as membershipInside
+// and areaContains, part by part, so the answer can name what decided it. A point is inside through the first part that
+// takes it; outside, every part says what it failed: below or above its floor band (no tolerance), off its outline (an
+// edge within 0.01 m counts), or well inside one of its holes (a hole's edge still counts).
+// { inside, kind: 'area' | 'circle' | 'none', part, hole, edge, parts: [{ part, ok, fail: 'below' | 'above' | 'outline' | 'hole' | '', hole, bottom, top }],
+//   distance, radius, rise (circle only), why }
+function membershipExplain(trigger, p) {
+  const m = n => String(Math.round(n * 100) / 100) + ' m';
+  if (!trigger || !isVec(p)) return { inside: false, kind: 'none', part: -1, hole: -1, edge: false, parts: [], why: 'There is no place to be inside.' };
+  const x = p[0], y = p[1], z = p[2];
+  if (trigger.area && trigger.area.parts && trigger.area.parts.length) {
+    const parts = [];
+    for (let i = 0; i < trigger.area.parts.length; i++) {
+      const part = trigger.area.parts[i], bottom = part.floor[0], top = part.floor[1], outline = areaFlat(part.outline);
+      const one = { part: i, ok: false, fail: '', hole: -1, bottom, top };
+      parts.push(one);
+      if (y < bottom) { one.fail = 'below'; continue; }
+      if (y > top) { one.fail = 'above'; continue; }
+      if (!areaInRing(outline, x, z)) { one.fail = 'outline'; continue; }
+      const holes = (part.holes || []).map(areaFlat);
+      const cut = holes.findIndex(h => areaWellInside(h, x, z));
+      if (cut >= 0) { one.fail = 'hole'; one.hole = cut; continue; }
+      one.ok = true;
+      const edge = areaOnEdge(outline, x, z) ? 'on the edge of its outline (within 0.01 m counts as on it)'
+        : holes.some(h => areaOnEdge(h, x, z)) ? 'on the edge of one of its holes (a hole\'s edge belongs to the area)' : '';
+      return { inside: true, kind: 'area', part: i, hole: -1, edge: !!edge, parts,
+        why: 'Inside: part ' + (i + 1) + ' takes it, its floor band ' + m(bottom) + ' to ' + m(top) + ' holds the height ' + m(y) + (edge ? ', and it stands ' + edge : '') + '.' };
+    }
+    const said = parts.map(q => 'part ' + (q.part + 1) + (q.fail === 'below' ? ' starts at ' + m(q.bottom) + ', above this height'
+      : q.fail === 'above' ? ' ends at ' + m(q.top) + ', below this height'
+        : q.fail === 'hole' ? ': it is in hole ' + (q.hole + 1) + ', which is left out'
+          : ': it is off the outline'));
+    const hole = parts.find(q => q.fail === 'hole');
+    return { inside: false, kind: 'area', part: -1, hole: hole ? hole.hole : -1, edge: false, parts, why: 'Outside at height ' + m(y) + ': ' + said.join('; ') + '.' };
+  }
+  if (!isVec(trigger.pos)) return { inside: false, kind: 'none', part: -1, hole: -1, edge: false, parts: [], why: 'This trigger has no place yet.' };
+  const dx = x - trigger.pos[0], dz = z - trigger.pos[2], distance = Math.sqrt(dx * dx + dz * dz), rise = y - trigger.pos[1];
+  const across = dx * dx + dz * dz <= trigger.radius * trigger.radius, level = Math.abs(rise) <= 2;
+  const words = m(distance) + ' from the anchor across, the radius is ' + m(trigger.radius) + '; ' + m(Math.abs(rise)) + (rise < 0 ? ' below' : ' above') + ' it, and 2 m up or down counts';
+  return { inside: across && level, kind: 'circle', part: -1, hole: -1, edge: false, parts: [], distance, radius: trigger.radius, rise,
+    why: (across && level ? 'Inside the circle: ' : !across ? 'Outside the circle: ' : 'Outside: on another floor: ') + words + '.' };
+}
+
 // The strict rules for the "area" of a trigger or a place at `at` ('triggers[3]'; paths read 'triggers[3].area.parts[0].outline').
 // At most one finding per ring: the first rule it breaks. bad(code, path, text) as in scenarioProblems.
 function areaProblems(json, at, bad) {
@@ -209,3 +252,22 @@ function areaOverlap(a, b) {
   for (let k = 0; k < b.length; k += 2) if (areaWellInside(a, b[k], b[k + 1])) return true;
   return areaCrossing(a, b);
 }
+// Where the straight ground-plan segment from a to b ([x, y, z] each) meets an edge of any outline or hole of the area, as
+// fractions along it from 0 to 1, in order. The walkthrough (29j-walk.js) checks membership just either side of each.
+function areaSegmentCrossings(area, a, b) {
+  const out = [], ax = a[0], az = a[2], dx = b[0] - a[0], dz = b[2] - a[2];
+  const ring = r => {
+    const n = r.length / 2;
+    for (let k = 0; k < n; k++) {
+      const next = (k + 1) % n, ex = r[2 * next] - r[2 * k], ez = r[2 * next + 1] - r[2 * k + 1];
+      const d = dx * ez - dz * ex;
+      if (Math.abs(d) < 1e-12) continue;      // parallel: the ends' own membership says what happens along it
+      const qx = r[2 * k] - ax, qz = r[2 * k + 1] - az, s = (qx * ez - qz * ex) / d, u = (qx * dz - qz * dx) / d;
+      if (s >= 0 && s <= 1 && u >= 0 && u <= 1) out.push(s);
+    }
+  };
+  for (const part of area.parts) { ring(areaFlat(part.outline)); for (const h of part.holes || []) ring(areaFlat(h)); }
+  return out.sort((p, q) => p - q);
+}
+
+expose({ membershipExplain, areaSegmentCrossings });   // the probe and the walkthrough's crossing check (ML-043), for automated tests

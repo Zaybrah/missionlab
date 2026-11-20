@@ -157,6 +157,10 @@ namespace MissionLab
             { HttpResponse told = Debriefs.Handle(r); if (told != null) return told; }        // debriefs and unused content: recordings and run records only (ML-024)
             { HttpResponse packed = Packs.Handle(r); if (packed != null) return packed; }     // installing a scenario pack: files only (ML-026)
             { HttpResponse swept = ScatterPreview.Handle(r); if (swept != null) return swept; }   // scatter seeds tried: Core and the game's navmesh file only (ML-023)
+            { HttpResponse checkedAll = Validations.Handle(r); if (checkedAll != null) return checkedAll; }   // validation matrix: Core, the navmesh file and kept rehearsals, on a thread of its own (ML-048)
+            { HttpResponse listed = Playlists.Handle(r); if (listed != null) return listed; }  // squad-session playlists: files only; setting an entry up is queued below (ML-049)
+            { HttpResponse chained = Operations.Handle(r); if (chained != null) return chained; }   // branching operations: files only; setting the next mission up is queued below (ML-051)
+            { HttpResponse drafted = AgentApi.Handle(r); if (drafted != null) return drafted; }   // draft authoring for coding agents: files only, never the running mission (ML-053)
             if (r.Path == "/api/options/validate")                                             // host options checked: Core only, no game objects (ML-022)
             {
                 if (r.Method != "POST") return HttpResponse.Error(400, "POST expected");
@@ -296,6 +300,12 @@ namespace MissionLab
                     if (r.Method == "POST")
                         using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(r.BodyText)) Picker.SetPicks(doc.RootElement);
                     return HttpResponse.Json("{\"picks\":" + Picker.PicksJson(Picker.Picks()) + "}");
+                case Playlists.ArmRoute:
+                    // A playlist entry becomes the next mission: scenario choice, picks and dice, set where /api/choose, /api/options and /api/repeat set them (ML-049).
+                    return r.Method == "POST" ? Playlists.Arm(r.BodyText) : HttpResponse.Error(400, "POST expected");
+                case Operations.ArmRoute:
+                    // An operation's next mission is set up the way a playlist entry is (ML-051).
+                    return r.Method == "POST" ? Operations.Arm(r.BodyText) : HttpResponse.Error(400, "POST expected");
                 default: return HttpResponse.Error(404, "not found");
             }
         }

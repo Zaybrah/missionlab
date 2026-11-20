@@ -23,7 +23,7 @@ namespace MissionLab
         private struct Placed { public GameObject Go; public string Name; public Vector3 At; public float When; }
         private static readonly List<Placed> Watch = new List<Placed>();
 
-        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; _finishAt = -1f; _ended = false; Orders.Clear(); Messages.Reset(); _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); }
+        internal static void Reset() { RestoreRespawns("the mission is over"); Last = ""; Watch.Clear(); _marked = false; _lastAction = "the start of the mission"; _endAt = -1f; _finishAt = -1f; _ended = false; Orders.Clear(); Messages.Reset(); _respawnsOffAt = -1f; Hurried.Clear(); _speedLogged = false; Marches.Clear(); LastOrders.Clear(); _orderId = 0; _orderLines = 0; }
 
         // A failed mission: the players are told, and a few seconds later the game's own "end operation" takes everyone out.
         private static float _endAt = -1f;
@@ -324,19 +324,79 @@ namespace MissionLab
         /// within: only enemies this close to the spot (0: any distance). only: just these enemies (null: all).
         /// </summary>
         // An order is followed up. Seen on 17 November: a patrol route of one stop was taken by enemies after a fight, but not by
-        // fresh ones: a called enemy and a hunter stood still. So the mod now keeps at it once a second until the enemy has
-        // arrived, starts fighting, or ninety seconds are over, and it tries more than one way:
-        //   step 0: the patrol route (now one that loops) and the spot given straight to the navigation agent;
+        // fresh ones: a called enemy and a hunter stood still. So the mod keeps at it once a second until the order ends (Core
+        // OrderWatch decides how), and it tries more than one way:
+        //   step 0: the patrol route (one that loops) and the spot given straight to the navigation agent;
         //   step 1: after 6 s without progress, the game's own answer to a call for backup;
         //   step 2: after 14 s without progress, the call for backup itself.
-        // The log says how far each enemy got and at which step, so the next version can keep the way that works.
+        // Taking an order is not walking it (ML-035). On 18 November two fresh hunters took theirs and never had a path ("has a
+        // path no, Infinity m to go"), which the old log could not tell from an enemy that sets off late. So each order is logged
+        // by stage: taken (with its navigation agent as the game left it), a path found, on its way, and how it ended, in
+        // OrderWatch's words. One line per stage per order and at most OrderLines a mission, so a busy mission cannot fill the log.
         private sealed class March
         {
-            public IntPtr Bot; public Vector3 To, From; public float Since, NextLook; public int Step; public GameObject Stop;
-            public BrainAI.IdleStates Was; public bool Hunter, Reported; public int Overruled;
+            public IntPtr Bot; public Vector3 To, From; public float Since, NextLook, Start, Best, CloserAt; public int Step, Id, ShortLooks; public GameObject Stop;
+            public BrainAI.IdleStates Was; public bool Hunter; public int Overruled; public string Stage = Core.OrderWatch.Accepted;
         }
         private static readonly Dictionary<IntPtr, March> Marches = new Dictionary<IntPtr, March>();
         internal static int Marching => Marches.Count;
+        /// <summary>Is this enemy under an order that is still followed? Right after WalkTo: did it take the order.</summary>
+        internal static bool Ordered(IntPtr bot) => Marches.ContainsKey(bot);
+
+        /// <summary>How one order ended, or why it was never given; newest last, the last KeepOrders of the mission.</summary>
+        internal struct OrderEnd
+        {
+            public int Order;               // the order's number in this mission (0: it was never given)
+            public IntPtr Bot;              // the enemy
+            public string Word, Why;        // one of Core.OrderWatch's words, and the numbers behind it
+            public float Seconds, Closer;   // how long it ran, and how much closer the enemy came at best (metres, flat)
+        }
+        internal static readonly List<OrderEnd> LastOrders = new List<OrderEnd>();
+        private const int KeepOrders = 32, OrderLines = 150;
+        private static int _orderId, _orderLines;
+
+        private static void Keep(IntPtr bot, int order, string word, string why, float seconds, float closer)
+        {
+            LastOrders.Add(new OrderEnd { Order = order, Bot = bot, Word = word, Why = why, Seconds = seconds, Closer = closer });
+            if (LastOrders.Count > KeepOrders) LastOrders.RemoveAt(0);
+        }
+
+        private static void OrderLog(string line)
+        {
+            if (_orderLines > OrderLines) return;
+            _orderLines++;
+            DirectorPlugin.L.LogInfo(_orderLines > OrderLines ? "order: " + OrderLines + " lines about orders in this mission; the rest are left out of the log (how each order ended is still kept)" : line);
+        }
+
+        private static void Ended(March m, string word, string why, float now, string more)
+        {
+            string said = "order " + m.Id + ": " + word + ", " + why;
+            OrderLog(said + more);
+            Replay.Event("note", said);
+            Keep(m.Bot, m.Id, word, why, now - m.Since, Mathf.Max(0f, m.Start - m.Best));
+        }
+
+        private static int Rank(string stage) => stage == Core.OrderWatch.Moving ? 2 : stage == Core.OrderWatch.PathFound ? 1 : 0;
+
+        private static string Yes(bool v) => v ? "yes" : "no";
+
+        /// <summary>The enemy's state and its navigation agent, in one line: what the spike needs to see why an enemy does not walk.</summary>
+        private static string Legs(BrainAI b)
+        {
+            var inv = CultureInfo.InvariantCulture;
+            string who = "";
+            try { who = "state " + b.CurrentState + ", idle " + b.idleStates + ", "; } catch { }
+            try
+            {
+                AgentController legs = b.agent; var feet = legs == null ? null : legs.Agent;
+                if (feet == null) return who + "no navigation agent";
+                float to = feet.remainingDistance;
+                return who + "legs: path " + Yes(feet.hasPath) + ", working one out " + Yes(feet.pathPending) + ", searching " + Yes(feet.canSearch)
+                     + ", may move " + Yes(feet.canMove) + ", stopped " + Yes(feet.isStopped) + ", top speed " + feet.maxSpeed.ToString("0.##", inv)
+                     + ", speed now " + feet.velocity.magnitude.ToString("0.##", inv) + ", " + (float.IsInfinity(to) || float.IsNaN(to) ? "no distance" : to.ToString("0", inv) + " m") + " to go";
+            }
+            catch (Exception e) { return who + "legs could not be read: " + e.Message; }
+        }
 
         private static Transform PlayerNear(Vector3 spot)
         {
@@ -373,8 +433,16 @@ namespace MissionLab
                 AgentController legs = b.agent; var feet = legs == null ? null : legs.Agent;
                 if (feet != null)
                 {
-                    if (!route && (feet.destination - m.To).sqrMagnitude > 1f) m.Overruled++;     // something else gave it another spot since the last look
-                    feet.isStopped = false; feet.canMove = true; feet.destination = m.To; feet.SearchPath();
+                    bool ours = (feet.destination - m.To).sqrMagnitude <= 1f;
+                    if (!route && !ours) m.Overruled++;     // something else gave it another spot since the last look
+                    feet.isStopped = false; feet.canMove = true;
+                    // An agent with its own path search off may never work out a path; whether fresh enemies have it off is
+                    // in the order's first log line (read before this), not yet seen in the game.
+                    try { feet.canSearch = true; } catch { }
+                    // A new path only when the spot is new to it, or it has none and none is being worked out: asking every
+                    // second, as up to 0.26.2, may have thrown away a path that was still being worked out.
+                    if (route || !ours) { feet.destination = m.To; feet.SearchPath(); }
+                    else if (!feet.hasPath && !feet.pathPending) feet.SearchPath();
                 }
             }
             catch { }
@@ -396,36 +464,52 @@ namespace MissionLab
                 if (now < m.NextLook) continue;
                 m.NextLook = now + 1f;
                 BrainAI b = GameMaster.Find(gm, m.Bot);
-                if (b == null) { Marches.Remove(m.Bot); continue; }
+                if (b == null) { Ended(m, Core.OrderWatch.Gone, "it is no longer alive after " + (now - m.Since).ToString("0", inv) + " s", now, ""); Marches.Remove(m.Bot); continue; }
                 try
                 {
                     GameMaster.EnemyPose(b, out Vector3 at, out _);
                     Vector3 gone = at - m.From, togo = at - m.To; gone.y = 0f; togo.y = 0f;
-                    float moved = gone.magnitude, left = togo.magnitude, age = now - m.Since;
-                    string end = null;
+                    var look = new Core.OrderLook { Age = now - m.Since, Start = m.Start, Left = togo.magnitude, Moved = gone.magnitude };
+                    if (look.Left < m.Best - 1f) { m.Best = look.Left; m.CloserAt = now; }
+                    look.SinceCloser = now - m.CloserAt;
                     BrainAI.States state = b.CurrentState;
-                    if (left < 2.5f) end = "arrived after " + age.ToString("0", inv) + " s, by " + Steps[m.Step];
-                    else if (age > 2f && (state == BrainAI.States.TargetSighted || state == BrainAI.States.WasSighted || state == BrainAI.States.Suppress || state == BrainAI.States.FallBack))
-                        end = "is in a fight after " + moved.ToString("0.#", inv) + " m; the order is dropped";
-                    else if (age > 90f) end = "did not arrive: " + moved.ToString("0.#", inv) + " m in 90 s, " + left.ToString("0", inv) + " m short (all three ways tried)";
-                    if (end != null)
+                    look.Fighting = state == BrainAI.States.TargetSighted || state == BrainAI.States.WasSighted || state == BrainAI.States.Suppress || state == BrainAI.States.FallBack;
+                    float pathEnds = 0f;
+                    try
                     {
-                        DirectorPlugin.L.LogInfo("order: an enemy " + end);
-                        Replay.Event("note", "order: an enemy " + end);
+                        AgentController legs = b.agent; var feet = legs == null ? null : legs.Agent;
+                        if (feet != null)
+                        {
+                            // A path to a spot the game gave it since says nothing about this order's spot.
+                            bool ours = (feet.destination - m.To).sqrMagnitude <= 1f;
+                            look.HasPath = ours && feet.hasPath; look.Pending = feet.pathPending;
+                            // The game makes a path to the nearest point it can reach: one that ends away from the spot stops short.
+                            if (look.HasPath && !look.Pending) { Vector3 end = feet.endOfPath - m.To; end.y = 0f; pathEnds = end.magnitude; }
+                        }
+                    }
+                    catch { }
+                    m.ShortLooks = pathEnds > Core.OrderWatch.PathWithin ? m.ShortLooks + 1 : 0;
+                    if (m.ShortLooks >= 3) look.PathShort = pathEnds;           // three looks in a row, not a path still being finished
+                    string word = Core.OrderWatch.Judge(look, out string why);
+                    if (word != null)
+                    {
+                        bool ok = Core.OrderWatch.Succeeded(word);
+                        Ended(m, word, why + (ok ? ", by " + Steps[m.Step] : ""), now, ok ? "" : "; tried up to " + Steps[m.Step] + ", overruled " + m.Overruled + " times; " + Legs(b));
                         try { if (b.idleStates == BrainAI.IdleStates.Patrol) b.idleStates = m.Was == BrainAI.IdleStates.Patrol ? BrainAI.IdleStates.Idle : m.Was; } catch { }
                         Marches.Remove(m.Bot);
                         continue;
                     }
-                    if (!m.Reported && age >= 3f)
+                    string stage = Core.OrderWatch.Stage(look);
+                    if (Rank(stage) > Rank(m.Stage))
                     {
-                        m.Reported = true;
-                        string legs = "";
-                        try { var feet = b.agent.Agent; legs = ", legs: has a path " + (feet.hasPath ? "yes" : "no") + ", " + feet.remainingDistance.ToString("0", inv) + " m to go, overruled " + m.Overruled + " times"; } catch { }
-                        DirectorPlugin.L.LogInfo("order: after 3 s an enemy has moved " + moved.ToString("0.#", inv) + " m of " + (moved + left).ToString("0", inv) + legs);
+                        m.Stage = stage;
+                        string how = stage == Core.OrderWatch.Moving ? (look.Start - look.Left).ToString("0.#", inv) + " m closer"
+                                   : pathEnds > Core.OrderWatch.PathWithin ? "but it ends " + pathEnds.ToString("0.#", inv) + " m from the spot" : "to the spot";
+                        OrderLog("order " + m.Id + ": " + stage + " after " + look.Age.ToString("0", inv) + " s, " + how + ", " + look.Left.ToString("0", inv) + " m to go");
                     }
-                    bool stuck = moved < 1.5f;
-                    if (m.Step == 0 && age >= 6f && stuck) { m.Step = 1; DirectorPlugin.L.LogInfo("order: no progress in 6 s; trying " + Steps[1]); Push(b, m, true); }
-                    else if (m.Step == 1 && age >= 14f && stuck) { m.Step = 2; DirectorPlugin.L.LogInfo("order: no progress in 14 s; trying " + Steps[2]); Push(b, m, true); }
+                    bool stuck = look.Moved < 1.5f;
+                    if (m.Step == 0 && look.Age >= 6f && stuck) { m.Step = 1; OrderLog("order " + m.Id + ": no progress in 6 s; trying " + Steps[1]); Push(b, m, true); }
+                    else if (m.Step == 1 && look.Age >= 14f && stuck) { m.Step = 2; OrderLog("order " + m.Id + ": no progress in 14 s; trying " + Steps[2]); Push(b, m, true); }
                     else Push(b, m, false);
                 }
                 catch (Exception e) { DirectorPlugin.L.LogWarning("an order could not be followed up: " + e.Message); Marches.Remove(m.Bot); }
@@ -436,26 +520,41 @@ namespace MissionLab
         internal struct WalkResult
         {
             public Vector3 Asked, Ground;          // the spot asked for, and the nearest spot an enemy can stand on
-            public int Accepted, NoLegs, TooFar, Posted;   // took the order; cannot walk; outside the distance; a fixed sentry or a crew member
+            public int Accepted, NoLegs, TooFar, Posted, OffGround;   // took the order; cannot walk; outside the distance; a fixed sentry or a crew member; not sent, the spot is not walkable ground
+            public string GroundWhy;               // why the spot is not walkable ground ("" or null: it is, or the game could not say)
             public string Words()
             {
                 var inv = CultureInfo.InvariantCulture;
-                return Accepted + " accepted, asked for " + Asked.x.ToString("0.#", inv) + ", " + Asked.z.ToString("0.#", inv) + ", walkable ground at " + Ground.x.ToString("0.#", inv) + ", " + Ground.z.ToString("0.#", inv)
-                     + (TooFar > 0 ? ", " + TooFar + " too far away" : "") + (NoLegs > 0 ? ", " + NoLegs + " that cannot walk" : "") + (Posted > 0 ? ", " + Posted + " at a fixed post" : "");
+                bool bad = !string.IsNullOrEmpty(GroundWhy);
+                return Accepted + " accepted, asked for " + Asked.x.ToString("0.#", inv) + ", " + Asked.z.ToString("0.#", inv)
+                     + (bad ? ", not walkable ground: " + GroundWhy : ", walkable ground at " + Ground.x.ToString("0.#", inv) + ", " + Ground.z.ToString("0.#", inv))
+                     + (TooFar > 0 ? ", " + TooFar + " too far away" : "") + (NoLegs > 0 ? ", " + NoLegs + " that cannot walk" : "") + (Posted > 0 ? ", " + Posted + " at a fixed post" : "")
+                     + (OffGround > 0 ? ", " + OffGround + " not sent there" : "");
             }
         }
         internal static WalkResult LastWalk;
 
-        private static Vector3 Ground(Vector3 spot)
+        /// <summary>The nearest spot an enemy can stand on. known: the game's navigation could be asked; found: it gave a spot.</summary>
+        private static Vector3 Ground(Vector3 spot, out bool known, out bool found)
         {
             // A door's hinge or a spot by a wall is not ground anyone can stand on: take the nearest that is.
-            try { AstarPath paths = AstarPath.active; if (paths != null) { var near = paths.GetNearest(spot); if (near != null && near.node != null) return near.position; } } catch { }
+            known = false; found = false;
+            try
+            {
+                AstarPath paths = AstarPath.active;
+                if (paths != null) { known = true; var near = paths.GetNearest(spot); if (near != null && near.node != null) { found = true; return near.position; } }
+            }
+            catch { known = false; found = false; }
             return spot;
         }
 
         internal static int WalkTo(GameManager gm, Vector3 to, float within, HashSet<IntPtr> only, bool hurry = false)
         {
-            LastWalk = new WalkResult { Asked = to, Ground = Ground(to) };
+            var inv = CultureInfo.InvariantCulture;
+            Vector3 ground = Ground(to, out bool known, out bool found);
+            // Without the game's navigation nothing can be said about the spot, and the order goes as it always did.
+            string bad = known ? Core.OrderWatch.Spot(new Core.V3(to.x, to.y, to.z), found, new Core.V3(ground.x, ground.y, ground.z)) : "";
+            LastWalk = new WalkResult { Asked = to, Ground = ground, GroundWhy = bad };
             if (gm == null) return 0;
             int told = 0;
             var ai = gm.allAI;
@@ -466,22 +565,33 @@ namespace MissionLab
                 try
                 {
                     AgentController legs = b.agent;
-                    if (legs == null || !legs.entityExists) { LastWalk.NoLegs++; continue; }           // a gunner, or someone whose navigation is off
-                    if (GameMaster.Posted(b)) { LastWalk.Posted++; continue; }                         // a fixed sentry or a vehicle's crew stays where it is
+                    if (legs == null || !legs.entityExists) { LastWalk.NoLegs++; Keep(b.Pointer, 0, Core.OrderWatch.NoLegs, "not sent: it cannot walk", 0f, 0f); continue; }    // a gunner, or someone whose navigation is off
+                    if (GameMaster.Posted(b)) { LastWalk.Posted++; Keep(b.Pointer, 0, Core.OrderWatch.FixedPost, "not sent: a fixed sentry or a vehicle's crew stays where it is", 0f, 0f); continue; }
                     // Where the enemy is now. Its own object stays where it was made; the navigation agent has the truth.
                     GameMaster.EnemyPose(b, out Vector3 at, out _);
                     if (within > 0f && (at - to).sqrMagnitude > within * within) { LastWalk.TooFar++; continue; }
+                    if (bad.Length > 0) { LastWalk.OffGround++; Keep(b.Pointer, 0, Core.OrderWatch.InvalidFloor, "not sent: " + bad, 0f, 0f); continue; }
                     float turn = told * 2.4f;                                             // spread around the spot, 2 m out
-                    var m = new March { Bot = b.Pointer, To = Ground(to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f)), From = at,
-                                        Since = Time.unscaledTime, NextLook = Time.unscaledTime + 1f, Was = b.idleStates, Hunter = hurry };
-                    if (Marches.TryGetValue(b.Pointer, out March earlier)) { m.Was = earlier.Was; m.Stop = earlier.Stop; }   // an order on top of an order
+                    Vector3 spot = Ground(to + new Vector3(Mathf.Sin(turn) * 2f, 0.1f, Mathf.Cos(turn) * 2f), out _, out bool near);
+                    // Spread by the stairs or a wall, a spot can land on another floor or beyond the wall: then the middle is used.
+                    if (found && (!near || Mathf.Abs(spot.y - ground.y) > Core.OrderWatch.FloorGap || (spot - ground).sqrMagnitude > 16f)) spot = ground;
+                    var m = new March { Bot = b.Pointer, To = spot, From = at, Since = Time.unscaledTime, NextLook = Time.unscaledTime + 1f, Was = b.idleStates, Hunter = hurry, Id = ++_orderId };
+                    Vector3 apart = spot - at; apart.y = 0f;
+                    m.Start = m.Best = apart.magnitude; m.CloserAt = m.Since;
+                    if (Marches.TryGetValue(b.Pointer, out March earlier))                // an order on top of an order
+                    {
+                        m.Was = earlier.Was; m.Stop = earlier.Stop;
+                        Ended(earlier, Core.OrderWatch.Replaced, "order " + m.Id + " took its place after " + (m.Since - earlier.Since).ToString("0", inv) + " s", m.Since, "");
+                    }
+                    string before = Legs(b);          // as the game left it, before the order touches it: what a fresh enemy's navigation looks like
                     Marches[b.Pointer] = m;
                     Push(b, m, true);
+                    OrderLog("order " + m.Id + ": " + Core.OrderWatch.Accepted + (hurry ? " by a hunter" : "") + ", " + m.Start.ToString("0", inv) + " m from its spot " + P(spot) + "; before the order: " + before);
                     if (hurry && Hurried.Add(b.Pointer))
                         try
                         {
                             float was = b.PatrolSpeed; b.PatrolSpeed = was * 2f;
-                            if (!_speedLogged) { _speedLogged = true; DirectorPlugin.L.LogInfo("hurry: patrol speed " + was.ToString("0.##", CultureInfo.InvariantCulture) + " to " + b.PatrolSpeed.ToString("0.##", CultureInfo.InvariantCulture)); }
+                            if (!_speedLogged) { _speedLogged = true; DirectorPlugin.L.LogInfo("hurry: patrol speed " + was.ToString("0.##", inv) + " to " + b.PatrolSpeed.ToString("0.##", inv)); }
                         }
                         catch { }
                     told++;
@@ -498,7 +608,8 @@ namespace MissionLab
             Vector3 to = FirstPlayer();
             if (to == Vector3.zero) return "walk: no player to walk to";
             int told = WalkTo(gm, to, 0f, null);
-            return told == 0 ? "walk: no enemy could be sent" : "walk: " + told + " enemies were given a one-stop route to " + P(to) + " and told to set off at once";
+            return told == 0 ? "walk: no enemy could be sent (" + LastWalk.Words() + ")"
+                             : "walk: " + told + " enemies were given a one-stop route to " + P(to) + " (" + LastWalk.Words() + "); taking it is not walking it: the log follows each order";
         }
 
         private static string OpenDoors()

@@ -2,4 +2,6 @@
   <!-- Tests that need nothing of the game: no map file, no game assemblies. Run with ./test.sh -->
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>disable</Nullable><ImplicitUsings>enable</ImplicitUsings><InvariantGlobalization>true</InvariantGlobalization><LangVersion>10</LangVersion></PropertyGroup>
   <ItemGroup><Compile Include="../../src/MissionLab.Core/*.cs" /></ItemGroup>
+  <!-- The capability list, under the same name tools/build.py gives it in MissionLab.Director.dll (CapabilityRegistry.Embedded). -->
+  <ItemGroup><EmbeddedResource Include="../../docs/capabilities.json" LogicalName="MissionLab.capabilities.json" /></ItemGroup>
 </Project>

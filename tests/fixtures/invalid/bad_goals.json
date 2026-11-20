@@ -1,0 +1,19 @@
+{
+ "schema": "missionlab-plan/3",
+ "mission": {
+  "triggers": [ { "id": 1, "when": "alert" }, { "id": 2, "when": "time", "delay": 30 } ],
+  "extraction": { "goals": "yes" },
+  "goals": [
+   { "name": "No id", "succeed": 1 },
+   { "id": "Phone", "name": "Capital letters", "succeed": 1 },
+   { "id": "a", "name": "A", "succeed": 1 },
+   { "id": "a", "name": "   ", "after": ["a", "zz"], "succeed": 1 },
+   { "id": "b", "name": "B", "activate": 9, "fail": 8 },
+   { "id": "c", "name": "C", "succeed": 0 },
+   { "id": "d", "name": 5, "required": "no", "after": "a", "activate": "x", "succeed": 1.5, "fail": "y", "notify": 1 },
+   "not a goal",
+   { "id": 7, "name": "Number id", "succeed": 2 }
+  ],
+  "spawns": [ { "pos": [0, 0, 0] } ]
+ }
+}

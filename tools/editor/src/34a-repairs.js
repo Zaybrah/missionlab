@@ -115,7 +115,9 @@ function repairPlan(offer) {
     state.enemies.forEach((e, k) => { if (e.trigger === o.id) outside.push('enemy ' + (k + 1)); });
     state.things.forEach(t => { if (t.trigger === o.id) outside.push('the ' + t.name.trim()); });
     if (state.extractionAfter === o.id) outside.push('the extraction');
-    state.zones.forEach((z, k) => { if ((z.when === 'after' && z.after === o.id) || ((z.when === 'all' || z.when === 'any') && (z.of || []).includes(o.id))) (dup.includes(k) ? inside : outside).push(repairTrig(z)); });
+    // An outcome trigger's "after" (ML-047) is a link like an after trigger's.
+    const waitsOn = z => ((z.when === 'after' || z.when === 'outcome') && z.after === o.id) || ((z.when === 'all' || z.when === 'any') && (z.of || []).includes(o.id));
+    state.zones.forEach((z, k) => { if (waitsOn(z)) (dup.includes(k) ? inside : outside).push(repairTrig(z)); });
     if (outside.length) { plan.why = outside.join(', ') + (outside.length > 1 ? ' wait' : ' waits') + ' for number ' + o.id + ', which could mean any of the ' + dup.length + ' triggers that have it, so a repair cannot tell which is meant. Delete the one that is not wanted, or take number ' + o.id + ' out of what waits for it.'; return plan; }
     if (inside.length && dup.length > 2) { plan.why = inside.join(', ') + ' waits for number ' + o.id + ', which ' + dup.length + ' triggers have: it could mean more than one of them, so a repair cannot tell which is meant.'; return plan; }
     // The first keeps its number. A trigger of the pair that waits for the number means the other one, as nothing waits for itself.
@@ -124,7 +126,7 @@ function repairPlan(offer) {
     for (const k of dup.slice(1)) edits.push({ what: 'id', zi: k, from: o.id, to: ++next });
     if (dup.length === 2) {
       const fresh = edits[0].to;
-      if (keep.when === 'after' && keep.after === o.id) edits.push({ what: 'after', zi: dup[0], from: o.id, to: fresh });
+      if ((keep.when === 'after' || keep.when === 'outcome') && keep.after === o.id) edits.push({ what: 'after', zi: dup[0], from: o.id, to: fresh });
       if ((keep.when === 'all' || keep.when === 'any') && (keep.of || []).includes(o.id)) edits.push({ what: 'of', zi: dup[0], from: keep.of.slice(), to: keep.of.map(id => (id === o.id ? fresh : id)) });
     }
     plan.edits = edits;
@@ -219,7 +221,7 @@ function applyRepair() {
     say('The scenario changed after the preview. The preview now shows the repair as it stands.');
     return false;
   }
-  pushUndo();                                   // one Undo step for the whole repair
+  willChange('Repair: ' + r.title);             // one Undo step for the whole repair
   for (const ed of r.edits) repairEdit(ed);
   state.repair = null; showRepair();
   changed();                                    // redraws and runs the Mission check again

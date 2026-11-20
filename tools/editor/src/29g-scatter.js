@@ -29,7 +29,7 @@ const placementPainted = p => !!(p && p.area && Array.isArray(p.area.parts) && p
 
 // ----- placement areas
 function addPlacement(mode) {
-  pushUndo();
+  willChange(mode === 'empty' ? 'Add an empty area' : 'Add an allow area');
   const id = state.placement.reduce((m, p) => Math.max(m, p.id), 0) + 1, empty = mode === 'empty';
   state.placement.push({ id, name: (empty ? 'Empty area ' : 'Area ') + id, mode: empty ? 'empty' : 'allow', area: null });
   scatterUi.selected = state.placement.length - 1; scatterUi.refused = -1;
@@ -39,7 +39,7 @@ function addPlacement(mode) {
 function renamePlacement(id, name) {
   const p = placementById(id), clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
   if (!p || !clean || clean === p.name) return false;
-  pushUndo(); p.name = clean; changed();
+  willChange('Rename placement area "' + p.name + '"'); p.name = clean; changed();
   return true;
 }
 // The enemies that scatter within a placement, as the author sees them: 'enemy 3'.
@@ -53,7 +53,7 @@ function setPlacementMode(id, mode) {
   const p = placementById(id); if (!p || (mode !== 'allow' && mode !== 'empty') || p.mode === mode) return [];
   const uses = mode === 'empty' ? placementUses(p) : [];
   if (uses.length) return uses;
-  pushUndo(); p.mode = mode; changed();
+  willChange('Change the kind of placement area "' + p.name + '"'); p.mode = mode; changed();
   return [];
 }
 // Deleting is refused while an enemy still scatters within it. Returns what uses it ([] when it was deleted).
@@ -63,7 +63,7 @@ function deletePlacement(id) {
   const uses = placementUses(state.placement[i]);
   if (uses.length) { scatterUi.refused = id; syncSide(); return uses; }
   if (paintIs('placement', i)) areaEditStop();
-  pushUndo();
+  willChange('Delete placement area "' + state.placement[i].name + '"');
   state.placement.splice(i, 1);
   scatterUi.refused = -1;
   if (scatterUi.selected >= state.placement.length) scatterUi.selected = state.placement.length - 1;
@@ -89,20 +89,20 @@ function fallbackLocked(e) {
 function setScatter(e, radius) {
   const r = Math.max(0, Math.min(SCATTER_MAX, r2(+radius || 0)));
   if (!e || r === e.scatter) return false;
-  pushUndo(); e.scatter = r; changed();
+  willChange('Change the scatter of enemy ' + (state.enemies.indexOf(e) + 1)); e.scatter = r; changed();
   return true;
 }
 function setWithin(e, id) {
   id = +id || 0;
   const p = placementById(id);
   if (!e || (id && !(p && p.mode === 'allow')) || id === (e.within || 0)) return false;
-  pushUndo(); e.within = id; changed();
+  willChange('Change where enemy ' + (state.enemies.indexOf(e) + 1) + ' scatters'); e.within = id; changed();
   return true;
 }
 function setFallback(e, fallback) {
   if (!e || (fallback !== 'stay' && fallback !== 'skip') || fallback === e.fallback) return false;
   if (fallback === 'skip' && fallbackLocked(e)) { say(fallbackLocked(e)); syncSide(); return false; }
-  pushUndo(); e.fallback = fallback; changed();
+  willChange('Change the fallback of enemy ' + (state.enemies.indexOf(e) + 1)); e.fallback = fallback; changed();
   return true;
 }
 

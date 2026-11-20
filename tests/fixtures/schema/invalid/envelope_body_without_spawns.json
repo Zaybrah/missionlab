@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/2", "spawns": [ { "pos": [0, 0, 0] } ], "mission": { "name": "the enemies are outside the envelope" } }

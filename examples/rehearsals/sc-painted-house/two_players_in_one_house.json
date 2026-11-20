@@ -1,0 +1,17 @@
+{"schema":"missionlab-rehearsal/1","name":"two players in different parts of the house","players":2,"steps":[
+{"at":0,"players":[[4,1,4],[17,0.9,3]]},
+{"at":0.5,"players":[[4,1,4],[17,1.4,3.5]]},
+{"at":1,"players":[[4,1,4],[17,1.9,4]]},
+{"at":1.25,"event":"alert"},
+{"at":1.5,"players":[[4,1,4],[17,2.4,4.5]]},
+{"at":1.5,"expect":{"fired":[3]}},
+{"at":2,"players":[[4,1,4],[17,2.9,5]]},
+{"at":2.5,"players":[[4,1,4],[17,3.4,5.75]]},
+{"at":3,"players":[[4,1,4],[17,3.9,6.5]]},
+{"at":3,"expect":{"phase":{"2":"holding"}}},
+{"at":3.5,"players":[[4,1,4],[17,4.4,7.25]]},
+{"at":4,"players":[[4,1,4],[17,4.9,8]]},
+{"at":4.5,"players":[[4,1,4],[15.5,4.9,12]]},
+{"at":5,"players":[[4,1,4],[14,4.9,16]]},
+{"at":6,"expect":{"fired":[2]}}
+]}

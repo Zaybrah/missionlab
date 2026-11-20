@@ -163,6 +163,16 @@ namespace MissionLab
             DirectorPlugin.L.LogInfo("next mission's options: " + (_picks.Count == 0 ? "the author's defaults" : PicksText(_picks)));
         }
 
+        /// <summary>Replaces the picks with a playlist entry's pinned ones (ML-049); ids and values that cannot be picks are left out.</summary>
+        internal static void UsePicks(IDictionary<string, int> picks)
+        {
+            _picks.Clear();
+            if (picks != null)
+                foreach (KeyValuePair<string, int> p in picks)
+                    if (OptionPlan.IdOk(p.Key) && p.Value >= 0 && p.Value < OptionPlan.MostChoices) _picks[p.Key] = p.Value;
+            DirectorPlugin.L.LogInfo("next mission's options, from the playlist: " + (_picks.Count == 0 ? "the author's defaults" : PicksText(_picks)));
+        }
+
         internal static string PicksText(IDictionary<string, int> picks)
         {
             var parts = new List<string>();

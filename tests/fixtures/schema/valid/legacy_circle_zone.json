@@ -1,0 +1,1 @@
+{ "scene": "Fixture", "triggers": [ { "id": 1, "when": "zone", "pos": [5, 0, 5], "radius": 4 } ], "spawns": [ { "pos": [0, 0, 0] } ] }

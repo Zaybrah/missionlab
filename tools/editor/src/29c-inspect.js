@@ -4,7 +4,10 @@
 // known from the file alone, the same reasoning as the Mission check: which trigger can fire, which is left to chance.
 const INSPECT_WORDS = { off: 'Excluded', circle: 'In a circle', waiting: 'Waiting', holding: 'Holding', counting: 'Counting down', fired: 'Fired', cooling: 'Cooling down', exhausted: 'Exhausted' };
 const INSPECT_TIMED = ['counting', 'holding', 'cooling'];
-const inspectNeeds = z => (z.when === 'after' ? (z.after ? [z.after] : []) : z.when === 'all' || z.when === 'any' ? (z.of || []) : []);
+const inspectNeeds = z => (z.when === 'after' || z.when === 'outcome' ? (z.after ? [z.after] : []) : z.when === 'all' || z.when === 'any' ? (z.of || []) : []);
+// The words for what became of one firing of a trigger's actions (ML-047), as the engine reports them.
+const INSPECT_OUTCOMES = { applied: 'Actions applied', failed: 'Action failed', partial: 'Action partly applied', unconfirmed: 'Action not confirmed' };
+const INSPECT_WAITS = { applied: 'is seen to take', failed: 'fails', partial: 'only partly takes', unconfirmed: 'goes through unseen', timeout: 'has no answer within ' };
 const inspectPlaced = z => z.when === 'zone' || z.when === 'door';
 // Whole seconds rounded up, as the engine counts them ("1 s left" until it fires); a minute or more as m:ss.
 function inspectClock(left) {
@@ -26,6 +29,8 @@ function inspectStatic(z) {
   const never = (q, trail) => {
     if (trail.includes(q.id)) return 'it waits for itself through other triggers';
     if (inspectPlaced(q) && !isVec(q.pos)) return 'it has no place on the map';
+    if (q.when === 'outcome' && !q.after) return 'it watches no trigger';
+    if (outcomeNeverSeen(q)) return q.outcome === 'partial' ? 'trigger ' + q.after + ' brings fewer than two enemies, so it never partly takes' : 'not everything trigger ' + q.after + ' does can be seen, so it is never reported as applied';
     const on = trail.concat(q.id), list = inspectNeeds(q);
     if ((q.when === 'all' || q.when === 'any') && !list.length) return 'its list of triggers is empty';
     const why = list.map(id => { const p = byId(id); return !p ? 'trigger ' + id + ' does not exist' : p.when === 'after' && !p.after ? '' : never(p, on); });
@@ -64,6 +69,7 @@ function inspectCondition(z) {
     : z.when === 'intel' ? (kind === '' || kind === 'any' ? 'Fires when any intel item is picked up' : kind === 'all' ? 'Fires when every intel item is picked up' : 'Fires when the ' + kind + ' is picked up')
     : z.when === 'time' ? 'Fires ' + Math.round(z.delay || 0) + ' s into the mission'
     : z.when === 'after' ? 'Fires after trigger ' + z.after
+    : z.when === 'outcome' ? 'Fires when the latest firing of trigger ' + z.after + ' ' + (INSPECT_WAITS[z.outcome] || '') + (z.outcome === 'timeout' ? Math.round(z.within || OUTCOME_WITHIN) + ' s' : '')
     : z.when === 'all' ? 'Fires once triggers ' + list + ' have all fired'
     : z.when === 'any' ? 'Fires once one of triggers ' + list + ' has fired'
     : z.when === 'down' ? ((z.count | 0) <= 0 ? 'Fires once every enemy' + tagged + ' is down' : 'Fires once ' + z.count + ((z.count | 0) === 1 ? ' enemy' : ' enemies') + tagged + ' are down')
@@ -76,7 +82,10 @@ function inspectCondition(z) {
 }
 
 // One row per trigger. s: the game's /api/state answer (its triggerState carries the engine's explain objects), or null
-// without the game. Row: { id, title, word, kind, text, count, clock, outcome, outcomeText, waiting, excluded, live }.
+// without the game. Row: { id, title, word, kind, text, count, clock, outcome, outcomeText, late, invocation, pending, watch,
+// waiting, excluded, live }. Live, every firing is numbered (invocation, the latest); outcome is what became of that one, late
+// a result that came for an older firing or after a timeout had already been taken (kept apart: it never changes the branch),
+// pending the firings still without a result, and watch, for an outcome trigger, which firing of its trigger it waits on.
 function inspectRows(s) {
   const running = !!(s && Array.isArray(s.triggerState));
   const byId = new Map(running ? s.triggerState.filter(t => t && t.id > 0).map(t => [t.id, t]) : []);
@@ -84,21 +93,24 @@ function inspectRows(s) {
     const title = trigTitle(z) + (z.name ? ': ' + z.name : '');
     if (!running) {
       const st = inspectStatic(z);
-      return { id: z.id, title, word: st.word, kind: st.kind, text: st.text, count: z.repeat > 0 ? (z.times > 0 ? 'up to ' + z.times + ' times' : 'repeats') : '', clock: '', outcome: '', outcomeText: '', waiting: [], excluded: [], live: false };
+      return { id: z.id, title, word: st.word, kind: st.kind, text: st.text, count: z.repeat > 0 ? (z.times > 0 ? 'up to ' + z.times + ' times' : 'repeats') : '', clock: '', outcome: '', outcomeText: '', late: '', invocation: 0, pending: [], watch: '', waiting: [], excluded: [], live: false };
     }
     const t = byId.get(z.id);
-    if (!t) return { id: z.id, title, word: 'Not in the game', kind: 'unknown', text: 'The running mission does not have this trigger: the change has not reached the game.', count: '', clock: '', outcome: '', outcomeText: '', waiting: [], excluded: [], live: true };
+    if (!t) return { id: z.id, title, word: 'Not in the game', kind: 'unknown', text: 'The running mission does not have this trigger: the change has not reached the game.', count: '', clock: '', outcome: '', outcomeText: '', late: '', invocation: 0, pending: [], watch: '', waiting: [], excluded: [], live: true };
     const ex = t.explain || { phase: t.phase, left: t.left, why: '', fires: t.fires | 0, times: z.times | 0, waiting: [], excluded: [], inside: -1, alive: -1, outcome: '', outcomeWhy: '' };
     const fires = ex.fires | 0, times = ex.times | 0, repeats = times > 0 || z.repeat > 0;
-    const outcome = ex.outcome === 'failed' || ex.outcome === 'unconfirmed' || ex.outcome === 'applied' ? ex.outcome : '';
-    const why = ex.outcomeWhy || '';
+    const outcome = INSPECT_OUTCOMES[ex.outcome] ? ex.outcome : '';
+    const why = ex.outcomeWhy || '', invocation = Math.max(0, ex.invocation | 0), pending = Array.isArray(ex.pending) ? ex.pending.filter(n => Number.isInteger(n) && n > 0) : [];
+    // An outcome trigger names the firing it waits on: the latest of the trigger it watches, as the game numbers it.
+    const w = z.when === 'outcome' ? byId.get(z.after) : null, wn = w && w.explain ? Math.max(0, w.explain.invocation | 0) : 0;
+    const watch = z.when !== 'outcome' ? '' : wn > 0 ? 'waits on firing ' + wn + ' of trigger ' + z.after : 'trigger ' + z.after + ' has not fired yet';
     return {
       id: z.id, title, word: INSPECT_WORDS[ex.phase] || String(ex.phase || ''), kind: ex.phase || 'waiting',
       text: t.explain ? inspectWithPlace(z, ex.why || '') : 'This version of the plugin does not explain its triggers.',
       count: repeats ? 'fired ' + fires + (times > 0 ? ' of ' + times : ', no limit') : fires > 1 ? 'fired ' + fires + ' times' : '',
       clock: INSPECT_TIMED.includes(ex.phase) ? inspectClock(ex.left) : '',
-      outcome,
-      outcomeText: outcome === 'failed' ? 'Action failed' + (why ? ': ' + why : '') : outcome === 'unconfirmed' ? 'Action not confirmed' + (why ? ': ' + why : '') : outcome === 'applied' ? 'Actions applied' + (why ? ': ' + why : '') : '',
+      outcome, late: typeof ex.late === 'string' ? ex.late : '', invocation, pending, watch,
+      outcomeText: outcome ? (invocation > 0 ? 'Firing ' + invocation + ': ' : '') + INSPECT_OUTCOMES[outcome] + (why ? ': ' + why : '') : pending.includes(invocation) && invocation > 0 ? 'Firing ' + invocation + ': no result yet' : '',
       waiting: Array.isArray(ex.waiting) ? ex.waiting : [], excluded: Array.isArray(ex.excluded) ? ex.excluded : [], live: true,
     };
   });
@@ -168,7 +180,7 @@ function syncInspect(force) {
       const li = mk('li'), pick = mk('button', { type: 'button', className: 'pick' });
       li.dataset.id = String(r.id);
       pick.addEventListener('click', () => inspectSelect(r.id));
-      pick.append(mk('b', { className: 'title' }), mk('span', { className: 'word' }), mk('span', { className: 'num' }), mk('span', { className: 'text' }), mk('span', { className: 'outcome' }));
+      pick.append(mk('b', { className: 'title' }), mk('span', { className: 'word' }), mk('span', { className: 'num' }), mk('span', { className: 'text' }), mk('span', { className: 'outcome' }), mk('span', { className: 'late' }));
       const fire = mk('button', { type: 'button', className: 'btn fire', textContent: 'Fire now', hidden: !running });
       fire.addEventListener('click', () => liveCommand('fire', { id: r.id }));
       li.append(pick, fire, mk('p', { className: 'links hint' }));
@@ -183,9 +195,10 @@ function syncInspect(force) {
     const pick = li.querySelector('.pick'); pick.setAttribute('aria-pressed', String(sel));
     li.querySelector('.title').textContent = r.title + (before.has(r.id) ? ' · needed by the selected one' : '');
     li.querySelector('.word').textContent = r.word;
-    li.querySelector('.num').textContent = [r.count, r.clock && r.clock + ' left'].filter(Boolean).join(' · ');
+    li.querySelector('.num').textContent = [r.count, r.clock && r.clock + ' left', r.watch].filter(Boolean).join(' · ');
     li.querySelector('.text').textContent = r.text;
     const oc = li.querySelector('.outcome'); oc.textContent = r.outcomeText; oc.hidden = !r.outcomeText || r.outcome === 'applied' && !sel;
+    const lt = li.querySelector('.late'); lt.textContent = r.late ? 'Late: ' + r.late : ''; lt.hidden = !r.late;
     const fire = li.querySelector('.fire'); fire.hidden = !running;
     fire.disabled = r.kind === 'fired' || r.kind === 'exhausted' || r.kind === 'cooling';     // latched: the engine refuses Fire now (TriggerEngine.FireNow)
     fire.title = fire.disabled ? r.title + ' has fired and is not armed now, so Fire now would be refused.' : 'Set ' + r.title + ' off now, whatever it waits for. This is not part of the inspection: it changes the mission.';
