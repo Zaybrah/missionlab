@@ -332,6 +332,9 @@ This table is made from `docs/capabilities.json` by `python3 tools/status.py --w
 What is known about the game's internals, run by run, is in [`docs/findings.md`](docs/findings.md).
 
 ## For developers
+**Want to help?** Code, docs, missions and bug reports are all welcome, and so is a co-op run with a friend who has no
+mod, which nobody can test alone: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 **Build:** `python3 tools/build.py --refs <OPERATOR folder>` (or set `OPERATOR_REFS` and run `./build.sh`). It compiles
 with Roslyn from the newest installed .NET SDK against the game's `dotnet`, `BepInEx/core` and `BepInEx/interop`; the
 game folder itself works. Built for Unity 6000.3.8f1, BepInEx 6.0.0-be.785, game code dated 7 July 2026.
