@@ -1,6 +1,6 @@
 # Backlog status
 
-Where each ticket of `docs/backlog.md` stands. Updated 21 November 2026, release 0.27.0.
+Where each ticket of `docs/backlog.md` stands. Updated 21 November 2026, release 0.27.1.
 
 "Tested" means an automatic test proves it (`./test.sh`: 1680 C# checks, 1619 editor checks, 67 browser checks and 18 adapter checks, or the
 map tests). "In the game" means it needs a run in OPERATOR; "co-op" means a run with a friend who has no mod. 0.26.2 has

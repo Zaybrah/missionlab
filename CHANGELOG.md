@@ -4,7 +4,7 @@ What each release added, newest first. Each heading says how much of that releas
 table in the README is the current word on what has been seen to work, on which build and by whom. Ticket numbers
 (ML-NNN) are those of `docs/backlog.md`; `docs/backlog-status.md` says where each one stands.
 
-## Unreleased
+## 0.27.1 (21 November 2026; the fix has not run in the game yet)
 - **Clicking an enemy in 3D keeps it selected on a slow computer.** Selecting rebuilds the figures, and a release that
   came before the next frame was drawn missed the enemy the press had just selected, so the click counted as one on
   empty ground and cleared the selection. Seen as an intermittent failure of the browser suite on GitHub; the suite now
