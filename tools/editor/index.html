@@ -4810,6 +4810,9 @@ const view3d = (() => {
     invalidate3();
   }
   function cast(ev) {
+    // Figures rebuilt since the last frame (selecting one rebuilds them all) have no world position until a frame is
+    // drawn; without this a release that comes before the next frame misses the enemy its press just selected.
+    scene.updateMatrixWorld();
     const r = cv.getBoundingClientRect(), ray = new T.Raycaster();
     ray.setFromCamera(new T.Vector2((ev.clientX - r.left) / r.width * 2 - 1, -((ev.clientY - r.top) / r.height * 2 - 1)), camera);
     return ray;

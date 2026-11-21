@@ -411,9 +411,14 @@ async function views(browser) {
       }
       check('views: 3D keeps the map\'s left-right and near-far order of the enemies (not mirrored)', order.length === 0, 'out of order: ' + order.join(', '));
       if (!S[1].on) {
-        await tab.click(S[1]);
+        // Press and release with no frame drawn in between, as on a slow machine or a busy CI runner: selecting on the
+        // press rebuilds the figures, and the release must still find the enemy it was pressed on.
+        await tab.run(() => { window.__heldFrame = window.requestAnimationFrame; window.requestAnimationFrame = () => 0; });
+        await tab.press(S[1]); await tab.release(S[1]);
+        await tab.run(() => { window.requestAnimationFrame = window.__heldFrame; delete window.__heldFrame; });
+        await tab.frames(1);
         const picked = await tab.waitFor('a selection', 3000, E => E.state.selected >= 0 ? E.state.selected + 1 : null).catch(() => 0);
-        check('views: clicking enemy 2 in 3D selects that enemy', picked === 2, 'selected ' + (picked - 1));
+        check('views: clicking enemy 2 in 3D selects that enemy, even with no frame drawn between press and release', picked === 2, 'selected ' + (picked - 1));
       }
     }
     await tab.clickOn('#mode2d');

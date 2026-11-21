@@ -4,6 +4,12 @@ What each release added, newest first. Each heading says how much of that releas
 table in the README is the current word on what has been seen to work, on which build and by whom. Ticket numbers
 (ML-NNN) are those of `docs/backlog.md`; `docs/backlog-status.md` says where each one stands.
 
+## Unreleased
+- **Clicking an enemy in 3D keeps it selected on a slow computer.** Selecting rebuilds the figures, and a release that
+  came before the next frame was drawn missed the enemy the press had just selected, so the click counted as one on
+  empty ground and cleared the selection. Seen as an intermittent failure of the browser suite on GitHub; the suite now
+  presses and releases with no frame in between, which failed every time before the fix.
+
 ## 0.27.0 (run once solo on 21 November: packs, an operation and objectives; the rest not yet)
 The v0.27 milestone of `docs/backlog.md` (ML-028 to ML-053, and ML-055 from the run of 21 November). Everything here is
 covered by `./test.sh`, which now also works the page in a real browser. On 21 November one host alone installed a pack
