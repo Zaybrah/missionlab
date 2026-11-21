@@ -217,7 +217,7 @@ Other rules for the format:
   - There is one branch per minor version (`v0.27` is current). `main` is fast-forwarded to the newest release; releases are annotated tags `vX.Y.Z` on the minor branch.
 - **Release:**
   1. Bump `DirectorPlugin.Version`, and Recon's `Plugin.Version` if Recon changed. Update `LiveLink.TestedGame` when testing against a new game build.
-  2. Add a README `### New in X.Y.Z` section; this is the changelog. Record new game evidence in `docs/capabilities.json` and rewrite the Status table with `python3 tools/status.py --write`.
+  2. Add a `## X.Y.Z` section at the top of `CHANGELOG.md` (newest first; the heading says what of it has run in the game). The README is the user guide, not a changelog: change it only where the release changes what it describes. Record new game evidence in `docs/capabilities.json` and rewrite the Status table with `python3 tools/status.py --write`.
   3. Update the header (date, build, check counts) and tables of `docs/backlog-status.md`.
   4. Run `./test.sh` → `./build.sh` → `python3 tools/package.py --check`.
 
