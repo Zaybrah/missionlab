@@ -16,8 +16,9 @@ is in [CHANGELOG.md](CHANGELOG.md).
 ## Install
 1. Install BepInEx 6 for IL2CPP games (build be.785) into the OPERATOR folder and start the game once, so BepInEx can
    set itself up.
-2. Download `MissionLab-<version>.zip` from [Releases](https://github.com/Zaybrah/missionlab/releases) and unzip it into
-   the OPERATOR folder, so that its `BepInEx` folder lands on the one that is there.
+2. Download `MissionLab-<version>.zip` from [Releases](https://github.com/Zaybrah/missionlab/releases) or from
+   [Nexus Mods](https://www.nexusmods.com/operator/mods/273) (the same file) and unzip it into the OPERATOR folder, so
+   that its `BepInEx` folder lands on the one that is there.
 3. To play a ready-made mission, copy it from `BepInEx/MissionLab/examples/` into `BepInEx/MissionLab/scenarios/`
    ([Missions to play](#missions-to-play)).
 4. Start the game and host a PvE mission. Open http://localhost:8765 in a browser on the same PC for the editor and the
