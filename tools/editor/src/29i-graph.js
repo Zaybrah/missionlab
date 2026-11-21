@@ -422,5 +422,6 @@ function graphSync(force) {
 const graphShown = () => viewIs('direct') || (viewIs('create') && ['triggers', 'all'].includes($('side').dataset.show));
 document.querySelectorAll('#graphBox [data-graph-dir]').forEach(b => b.addEventListener('click', () => graphSetDir(b.dataset.graphDir)));
 // Twice a second while it is on screen, as the inspector: drawn again only when something it shows has changed.
-setInterval(() => { if (graphShown()) graphSync(false); }, 500);
+const graphTick = () => { if (graphShown()) graphSync(false); };
+setInterval(graphTick, 500); onPaneChange(graphTick);
 expose({ graphModel, graphLayout, graphNodeClass, graphPick, graphSetDir, graphSync, graphDetail, graphMark });

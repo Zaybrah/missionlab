@@ -765,7 +765,8 @@ $('olSectionRoom').addEventListener('click', () => {
 });
 $('olSectionClear').addEventListener('click', () => { state.outliner.section = null; syncOutliner(true); invalidate(); });
 // Twice a second or so while it is on screen, like the mission graph.
-setInterval(() => { if (outlinerShown()) syncOutliner(false); }, 700);
+const outlinerTick = () => { if (outlinerShown()) syncOutliner(false); };
+setInterval(outlinerTick, 700); onPaneChange(outlinerTick);
 expose({ outlinerCheckMap, outlinerBlocks, outlinerGround, outlinerActive, outlinerItems, outlinerOnFloor, outlinerInRoom, outlinerAddFloor, outlinerSetFloor, outlinerSetPreset,
   outlinerMapFloors, outlinerAddBuilding, outlinerAddRoom, outlinerRemoveRoom, outlinerDelete, outlinerMove, outlinerFlag, outlinerIsolate, outlinerChoose, outlinerApply,
   outlinerFocus, outlinerReviewKeep, outlinerReviewDrop, outlinerSectionThrough, sectionModel, syncOutliner, outlinerWorkspace: () => Object.assign({ print: olWs().print, review: state.outliner.review }, outlinerData(state.outliner)) });

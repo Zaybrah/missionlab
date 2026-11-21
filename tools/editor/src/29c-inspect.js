@@ -207,7 +207,8 @@ function syncInspect(force) {
   });
 }
 // Twice a second, so a countdown follows the game's (the state is asked for every 0.6 s); only while Direct is shown.
-setInterval(() => { const shown = inspectShown(); $('inspectBox').hidden = !shown; if (shown) syncInspect(false); }, 500);
+const inspectTick = () => { const shown = inspectShown(); $('inspectBox').hidden = !shown; if (shown) syncInspect(false); };
+setInterval(inspectTick, 500); onPaneChange(inspectTick);
 
 // The map: the selected trigger's place, what it needs (zones and doors with a place) and what it brings. Called from draw().
 function drawInspect() {

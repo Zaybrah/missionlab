@@ -243,5 +243,6 @@ function syncGoalPlay(s) {
   goalListRender($('goalPlayList'), m.rows);
   return m;
 }
-setInterval(() => { syncGoalsAuthor(false); if (viewIs('direct')) syncGoalBoard(); if (viewIs('play')) syncGoalPlay(); }, 700);
+const goalsTick = () => { syncGoalsAuthor(false); if (viewIs('direct')) syncGoalBoard(); if (viewIs('play')) syncGoalPlay(); };
+setInterval(goalsTick, 700); onPaneChange(goalsTick);
 expose({ goalAdd, goalDelete, goalMove, goalSet, goalSetAfter, goalExtraction, goalsIn, goalsOut, goalName, goalStatusList, goalBoardModel, goalPlayModel, syncGoalsAuthor, syncGoalBoard, syncGoalPlay, sealedGoals, goalsFromGame });   // objectives (ML-046), for automated tests

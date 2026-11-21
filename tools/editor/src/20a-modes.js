@@ -16,6 +16,12 @@ const PLACING_TOOLS = ['add', 'route', 'zone', 'thing'];
 const catalogue = { list: null, error: '', pick: '', loading: false, savedText: null, savedName: '', savedFile: null, lobbyFile: '', s: null, runSeen: null, wasRunning: false, listKey: '', detailKey: '' };
 state.pane = 'create';
 const CHOICE_WORDS = { '*': 'any scenario made for the map', '': 'a random layout', '(empty)': 'an empty map' };
+// Sections that show and fill themselves on a timer (inspector, cards, mission graph, outliner, objectives) also do so
+// the moment the view or the tab changes. Otherwise the panel is incomplete for up to 0.7 s and then grows, moving
+// buttons under a pointer already on its way: in the browser checks a press on Apply changes landed on the heading above.
+const paneSyncs = [];
+const onPaneChange = fn => { paneSyncs.push(fn); };
+const syncPane = () => { for (const fn of paneSyncs) fn(); };
 
 function setView(v, byHand) {
   let view = VIEWS.includes(v) ? v : 'create';
@@ -34,7 +40,7 @@ function setView(v, byHand) {
   if (view !== 'create') { state.placing = null; if (PLACING_TOOLS.includes(state.tool)) setTool('select'); }
   if (byHand) { try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* storage unavailable */ } }
   if (view === 'play' && live.on) refreshCatalogue();
-  toolHint(); syncPlay(); syncStrip(); invalidate();
+  toolHint(); syncPlay(); syncStrip(); syncPane(); invalidate();
 }
 const viewIs = v => state.pane === v;
 document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.viewTo, true)));

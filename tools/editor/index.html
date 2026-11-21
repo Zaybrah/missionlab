@@ -1978,6 +1978,12 @@ const PLACING_TOOLS = ['add', 'route', 'zone', 'thing'];
 const catalogue = { list: null, error: '', pick: '', loading: false, savedText: null, savedName: '', savedFile: null, lobbyFile: '', s: null, runSeen: null, wasRunning: false, listKey: '', detailKey: '' };
 state.pane = 'create';
 const CHOICE_WORDS = { '*': 'any scenario made for the map', '': 'a random layout', '(empty)': 'an empty map' };
+// Sections that show and fill themselves on a timer (inspector, cards, mission graph, outliner, objectives) also do so
+// the moment the view or the tab changes. Otherwise the panel is incomplete for up to 0.7 s and then grows, moving
+// buttons under a pointer already on its way: in the browser checks a press on Apply changes landed on the heading above.
+const paneSyncs = [];
+const onPaneChange = fn => { paneSyncs.push(fn); };
+const syncPane = () => { for (const fn of paneSyncs) fn(); };
 
 function setView(v, byHand) {
   let view = VIEWS.includes(v) ? v : 'create';
@@ -1996,7 +2002,7 @@ function setView(v, byHand) {
   if (view !== 'create') { state.placing = null; if (PLACING_TOOLS.includes(state.tool)) setTool('select'); }
   if (byHand) { try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* storage unavailable */ } }
   if (view === 'play' && live.on) refreshCatalogue();
-  toolHint(); syncPlay(); syncStrip(); invalidate();
+  toolHint(); syncPlay(); syncStrip(); syncPane(); invalidate();
 }
 const viewIs = v => state.pane === v;
 document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.viewTo, true)));
@@ -5138,6 +5144,7 @@ function showTab(name, byHand) {
   side.dataset.show = name;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
   if (name !== 'all' && name !== 'replay') { try { localStorage.setItem('missionlab-tab', name); } catch (e) { /* storage unavailable */ } }
+  syncPane();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
 function selectDoor(n) { if (n >= 0) showTab('doors'); state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }
@@ -8505,7 +8512,8 @@ function syncInspect(force) {
   });
 }
 // Twice a second, so a countdown follows the game's (the state is asked for every 0.6 s); only while Direct is shown.
-setInterval(() => { const shown = inspectShown(); $('inspectBox').hidden = !shown; if (shown) syncInspect(false); }, 500);
+const inspectTick = () => { const shown = inspectShown(); $('inspectBox').hidden = !shown; if (shown) syncInspect(false); };
+setInterval(inspectTick, 500); onPaneChange(inspectTick);
 
 // The map: the selected trigger's place, what it needs (zones and doors with a place) and what it brings. Called from draw().
 function drawInspect() {
@@ -10681,10 +10689,11 @@ function syncCards() {
 }
 $('cardsMode').addEventListener('change', ev => cardMode(ev.target.checked));
 // Twice a second, like the inspector: the state is read every 0.6 s; only while Direct is shown.
-setInterval(() => {
+const cardsTick = () => {
   if (catalogue.s !== cards.seen) { cards.seen = catalogue.s; cardTake(catalogue.s); }
   const shown = viewIs('direct'); $('cardsBox').hidden = !shown; if (shown) syncCards();
-}, 500);
+};
+setInterval(cardsTick, 500); onPaneChange(cardsTick);
 
 // ---------------------------------------------------------------- the Create section: authoring the director block
 // A trigger for a new action: one fired only by hand and not yet on a card, else any not yet on a card, else the first.
@@ -11419,7 +11428,8 @@ function graphSync(force) {
 const graphShown = () => viewIs('direct') || (viewIs('create') && ['triggers', 'all'].includes($('side').dataset.show));
 document.querySelectorAll('#graphBox [data-graph-dir]').forEach(b => b.addEventListener('click', () => graphSetDir(b.dataset.graphDir)));
 // Twice a second while it is on screen, as the inspector: drawn again only when something it shows has changed.
-setInterval(() => { if (graphShown()) graphSync(false); }, 500);
+const graphTick = () => { if (graphShown()) graphSync(false); };
+setInterval(graphTick, 500); onPaneChange(graphTick);
 expose({ graphModel, graphLayout, graphNodeClass, graphPick, graphSetDir, graphSync, graphDetail, graphMark });
 // ------------------------------------------------------------------ walk it through: test players on timed paths, and the inside/outside probe (ML-043)
 // Up to four test players walk timed paths across the map; Rehearse (29d-rehearse.js) plays them with the events and checks
@@ -12620,7 +12630,8 @@ $('olSectionRoom').addEventListener('click', () => {
 });
 $('olSectionClear').addEventListener('click', () => { state.outliner.section = null; syncOutliner(true); invalidate(); });
 // Twice a second or so while it is on screen, like the mission graph.
-setInterval(() => { if (outlinerShown()) syncOutliner(false); }, 700);
+const outlinerTick = () => { if (outlinerShown()) syncOutliner(false); };
+setInterval(outlinerTick, 700); onPaneChange(outlinerTick);
 expose({ outlinerCheckMap, outlinerBlocks, outlinerGround, outlinerActive, outlinerItems, outlinerOnFloor, outlinerInRoom, outlinerAddFloor, outlinerSetFloor, outlinerSetPreset,
   outlinerMapFloors, outlinerAddBuilding, outlinerAddRoom, outlinerRemoveRoom, outlinerDelete, outlinerMove, outlinerFlag, outlinerIsolate, outlinerChoose, outlinerApply,
   outlinerFocus, outlinerReviewKeep, outlinerReviewDrop, outlinerSectionThrough, sectionModel, syncOutliner, outlinerWorkspace: () => Object.assign({ print: olWs().print, review: state.outliner.review }, outlinerData(state.outliner)) });
@@ -13829,7 +13840,8 @@ function syncGoalPlay(s) {
   goalListRender($('goalPlayList'), m.rows);
   return m;
 }
-setInterval(() => { syncGoalsAuthor(false); if (viewIs('direct')) syncGoalBoard(); if (viewIs('play')) syncGoalPlay(); }, 700);
+const goalsTick = () => { syncGoalsAuthor(false); if (viewIs('direct')) syncGoalBoard(); if (viewIs('play')) syncGoalPlay(); };
+setInterval(goalsTick, 700); onPaneChange(goalsTick);
 expose({ goalAdd, goalDelete, goalMove, goalSet, goalSetAfter, goalExtraction, goalsIn, goalsOut, goalName, goalStatusList, goalBoardModel, goalPlayModel, syncGoalsAuthor, syncGoalBoard, syncGoalPlay, sealedGoals, goalsFromGame });   // objectives (ML-046), for automated tests
 // ------------------------------------------------------------------ branching operations in Play (ML-051)
 // A short chain of missions with consequences: how one mission ended, as its run record says (success or failed, and each

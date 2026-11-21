@@ -170,6 +170,7 @@ function showTab(name, byHand) {
   side.dataset.show = name;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
   if (name !== 'all' && name !== 'replay') { try { localStorage.setItem('missionlab-tab', name); } catch (e) { /* storage unavailable */ } }
+  syncPane();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
 function selectDoor(n) { if (n >= 0) showTab('doors'); state.door = n; if (n >= 0) state.selected = -1; view3d.syncEnemies(); syncSide(); invalidate(); }

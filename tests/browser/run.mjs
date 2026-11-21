@@ -313,6 +313,17 @@ async function draftApplyRetry(browser, link) {
     await until('the page to show the game\'s mission', 10000, s => s.session === 'm1-1000' && s.roles.length === 2);
     const l0 = await look();
     check('live: the page links to the fixture game and shows its two enemies', l0.mission && l0.enemies.length === 2 && l0.enemies.every(e => e.role === 'Guard'), text(l0.enemies));
+    // Direct is complete the moment it opens: no section of it appears on a later timer and pushes its buttons down
+    // (in CI a press on Apply changes landed on the heading above it, which had moved into its place).
+    const jump = await tab.run(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms)), side = document.getElementById('side');
+      const at = () => Math.round(document.getElementById('stageDraft').getBoundingClientRect().top - side.getBoundingClientRect().top + side.scrollTop);
+      document.querySelector('#views button[data-view-to="play"]').click(); await wait(1000);
+      document.querySelector('#views button[data-view-to="direct"]').click();
+      const first = at(); await wait(1000);
+      return { first, later: at() };
+    });
+    check('live: Direct is complete the moment it opens; its buttons are where they were a second later', jump.first === jump.later, text(jump));
     await view('direct');
     await tab.clickOn('#stageDraft');
     await until('Draft mode', 5000, s => s.mode === 'draft' && s.base === 'm1-1000');

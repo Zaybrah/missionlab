@@ -200,10 +200,11 @@ function syncCards() {
 }
 $('cardsMode').addEventListener('change', ev => cardMode(ev.target.checked));
 // Twice a second, like the inspector: the state is read every 0.6 s; only while Direct is shown.
-setInterval(() => {
+const cardsTick = () => {
   if (catalogue.s !== cards.seen) { cards.seen = catalogue.s; cardTake(catalogue.s); }
   const shown = viewIs('direct'); $('cardsBox').hidden = !shown; if (shown) syncCards();
-}, 500);
+};
+setInterval(cardsTick, 500); onPaneChange(cardsTick);
 
 // ---------------------------------------------------------------- the Create section: authoring the director block
 // A trigger for a new action: one fired only by hand and not yet on a card, else any not yet on a card, else the first.
