@@ -164,17 +164,21 @@ namespace MissionLab.Core
             Order(triggers);
         }
 
-        /// <summary>A zone's or hold's place as text, to notice that it moved or changed shape: anchor, radius, everyone and the area.</summary>
+        /// <summary>
+        /// A zone's or hold's place as text, to notice that it moved or changed shape: anchor, radius, everyone, the area and the
+        /// trigger it waits for. A count made under another gate was not made under the rule the trigger now has.
+        /// </summary>
         public static string ShapeOf(TriggerPlan t)
         {
             CultureInfo inv = CultureInfo.InvariantCulture;
             string F(float f) => Math.Round(f, 2).ToString(inv);
-            return F(t.Pos.X) + "," + F(t.Pos.Y) + "," + F(t.Pos.Z) + "|" + F(t.Radius) + "|" + (t.Everyone ? "everyone" : "anyone") + "|" + (t.Area?.Signature() ?? "");
+            return F(t.Pos.X) + "," + F(t.Pos.Y) + "," + F(t.Pos.Z) + "|" + F(t.Radius) + "|" + (t.Everyone ? "everyone" : "anyone") + "|"
+                 + (TriggerPlan.Placed(t.When) ? t.After : 0).ToString(inv) + "|" + (t.Area?.Signature() ?? "");
         }
 
         private static IEnumerable<int> Needs(TriggerPlan t)
         {
-            if ((t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome) && t.After != 0) yield return t.After;
+            if ((t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome || TriggerPlan.Placed(t.When)) && t.After != 0) yield return t.After;
             if (t.When == TriggerPlan.OnAll || t.When == TriggerPlan.OnAny) foreach (int id in t.Of) yield return id;
         }
 
@@ -278,6 +282,8 @@ namespace MissionLab.Core
                 {
                     V3 where = default;
                     bool yes;
+                    // A gated zone or hold does not look at its area until its gate has fired: nobody counts, no hold runs.
+                    if (t.Gated && (t.After == t.Id || !EverFired(t.After))) { s.InsideSince = null; continue; }
                     switch (t.When)
                     {
                         case TriggerPlan.OnAlert: yes = world.Alerted(); break;
@@ -498,6 +504,7 @@ namespace MissionLab.Core
             {
                 case TriggerPlan.OnZone:
                 case TriggerPlan.OnHold:
+                    if (t.Gated && v.Waiting.Contains(t.After)) return Need(t.After) + "; until then it does not watch its area";
                     return Players(t, v);
                 case TriggerPlan.OnAlert: return "Waiting for the enemy to raise the alarm";
                 case TriggerPlan.OnIntel:

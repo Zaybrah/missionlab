@@ -102,5 +102,7 @@
   "wrong-type director.pressure.bands[1].minPlayers", "wrong-type director.pressure.bands[1].spend", "out-of-range director.pressure.bands[1].every",
   "wrong-type director.pressure.bands[2]",
   "out-of-range director.pressure.maxEnemies", "out-of-range director.pressure.rest"
- ]
+ ],
+ "zone_after_in_plan3.json": ["unknown-format triggers[1].after"],
+ "bad_zone_after.json": ["self-ref triggers[0].after", "missing-ref triggers[1].after", "wrong-type triggers[2].after"]
 }

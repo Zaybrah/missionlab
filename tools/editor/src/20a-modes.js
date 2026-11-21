@@ -9,9 +9,11 @@ const VIEW_NAMES = { play: 'Play', create: 'Create', direct: 'Direct' };
 const VIEW_KEY = 'missionlab-view';
 const PLACING_TOOLS = ['add', 'route', 'zone', 'thing'];
 // The Play catalogue as the game last sent it (null: not read yet), the scenario picked in it, and what the page last
-// saved or opened, so the strip can tell saved from unsaved. lobbyFile: a scenario opened from the catalogue between
-// missions; while it is set, the page keeps it instead of clearing itself for the empty lobby.
-const catalogue = { list: null, error: '', pick: '', loading: false, savedText: null, savedName: '', lobbyFile: '', s: null, runSeen: null, wasRunning: false, listKey: '', detailKey: '' };
+// saved or opened, so the strip can tell saved from unsaved. savedFile: that file's own text when the page was given it
+// (opened from disk or from the game), which can be laid out differently from the page's text of the same scenario.
+// lobbyFile: a scenario opened from the catalogue between missions; while it is set, the page keeps it instead of
+// clearing itself for the empty lobby.
+const catalogue = { list: null, error: '', pick: '', loading: false, savedText: null, savedName: '', savedFile: null, lobbyFile: '', s: null, runSeen: null, wasRunning: false, listKey: '', detailKey: '' };
 state.pane = 'create';
 const CHOICE_WORDS = { '*': 'any scenario made for the map', '': 'a random layout', '(empty)': 'an empty map' };
 
@@ -129,8 +131,12 @@ function nextStepWords() {
 function syncNext() { const el = $('nextText'), text = nextStepWords(); if (el.textContent !== text) el.textContent = text; }
 // After every edit (changed() calls this).
 function viewsChanged() { syncStrip(); syncSeal(); if (viewIs('play')) syncPlay(); }
-// The page's scenario now equals a file: one just opened or saved.
-function markSaved(name) { catalogue.savedText = state.example ? null : scenarioText(); catalogue.savedName = name || fileName(); syncStrip(); }
+// The page's scenario now equals a file: one just opened or saved. text: the file's own text, when the page has it.
+function markSaved(name, text) {
+  catalogue.savedText = state.example ? null : scenarioText(); catalogue.savedName = name || fileName();
+  catalogue.savedFile = catalogue.savedText !== null && typeof text === 'string' ? text : null;
+  syncStrip();
+}
 
 // Every state the game sends (applyLive calls this).
 function syncModes(s) {
@@ -453,6 +459,16 @@ function shortLastRun(r) {
   if (typeof r.minutes !== 'number') return 'last run: no end seen';
   return 'last run ' + (r.result === 'success' ? 'a success' : r.result === 'failed' ? 'failed' : 'ended') + ', ' + r.minutes + ' min';
 }
+// The line under a row's title. Rows with the same title (a copy or a new revision installed beside the original) are
+// told apart by file name and revision only, which say nothing more about a sealed mission than its row already does.
+function catalogueRowMeta(e, list) {
+  const shown = x => String(x.title || x.value || '').trim().toLowerCase();
+  const which = list.some(x => x !== e && shown(x) === shown(e)) ? [e.file + ((e.revision | 0) ? ' · revision ' + (e.revision | 0) : '')] : [];
+  const seal = e.sealed ? [sealedEntryHides(e) ? 'sealed' : 'sealed, revealed'] : [];
+  if (!e.usable) return [...seal, ...which, sealedEntryHides(e) ? sealedStrip(e.why) : e.why].join(' · ');
+  const risky = capRisky(e).map(c => c.name + ' ' + c.shown);
+  return [...seal, ...which, e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', ...risky, shortLastRun(e.lastRun)].join(' · ');
+}
 function syncPlay() {
   if (!viewIs('play')) return;
   $('playLive').hidden = !live.on;
@@ -461,7 +477,7 @@ function syncPlay() {
   $('catNote').textContent = !live.on ? '' : catalogue.error || (!catalogue.list ? 'Reading the scenarios folder...'
     : !list.length ? 'No scenario files in BepInEx/MissionLab/scenarios yet. Make one in Create and save it there.' : '');
   const picked = pickedEntry();
-  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.usable, e.compat, e.lastRun, e.sealed, sealedEntryHides(e), capRisky(e).map(c => c.name)]), picked && picked.file, choice]);
+  const listKey = JSON.stringify([list.map(e => [e.file, e.hash, e.title, e.revision, e.usable, e.compat, e.lastRun, e.sealed, sealedEntryHides(e), capRisky(e).map(c => c.name)]), picked && picked.file, choice]);
   if (live.on && listKey !== catalogue.listKey) {
     catalogue.listKey = listKey;
     const ul = $('catList'); ul.textContent = '';
@@ -470,10 +486,7 @@ function syncPlay() {
       b.type = 'button'; b.setAttribute('aria-current', String(!!picked && picked.file === e.file));
       t.textContent = (e.title || e.value) + (choice !== null && String(e.value).toLowerCase() === choice ? '  · next mission' : '');
       meta.className = 'meta' + (e.usable ? '' : ' refused');
-      const seal = e.sealed ? [sealedEntryHides(e) ? 'sealed' : 'sealed, revealed'] : [];
-      const risky = capRisky(e).map(c => c.name + ' ' + c.shown);
-      meta.textContent = e.usable ? [...seal, e.map || e.navFile || 'map not named', e.compat === 'tested' ? 'tested' : e.compat ? e.compat : 'compatibility unknown', ...risky, shortLastRun(e.lastRun)].join(' · ')
-        : (e.sealed ? seal[0] + ' · ' : '') + (sealedEntryHides(e) ? sealedStrip(e.why) : e.why);
+      meta.textContent = catalogueRowMeta(e, list);
       b.append(t, meta);
       b.addEventListener('click', () => { catalogue.pick = e.file; $('cdNote').textContent = ''; syncPlay(); });
       li.appendChild(b); ul.appendChild(li);
@@ -554,7 +567,7 @@ $('cdEdit').addEventListener('click', async () => {
         if (m.ok) { const buf = await m.arrayBuffer(); state.map = makeMap(await readMapFile(buf), state.navFile, false); state.map.print = mapPrintOf(buf); state.ceiling = Infinity; view3d.dropMap(); fit(); }
       } catch (x) { /* the scenario is open; only its ground is missing */ }
     }
-    markSaved(e.file); setView('create', true); showTab('enemies', true); changed();
+    markSaved(e.file, text); setView('create', true); showTab('enemies', true); changed();
     say(said + (state.map ? '' : ' Its map file could not be read from the game, so the ground is not shown.'));
   } catch (err) { sealing.keep = false; $('cdNote').textContent = e.file + ' could not be opened: ' + (err && err.message ? err.message : err) + '.'; }
 });
@@ -589,4 +602,4 @@ async function saveToCatalogue(replace) {
   $('saveMsg').textContent = 'Not saved: ' + ((body && body.why) || 'the game answered with status ' + r.status) + (first.length ? '. ' + first.join('; ') : '') + '. The Mission tab\'s check lists what to fix.';
 }
 $('saveCat').addEventListener('click', () => saveToCatalogue(false));
-expose({ capList, capRead, capJudge, capNeeds, capFactNeeds, capKind, capFitting, reconFacts, scenarioReadyRows });
+expose({ capList, capRead, capJudge, capNeeds, capFactNeeds, capKind, capFitting, reconFacts, scenarioReadyRows, catalogueRowMeta });

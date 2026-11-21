@@ -1,0 +1,1 @@
+{ "schema": "missionlab-plan/4", "mission": { "triggers": [ { "id": 1, "when": "intel" }, { "id": 2, "pos": [5, 0, 5], "after": 1 }, { "id": 3, "when": "hold", "hold": 30, "pos": [5, 0, 5], "after": 1 }, { "id": 4, "when": "hold", "hold": 10, "pos": [5, 0, 5], "after": 0 } ], "spawns": [ { "pos": [0, 0, 0] } ] } }

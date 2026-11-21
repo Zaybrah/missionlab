@@ -78,11 +78,12 @@ estimates. Only the Two-Man Job has been played (once, with two players, 19 Nove
 none has been playtested for balance. Each stays finishable when its chance enemies are absent. `docs/first-edit.md`
 walks a first-time host through playing one, changing an encounter, fixing a Mission check warning and saving it.
 
-Three more files in `examples/` are for trying things out rather than finished missions, and none has run in the game:
+Three more files in `examples/` are for trying things out rather than finished missions:
 `clean_house_recipe_intel_raid.json` (what the editor's "New mission: Intel raid" recipe makes, with its rehearsal in
-`examples/rehearsals/`), `clean_house_objectives.json` (`missionlab-plan/3`: two required objectives in a chain, one
-optional, and the extraction waiting for the required ones) and `clean_house_movement_probe.json` (the test of whether
-enemies walk where MissionLab sends them; the host fires its triggers by hand from Direct and keeps the log).
+`examples/rehearsals/`), `clean_house_objectives.json` (`missionlab-plan/4`: two required objectives in a chain, one
+optional, the extraction waiting for the required ones, and the upstairs hold counted only once the phone is taken; played
+once solo) and `clean_house_movement_probe.json` (the test of whether enemies walk where MissionLab sends them; the host
+fires its triggers by hand from Direct and keeps the log).
 
 ### Zones
 A scenario can hold zones (`"triggers"`: id, position, radius). An enemy with
@@ -159,6 +160,10 @@ their own tab; connected to the game each has a "Fire now" button.
 - A file with `goals` or place links is written as `missionlab-plan/3`. MissionLab 0.26 and older refuse it as a newer
   format rather than playing it without them. For a mission whose only plan/3 feature is place links, the editor can
   export a copy without links (plan/2, each zone with its own copy of the shape) that 0.25 and 0.26 can play.
+- **A zone or hold that waits for another trigger** (0.27, ML-055): `"after": 1` on a zone or hold trigger. Until trigger 1
+  has fired, nobody inside counts; from then the zone, its delay or the hold's time work as usual, so a hold reached
+  early still has to be held again. A file with one is written as `missionlab-plan/4`, which earlier versions refuse
+  instead of watching the area from the start.
 - `"insertion": "Alpha 2"` gives every player that insertion, whatever they pick.
 - `"weather": { "hour": 5.5, "rain": true, "sandstorm": false }` on maps that have
   weather. Clean House, Mexico Depot and Georgia have none, so it does nothing there.
@@ -294,10 +299,22 @@ in the enemy panel, for everything selected.
   help every two minutes, lights out on the alarm, success when the tagged enemies are down.
 - **Try-out:** every door opens.
 
-### New in 0.27.0 (not run in the game yet)
-The v0.27 milestone of `docs/backlog.md` (ML-028 to ML-053). Everything here is covered by `./test.sh`, which now also
-works the page in a real browser; none of it has run in OPERATOR yet, and none of it has been seen by a friend without
-the mod. `docs/backlog-status.md` says what each ticket still needs in the game.
+### New in 0.27.0 (run once solo on 21 November: packs, an operation and objectives; the rest not yet)
+The v0.27 milestone of `docs/backlog.md` (ML-028 to ML-053, and ML-055 from the run of 21 November). Everything here is
+covered by `./test.sh`, which now also works the page in a real browser. On 21 November one host alone installed a pack
+through the running game, played an operation of two missions across a restart and played the objectives example; nothing
+else has run in OPERATOR yet, and none of it has been seen by a friend without the mod. `docs/backlog-status.md` says what
+each ticket still needs in the game.
+
+**Found in the run of 21 November, fixed (not run in the game again yet)**
+- A zone or hold can wait for another trigger (`after`, `missionlab-plan/4`; ML-055): the objectives example's upstairs
+  hold had been reached while the phone was searched for, so the second objective was done the moment it appeared. The
+  example now counts the hold only once the phone is taken.
+- Operations: after the game refused a change to a branch, the page went on showing the refused choice; it now shows
+  what is saved.
+- Export pack puts a scenario opened unchanged in as its file's own text, so importing it back finds the same file
+  instead of a clash.
+- Missions with the same title in Play's list now show their file name (and revision) in the row.
 
 **Stabilisation**
 - **A circle never opens the way out** (ML-029). A trigger that waits, through `after`, `all` or `any`, on a chain that
@@ -746,7 +763,8 @@ This table is made from `docs/capabilities.json` by `python3 tools/status.py --w
 | PvP, wave survival and other modes left alone | untested | any | Not tried in the game |
 | Scenario contract, run records, recording identities, readiness check, release ZIP | supported, solo | 0.26.0, Clean House, solo | 18 November: readiness all OK, catalogue right, run records and semantics 4 recordings written. Run repeat, debrief: untested in the game |
 | Named places (`places`: labels, and painted rooms that zone and hold triggers can link to) | untested | any | Not a row before 0.27. A place labels a spot or a painted room for logs, recordings and explanations; from 0.27 a zone or hold trigger may link to a painted place (missionlab-plan/3) and uses its shape, resolved when the file is read. No run on record names or links one |
-| Mission objectives (`goals`: required and optional, notices, extraction waiting for them) | untested | any | New in 0.27 (missionlab-plan/3). Objectives are driven by triggers; the plugin shows 'New objective', 'Objective complete' and 'Objective failed' through the same on-screen message as trigger messages, and can hold the extraction until every required objective is done. No run on record has one; a client's view of the notices is unseen |
+| Mission objectives (`goals`: required and optional, notices, extraction waiting for them) | supported, solo | 0.27.0, Clean House by night, solo | 21 November (solo, by the host's log): `clean_house_objectives` played to a success; the goals moved in order, the extraction stayed shut until both required goals were done, and the run record holds all three as succeeded. The notices on the host's screen were not checked; a client's view is unseen. The upstairs hold had been reached before the phone, so that goal was done the moment it became active; 0.27 lets the hold wait for the phone (row zone-after) |
+| Zones and holds that wait for another trigger (`after` on zone and hold, missionlab-plan/4) | untested | any | New in 0.27 (ML-055), after the objectives run of 21 November. Covered only by the tests; not run in the game yet |
 | Branches on observed outcomes (`when: "outcome"`: applied, failed, partial, unconfirmed, timeout) | untested | any | New in 0.27. A trigger waits for what the host saw of another trigger's latest firing; only enemies made by the spawner count as seen to take, and messages, doors and calls are never more than unconfirmed. A late result is shown but never moves the branch, and nothing is retried. No run on record has one |
 | Pressure director, an experiment (`director.pressure`: bands, caps, preview, rest) | experimental | any | New in 0.27, a spike. Spends the Game Master budget on the author's own cards within authored bands, never past the budget, the living-enemy cap or a card's placement rule, and rests after a casualty; preview logs without firing. Placement checks are an approximation. Covered only by the tests: no playtest has compared it with the director off |
 | Draft proposals from coding agents (`/api/agent`, `tools/agent/`) | untested | any | New in 0.27. Proposals are checked by the strict reader, Completion and the capability list on a copy and stored under proposals/; they never touch scenario files or the running mission until the author applies one as a draft. No run on record has used it |
@@ -756,7 +774,7 @@ This table is made from `docs/capabilities.json` by `python3 tools/status.py --w
 | Host options before the mission (0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): the picks applied at the start (Standard, Regulars, Two, 25 minutes) |
 | Constrained scatter (0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): scatter moved 5 of 5 enemies |
 | Game Master budget and action cards (`director`, 0.26) | supported, by the host's log | 0.26.1, Clean House by night, two players | 19 November (two players): both cards were spent (the breaker reported the lights off; the street patrol appeared) |
-| Scenario packs (0.26) | untested | any | Covered only by the tests; not installed in a game yet |
+| Scenario packs (0.26) | supported, solo | 0.27.0, Clean House by night, solo | 21 November: exported from the live page; installed through the running plugin as the same text (nothing written), as a copy with a new name and id and as a revision; the copy played to its extraction as the second mission of an operation. The install was sent to the plugin's route directly; the page's Open pack file was not used |
 <!-- end of the capability table -->
 
 See `docs/findings.md` for what is known about the game's internals.

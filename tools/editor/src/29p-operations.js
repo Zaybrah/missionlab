@@ -10,7 +10,7 @@
 // objective the record does not list is never turned into a branch here or in the game: the host decides, and the
 // decision is labelled as the host's. A scenario changed or gone since it was pinned is not set up until the host
 // retargets it or restarts the operation; the runs counted so far stay either way.
-state.operation = state.operation || { lists: [], file: '', data: null, pending: '', retry: '', problems: [], runs: [], note: '', trouble: '', key: '', busy: null };
+state.operation = state.operation || { lists: [], file: '', data: null, pending: '', retry: '', problems: [], runs: [], note: '', trouble: '', key: '', redraw: false, busy: null };
 const OP_SCHEMA = 'missionlab-operation/1';
 const OP_END = 'end';
 const OP_MOST = 6;
@@ -149,10 +149,17 @@ function operationCopy() {
   const d = state.operation.data;
   return d ? JSON.parse(JSON.stringify({ schema: OP_SCHEMA, id: d.id || '', name: d.name, start: d.start, nodes: d.nodes })) : null;
 }
+// A refused change leaves the operation as it was, so its rows look unchanged to syncOperation, while the control the
+// host changed still shows the refused value. The rows are drawn again from the saved operation, focus or not.
+function operationRefused(note) {
+  const op = state.operation;
+  op.note = note; op.redraw = true;
+  syncOperation();
+}
 async function operationSave(p, done) {
   const op = state.operation;
   try { const d = await operationPost('/api/operations/save', { file: op.file, operation: p }); op.note = opStr(d.said) || done; }
-  catch (err) { op.note = 'Not saved: ' + (err && err.message ? err.message : err) + '. The operation is as it was.'; }
+  catch (err) { operationRefused('Not saved: ' + (err && err.message ? err.message : err) + '. The operation is as it was.'); return; }
   syncOperation();
 }
 // A mission id the game accepts (a-z, 0-9 and '-', at most 32), made from the file name and free in this operation.
@@ -196,7 +203,7 @@ async function operationSetNode(id, change, done) {
 }
 async function operationAddBranch(id) {
   const p = operationCopy(), n = p && p.nodes.find(x => x.id === id); if (!n) return;
-  if (n.branches.length >= OP_MOST_BRANCHES) { state.operation.note = 'A mission has at most ' + OP_MOST_BRANCHES + ' branches.'; syncOperation(); return; }
+  if (n.branches.length >= OP_MOST_BRANCHES) { operationRefused('A mission has at most ' + OP_MOST_BRANCHES + ' branches.'); return; }
   const other = p.nodes.find(x => x.id !== id);
   n.branches.push({ result: 'success', to: other ? other.id : OP_END });
   await operationSave(p, opNodeName(p, id) + ': branch ' + n.branches.length + ' added.');
@@ -208,10 +215,10 @@ async function operationRemoveBranch(id, i) {
   await operationSetNode(id, n => { n.branches.splice(i, 1); }, opNodeName(state.operation.data, id) + ': branch ' + (i + 1) + ' removed.');
 }
 async function operationRemoveNode(id) {
-  const op = state.operation, p = operationCopy(); if (!p) return;
+  const p = operationCopy(); if (!p) return;
   const from = p.nodes.filter(n => n.id !== id && (n.fallback === id || n.branches.some(b => b.to === id)));
-  if (from.length) { op.note = opNodeName(p, id) + ' is still where ' + from.map(n => opNodeName(p, n.id)).join(', ') + ' can lead. Change those first.'; syncOperation(); return; }
-  if (p.start === id) { op.note = opNodeName(p, id) + ' is where the operation starts. Start with another mission first.'; syncOperation(); return; }
+  if (from.length) { operationRefused(opNodeName(p, id) + ' is still where ' + from.map(n => opNodeName(p, n.id)).join(', ') + ' can lead. Change those first.'); return; }
+  if (p.start === id) { operationRefused(opNodeName(p, id) + ' is where the operation starts. Start with another mission first.'); return; }
   const name = opNodeName(p, id);
   p.nodes = p.nodes.filter(n => n.id !== id);
   await operationSave(p, 'Removed ' + name + ' from the operation.');
@@ -225,8 +232,8 @@ async function operationResolve(id, how) {
   if (how === 'restart') { await operationRestart(); return; }
   const was = n.setup, idn = playlistIdentity(was, catalogue.list);
   const e = how === 'current' ? idn.now : pickedEntry();
-  if (!e || e.page) { op.note = how === 'current' ? 'The file is not there any more: use the picked mission instead, or restart the operation.' : 'Pick a mission in the list above first.'; syncOperation(); return; }
-  if (!e.usable) { op.note = (e.title || e.value) + ' cannot be used: ' + (e.why || 'MissionLab would not use it') + '.'; syncOperation(); return; }
+  if (!e || e.page) { operationRefused(how === 'current' ? 'The file is not there any more: use the picked mission instead, or restart the operation.' : 'Pick a mission in the list above first.'); return; }
+  if (!e.usable) { operationRefused((e.title || e.value) + ' cannot be used: ' + (e.why || 'MissionLab would not use it') + '.'); return; }
   const fresh = playlistEntryOf(e), same = String(e.value).toLowerCase() === String(was.file).toLowerCase();
   if (was.label && same) fresh.label = was.label;
   if (was.squad > 0) fresh.squad = was.squad;
@@ -376,10 +383,14 @@ function syncOperation() {
   const progress = $('opProgress'), steps = operationProgress(), progressKey = JSON.stringify(steps);
   if (progress.dataset.key !== progressKey) { progress.dataset.key = progressKey; progress.textContent = ''; steps.forEach(t => progress.append(plEl('li', '', t))); }
   const key = JSON.stringify([rows, d && d.nodes]);
-  const f = document.activeElement, ul = $('opNodes');
-  if (key === op.key || (f && /^(INPUT|SELECT)$/.test(String(f.tagName || '')) && ul.contains(f))) return;
-  op.key = key; ul.textContent = '';
+  const f = document.activeElement, ul = $('opNodes'), held = !!f && /^(INPUT|SELECT)$/.test(String(f.tagName || '')) && !!ul.contains(f);
+  // A control in use is not drawn over, so typing is kept; after a refusal it must be, as it shows what was refused.
+  if (!op.redraw && (key === op.key || held)) return;
+  const label = held ? String(f.getAttribute('aria-label') || '') : '';
+  op.redraw = false; op.key = key; ul.textContent = '';
   rows.forEach(row => ul.appendChild(operationNodeEl(row, d.nodes[row.index])));
+  const again = label ? [...ul.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === label) : null;
+  if (again) again.focus();
 }
 $('opAdd').addEventListener('click', () => operationAdd());
 $('opNew').addEventListener('click', () => operationNew());

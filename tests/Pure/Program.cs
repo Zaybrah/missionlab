@@ -393,7 +393,7 @@ Console.WriteLine("files");
             Check("invalid/" + name + " is refused with the listed places", got == want && notRead == null, "got  " + got + "\n        want " + want);
             Check("invalid/" + name + " is left as it was", File.ReadAllText(file) == before);
         }
-        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "all_fields_v27.json", "extraction_chance_defect.json" })
+        foreach (string good in new[] { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "all_fields_v27.json", "all_fields_v4.json", "extraction_chance_defect.json" })
             Check(good + " passes the strict reader", !ScenarioFile.Blocks(ScenarioFile.Read(Fixture(good), out MissionPlan ok)) && ok != null, string.Join(" | ", ScenarioFile.Read(Fixture(good), out _).Select(f => f.ToString())));
         var legacy = ScenarioFile.Read(Fixture("legacy_minimal.json"), out MissionPlan oldPlan);
         Check("a file without a format line is read, with a note", oldPlan != null && legacy.Count == 1 && legacy[0].Level == Finding.Note && legacy[0].Code == "no-version");
@@ -430,7 +430,7 @@ Console.WriteLine("files");
                     }
             }
         }
-        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson(), Plan(Fixture("all_fields_v26.json")).ToJson(), Plan(Fixture("all_fields_v27.json")).ToJson() };
+        var written = new List<string> { Plan(Fixture("all_fields.json")).ToJson(), Plan(Fixture("all_fields_v2.json")).ToJson(), Plan(Fixture("all_fields_v26.json")).ToJson(), Plan(Fixture("all_fields_v27.json")).ToJson(), Plan(Fixture("all_fields_v4.json")).ToJson() };
         foreach (string file in Directory.GetFiles(Path.Combine(root, "examples"), "*.json")) written.Add(Plan(File.ReadAllText(file)).ToJson());
         foreach (string text in written)
         {
@@ -609,6 +609,10 @@ Ml052Tests.Run(Check);
 // ---------------------------------------------------------------- draft proposals from coding agents: copies, stale refusals, capabilities (ML-053)
 Console.WriteLine("agent draft proposals");
 Ml053Tests.Run(Check);
+
+// ---------------------------------------------------------------- zones and holds that wait for another trigger (ML-055)
+Console.WriteLine("zone and hold gates");
+Ml055Tests.Run(Check);
 
 Console.WriteLine(failures == 0 ? "ALL " + checks + " CHECKS PASSED" : failures + " of " + checks + " CHECKS FAILED");
 return failures == 0 ? 0 : 1;

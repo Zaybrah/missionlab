@@ -1266,7 +1266,7 @@ console.log('scenario packs (ML-026)');
     const said = await api.packExport(), out = api.packs.lastExport;
     check('the pack is saved as <name>.mlpack.json', out && /\.mlpack\.json$/.test(out.name) && said.startsWith('Saved as ' + out.name), said);
     const back = api.packRead(out.text);
-    check('it reads back with the scenario as it would be saved and the module', back.pack && back.info.files.length === 2 && back.info.files[0].text === api.scenarioText() && back.info.files[1].text === alarm, text(back.findings.slice(0, 3)));
+    check('it reads back with the scenario as its file holds it, and the module', back.pack && back.info.files.length === 2 && back.info.files[0].text === raid && back.info.files[1].text === alarm, text(back.findings.slice(0, 3)));
     check('only scenarios and modules are in it', back.info.files.every(f => f.kind === 'scenario' || f.kind === 'module') && Object.keys(JSON.parse(out.text).files).length === 2);
     check('it needs the scenario\'s map file and this version', text(back.info.maps) === text(['suburbv2.bytes']) && back.info.mod === api.EDITOR_VERSION, text(back.info.maps));
   }
@@ -1620,6 +1620,7 @@ console.log('editor -> plugin -> editor');
     ['all_fields_v2.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v2.json'), 'utf8')],
     ['all_fields_v26.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v26.json'), 'utf8')],
     ['all_fields_v27.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v27.json'), 'utf8')],
+    ['all_fields_v4.json', fs.readFileSync(path.join(FIXTURES, 'all_fields_v4.json'), 'utf8')],
     ['legacy_minimal.json', fs.readFileSync(path.join(FIXTURES, 'legacy_minimal.json'), 'utf8')],
     ...fs.readdirSync(path.join(ROOT, 'examples')).filter(n => n.endsWith('.json')).sort().map(n => ['examples/' + n, fs.readFileSync(path.join(ROOT, 'examples', n), 'utf8')]),
     ['awkward_text.json', oddFile],

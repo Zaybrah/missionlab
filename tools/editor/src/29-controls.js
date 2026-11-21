@@ -141,7 +141,7 @@ function syncSide() {
       const fire = mk('button', { type: 'button', className: 'btn', textContent: 'Fire now', hidden: !live.on || state.fired.includes(z.id) }); fire.style.padding = '3px 8px';
       fire.title = 'Immediate: sets this trigger off in the game now, whatever it waits for. Never staged, also in Draft mode.'; fire.addEventListener('click', () => liveCommand('fire', { id: z.id }));
       const del = mk('button', { type: 'button', className: 'btn danger', textContent: 'Delete' }); del.style.padding = '3px 8px';
-      del.addEventListener('click', () => { willChange('Delete ' + trigTitle(z).toLowerCase()); state.zones.splice(zi, 1); state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; }); state.zones.forEach(q => { if (q.after === z.id) q.after = 0; }); if (state.extractionAfter === z.id) state.extractionAfter = 0; changed(); });
+      del.addEventListener('click', () => trigDelete(zi));
       // What it waits for.
       const what = mk('div', { className: 'what' });
       const numIn = (value, min, max, step, label, set) => { const el = mk('input', { type: 'number', min, max, step, value }); el.setAttribute('aria-label', label); el.addEventListener('change', () => { willChange('Change ' + label.charAt(0).toLowerCase() + label.slice(1)); set(Math.max(min, Math.min(max, +el.value || 0))); changed(); }); return el; };
@@ -161,6 +161,12 @@ function syncSide() {
         const placeBox = placeLinkBox(z); if (placeBox) what.append(placeBox);     // copy or link a named place's area (ML-040; 29b-places.js)
         if (!painted) what.append(grp('Radius', numIn(Math.round(z.radius), 2, 200, 1, 'Radius of zone ' + z.id + ' in metres', v => { z.radius = v; }), 'm'));
         what.append(grp('and stay', numIn(Math.round(z.hold || 0), 0, 3600, 5, 'Seconds players must stay in zone ' + z.id, v => { z.hold = v; }), 's'));
+        // ML-055: the zone or hold watches nobody until the chosen trigger has fired, so a hold cannot be done before its goal starts.
+        const gate = mk('select'); gate.setAttribute('aria-label', 'Which trigger ' + trigTitle(z) + ' starts after');
+        [[0, 'At the start'], ...state.zones.filter(q => q.id !== z.id).map(q => [q.id, trigTitle(q) + (q.name ? ': ' + q.name : '')])].forEach(([v, t]) => gate.appendChild(mk('option', { value: v, textContent: t })));
+        gate.value = state.zones.some(q => q.id === z.after && q.id !== z.id) ? z.after : 0; gate.addEventListener('change', () => { if (!outcomeSet(z.id, 'after', +gate.value || 0)) gate.value = z.after; });
+        gate.title = 'Players inside count only once this trigger has fired; a hold\'s time starts then';
+        what.append(grp('Starts after', gate));
       }
       else if (z.when === 'down') what.append(grp('Enemies down:', numIn(z.count | 0, 0, 200, 1, 'How many enemies must be down for trigger ' + z.id, v => { z.count = v | 0; })), z.count > 0 ? '' : ' (0: all of them)');
       else if (z.when === 'alert') what.append('An enemy notices the players');
@@ -640,22 +646,36 @@ function trigAdd(when) {
   return id;
 }
 // One field of an outcome trigger (ML-047), as its row sets it: the watched trigger, the outcome word or the window in
-// seconds. One named history entry each; a value the file would refuse is not taken, so the row cannot make one.
+// seconds; or the gate of a zone or hold (ML-055), where 0 is no gate. One named history entry each; a value the file
+// would refuse is not taken, so the row cannot make one.
 function outcomeSet(id, key, value) {
   const z = state.zones.find(q => q.id === id);
-  if (!z || z.when !== 'outcome') return false;
+  if (!z || (z.when !== 'outcome' && !(z.when === 'zone' && key === 'after'))) return false;
   let v;
-  if (key === 'after') { v = value | 0; if (v === z.id || !state.zones.some(q => q.id === v)) return false; }
+  if (key === 'after') { v = value | 0; if (v === z.id || ((z.when === 'outcome' || v !== 0) && !state.zones.some(q => q.id === v))) return false; }
   else if (key === 'outcome') { if (!OUTCOMES.includes(value)) return false; v = value; }
   else if (key === 'within') { v = Math.max(1, Math.min(3600, +value || OUTCOME_WITHIN)); }
   else return false;
   if (z[key] === v) return true;
-  willChange('Change ' + (key === 'after' ? 'the trigger it watches' : key === 'outcome' ? 'the outcome it waits for' : 'the answer window') + ' of ' + trigTitle(z).toLowerCase());
+  willChange('Change ' + (key === 'after' ? (z.when === 'zone' ? 'the trigger it starts after' : 'the trigger it watches') : key === 'outcome' ? 'the outcome it waits for' : 'the answer window') + ' of ' + trigTitle(z).toLowerCase());
   z[key] = v;
   changed();
   return true;
 }
-expose({ trigAdd, outcomeSet });   // adding a trigger and editing an outcome trigger (ML-047), for automated tests
+// Deletes one trigger in one history entry: what waited for it (enemies, after and outcome triggers, a zone or hold's gate
+// (ML-055), the extraction) no longer does, as a gate on a trigger that is gone would never be installed.
+function trigDelete(zi) {
+  const z = state.zones[zi];
+  if (!z) return false;
+  willChange('Delete ' + trigTitle(z).toLowerCase());
+  state.zones.splice(zi, 1);
+  state.enemies.forEach(en => { if (en.trigger === z.id) en.trigger = 0; });
+  state.zones.forEach(q => { if (q.after === z.id) q.after = 0; });
+  if (state.extractionAfter === z.id) state.extractionAfter = 0;
+  changed();
+  return true;
+}
+expose({ trigAdd, outcomeSet, trigDelete });   // adding, editing and deleting triggers (ML-047, ML-055), for automated tests
 $('trigNew').addEventListener('click', () => {
   const id = trigAdd($('trigKind').value);
   showTab('triggers');

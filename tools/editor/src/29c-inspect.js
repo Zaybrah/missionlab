@@ -4,7 +4,8 @@
 // known from the file alone, the same reasoning as the Mission check: which trigger can fire, which is left to chance.
 const INSPECT_WORDS = { off: 'Excluded', circle: 'In a circle', waiting: 'Waiting', holding: 'Holding', counting: 'Counting down', fired: 'Fired', cooling: 'Cooling down', exhausted: 'Exhausted' };
 const INSPECT_TIMED = ['counting', 'holding', 'cooling'];
-const inspectNeeds = z => (z.when === 'after' || z.when === 'outcome' ? (z.after ? [z.after] : []) : z.when === 'all' || z.when === 'any' ? (z.of || []) : []);
+// A zone or hold with a gate (ML-055) needs that trigger as an after trigger does.
+const inspectNeeds = z => (z.when === 'after' || z.when === 'outcome' || z.when === 'zone' ? (z.after ? [z.after] : []) : z.when === 'all' || z.when === 'any' ? (z.of || []) : []);
 // The words for what became of one firing of a trigger's actions (ML-047), as the engine reports them.
 const INSPECT_OUTCOMES = { applied: 'Actions applied', failed: 'Action failed', partial: 'Action partly applied', unconfirmed: 'Action not confirmed' };
 const INSPECT_WAITS = { applied: 'is seen to take', failed: 'fails', partial: 'only partly takes', unconfirmed: 'goes through unseen', timeout: 'has no answer within ' };
@@ -64,7 +65,7 @@ function inspectCondition(z) {
   const kind = String(z.item || '').replace(/[ _]\d+$/, '').trim().toLowerCase();
   const tagged = z.tag ? ' tagged "' + z.tag + '"' : '';
   const list = (z.of || []).join(', ');
-  let s = z.when === 'zone' ? (z.everyone ? 'Fires when every living player is inside' : 'Fires when a player steps inside') + (z.hold > 0 ? ' and stays ' + Math.round(z.hold) + ' s' : '')
+  let s = z.when === 'zone' ? (z.after ? 'Waits for trigger ' + z.after + ' before it watches its area, then f' : 'F') + (z.everyone ? 'ires when every living player is inside' : 'ires when a player steps inside') + (z.hold > 0 ? ' and stays ' + Math.round(z.hold) + ' s' : '')
     : z.when === 'alert' ? 'Fires when the enemy raises the alarm'
     : z.when === 'intel' ? (kind === '' || kind === 'any' ? 'Fires when any intel item is picked up' : kind === 'all' ? 'Fires when every intel item is picked up' : 'Fires when the ' + kind + ' is picked up')
     : z.when === 'time' ? 'Fires ' + Math.round(z.delay || 0) + ' s into the mission'

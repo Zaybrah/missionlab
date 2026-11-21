@@ -26,7 +26,7 @@ const GRAPH_EXIT_WORDS = { never: 'Can never open', missing: 'Waits for a trigge
 function graphCondition(z) {
   const list = (z.of || []).join(', '), item = String(z.item || '').replace(/[ _]\d+$/, '').trim();
   switch (z.when) {
-    case 'zone': return (z.hold > 0 ? 'Players hold the zone ' + Math.round(z.hold) + ' s' : 'Players reach the zone') + (z.everyone ? ', all of them' : '');
+    case 'zone': return (z.hold > 0 ? 'Players hold the zone ' + Math.round(z.hold) + ' s' : 'Players reach the zone') + (z.everyone ? ', all of them' : '') + (z.after ? ', once trigger ' + z.after + ' has fired' : '');
     case 'alert': return 'The enemy raises the alarm';
     case 'intel': return item === '' || item.toLowerCase() === 'any' ? 'Any intel is picked up' : item === 'all' ? 'Every intel item is picked up' : item + ' is picked up';
     case 'time': return Math.round(z.delay || 0) + ' s into the mission';
@@ -87,6 +87,8 @@ function graphBase() {
     if (z.when === 'after') edges.push(z.after ? { from: ref(z.after), to, kind: 'after' } : { from: 'start', to, kind: 'hand' });
     else if (z.when === 'outcome') { if (z.after) edges.push({ from: ref(z.after), to, kind: 'outcome', word: GRAPH_OUTCOME_WORDS[z.outcome] || String(z.outcome || '') }); }
     else if (z.when === 'all' || z.when === 'any') { for (const id of z.of || []) if (id !== z.id) edges.push({ from: ref(id), to, kind: z.when }); }
+    // A zone or hold with a gate (ML-055) is watched only once the gate has fired: an after line, told apart in its sentence.
+    else if (z.when === 'zone' && z.after) edges.push({ from: ref(z.after), to, kind: 'after', gate: true });
     else edges.push({ from: 'start', to, kind: 'start' });
   });
   const openers = state.zones.filter(z => z.opensExtraction).map(z => z.id);
@@ -301,7 +303,7 @@ function graphEdgeText(e, byKey) {
   switch (e.kind) {
     case 'start': return name(e.to) + ' is armed from the start';
     case 'hand': return name(e.to) + ' fires only when the Game Master presses Fire now';
-    case 'after': return name(e.to) + ' waits for ' + name(e.from);
+    case 'after': return e.gate ? name(e.to) + ' watches its area only once ' + name(e.from) + ' has fired' : name(e.to) + ' waits for ' + name(e.from);
     case 'outcome': return name(e.to) + (e.word === 'timeout' ? ' fires when ' + name(e.from) + ' gives no answer in time' : ' fires when the latest firing of ' + name(e.from) + ' is reported ' + e.word);
     case 'all': return name(e.to) + ' needs ' + name(e.from) + ', with every other one of its list';
     case 'any': return name(e.to) + ' needs ' + name(e.from) + ' or another one of its list';

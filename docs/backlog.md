@@ -955,7 +955,7 @@ All source links below refer to the reviewed v0.23 commit. The code findings are
 
 ## v0.27 milestone
 
-Added 20 November 2026 from the review of main at [7e54eb7](https://github.com/Zaybrah/missionlab/commit/7e54eb7e900a8fcbf90d285a1c74e2003ee83505) (Director and editor 0.26.1), dated 18 November 2026. The next release candidate is 0.27.0. These 26 tickets, ML-028 to ML-053, continue the numbering above; ML-001 to ML-027 are not reopened, only extended. They comprise 12 stabilisation and release tasks, six authoring improvements, four mission-design and session features and four optional later candidates.
+Added 20 November 2026 from the review of main at [7e54eb7](https://github.com/Zaybrah/missionlab/commit/7e54eb7e900a8fcbf90d285a1c74e2003ee83505) (Director and editor 0.26.1), dated 18 November 2026. The next release candidate is 0.27.0. These 26 tickets, ML-028 to ML-053, continue the numbering above; ML-001 to ML-027 are not reopened, only extended. They comprise 12 stabilisation and release tasks, six authoring improvements, four mission-design and session features and four optional later candidates. ML-055 was added on 21 November from the first solo run of the candidate (v0.27 E).
 
 The aims: a dependable first session (install, play one supported mission with an unmodded friend, edit, save, restart, play the saved result); a complete house-authoring workflow (paint the rooms and floors once, reuse them, walk through and verify the boundaries); understandable mission logic (dependencies, outcomes, the first failed expectation); and repeatable squad sessions without accounts or arbitrary game-state restoration.
 
@@ -1012,6 +1012,12 @@ Source: `missionlab-next-implementation-backlog.md` (18 November 2026). Its link
 | ML-051 | Build branching operations across missions | P2 | M–L |
 | ML-052 | Experiment with an author-bounded pressure director | P2 | Spike, then L if useful |
 | ML-053 | Expose a local draft-authoring API for coding agents | P2 | M |
+
+### v0.27 E Found in the game
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-055 | Let a zone or hold wait for another trigger | P1 | M–L |
 
 ## v0.27 A Stabilization and release
 
@@ -1660,3 +1666,70 @@ A coding assistant can help assemble and test scenarios if it uses the same sche
 - [ ] A scripted agent-client example creates and validates one supported encounter without any agent-specific alternate mission semantics.
 
 **Current source:** [Published scenario schema](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/scenario.schema.json) · [Product users and first-host goal](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/PRODUCT.md#L7-L25) · [Implemented roadmap and remaining evidence](https://github.com/Zaybrah/missionlab/blob/7e54eb7e900a8fcbf90d285a1c74e2003ee83505/docs/backlog-status.md)
+
+## v0.27 E Found in the game
+
+### ML-055 Let a zone or hold wait for another trigger
+
+**Priority:** P1 · **Effort:** M–L  
+**Depends on:** ML-007, ML-029, ML-046  
+**Builds on:** Extends the trigger engine and the scenario contract
+
+On 21 November `examples/clean_house_objectives.json` was played solo to a success. Its "Upstairs held" hold (30 s, everyone) had already fired while the phone was searched for upstairs, so "Secure the upper floor", made active by the phone, succeeded the moment it became active and no hold was asked for after the phone. `GoalBook` asks whether a trigger has ever fired, which stays; nothing in the format could make a hold start counting only after another trigger.
+
+**User goal:** Once the phone is taken, the squad has to hold the upstairs for 30 s, even if they already stood there.
+
+**Implement**
+
+- `after` on a zone or hold: the trigger does not watch its area until that trigger has fired; from then the zone, its delay or the hold's time work as usual. 0 or absent: from the start, as before.
+- The gate is a dependency edge like an `after` trigger's: circles, Completion, the mission graph, the inspector, module renumbering and duplicate-id repairs. A live change of the gate loses the trigger's unfinished progress, like a reshaped place.
+- Written as `missionlab-plan/4` only when a zone or hold has a gate, so the first 0.27.0 candidate refuses the file instead of watching the area from the start. Strict readers refuse a gate below plan/4 (`unknown-format`), on itself (`self-ref`) or on no trigger (`missing-ref`); the lenient reader drops such a gate. Capability word `zone-after`.
+- The trigger panel sets the gate for zone and hold triggers; the objectives example's hold waits for the phone.
+
+**Done when**
+
+- [ ] A hold reached before its gate fires needs its full time after the gate, in the engine, rehearsal and the game.
+- [ ] Both strict readers give the same refusals for `invalid/zone_after_in_plan3.json` and `invalid/bad_zone_after.json`; `all_fields_v4.json` round-trips byte for byte in C# and the editor.
+- [ ] A file without a gate is written exactly as before (plan/1 to plan/3).
+- [ ] Row 8 of `docs/coop-record.md`: "Objective complete: Secure the upper floor" comes at least 30 s after the phone, seen in the game.
+
+## After v0.27
+
+Added 21 November 2026 from a review of a proposed community website for missions and operations, against main at [6b23cf3](https://github.com/Zaybrah/missionlab/commit/6b23cf34dea72fca8df3d1053e77428e5e450277). The review's finding: single missions already travel as packs (ML-026), but a whole operation cannot. That is the piece to build and prove first, between two hosts and one file, before any hosted catalogue. A website, accounts and reviews are not part of this ticket.
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ML-054 | Share a whole operation as one portable pack | P2 | M–L |
+
+### ML-054 Share a whole operation as one portable pack
+
+**Priority:** P2 · **Effort:** M–L  
+**Depends on:** ML-026 and ML-051, each seen in the game first; ML-039  
+**Builds on:** Extends ML-026 packs and ML-051 operations
+
+A pack carries scenarios and modules only; any other kind is refused as `not-allowed`. An operation file holds the author's design (`start`, `nodes`) together with their own playthrough (`next`, `round`, `armed`, `armedAfter`, `repeat`, `steps`). Each mission is pinned by file name, scenario id, revision and text hash, and the pack installer gives a colliding scenario a new file name, id or revision, so an operation copied by hand points at missing or changed files. A mission set to repeat a recorded run names a file in the author's `runs/`.
+
+**User goal:** Send a friend one file holding a three-mission operation with its branches; they install it beside their own missions and start at mission one with fresh progress.
+
+**Implement**
+
+- A pack entry of kind `operation`, at most one per pack: the design only (`schema`, `id`, `name`, `start`, and `nodes` with setup, branches and fallback), the keys the page's `operationCopy()` keeps. The writer leaves progress out; the reader refuses an entry that carries any.
+- Self-contained: every mission's `setup.file` names a scenario in the same pack, and its pinned id, revision and hash match that text. A `repeat` seed is refused, because it needs the author's run record; `new` and `retry` travel.
+- Export from Operations is refused while any mission's scenario is missing or changed since it was pinned (`Playlist.Identity`), naming which, so the pack holds exactly the versions the operation was built on. Each scenario goes in as its file's own text, the text its pinned hash was taken from: the scenario export writes the page's own text (`scenarioText()`), which for a hand-formatted file has another hash (seen 21 November with `clean_house_quiet_raid.json`). The preview says the pack is readable text: a sealed mission or a later branch is hidden in Play, not in the file.
+- Format: write `missionlab-pack/2` only when the pack holds an operation. Packs of scenarios and modules stay `missionlab-pack/1`, byte for byte as today, so 0.27 refuses an operation pack with `future-version` ("Update MissionLab") rather than a misleading `not-allowed`. `tests/fixtures/packs/future_version.mlpack.json` moves to pack/3. No capability word: the pack version is the gate, and the manifest's `requires` stays the union of the scenarios'.
+- Install: plan the scenarios as today (`same`, `install`, `copy`, `revision`, `skip`), then rebind each mission's setup to the result: the file name, id, revision and hash of the text actually installed (`same` binds to the local file). The preview shows each mission's binding before anything is written.
+- The operation file is written last, through `OperationStore`, and only when every scenario it needs is on disk; a skipped scenario or a failed write leaves no operation and says why. It starts a fresh playthrough (`next` is `start`, round 1, no steps, not armed) under a new file name and id when either is taken, is never written over an existing operation, and does not change `selected.txt` when an operation is already in use.
+- The installed operation records where it came from in an optional `origin` key: the pack's `name`, `by` and `made`, its fingerprint (`ScenarioFile.Hash` of the pack text) and each mission's file name and id in the pack. No operation format bump: an older MissionLab ignores the key and drops it on its next save, which loses only this note.
+- Core `Pack` and the editor's `30a-packs.js` read, plan and rebind alike. Every new refusal gets a fixture in `tests/fixtures/packs/` and an entry in its `expected.json`, passed by both; `docs/modules.md` describes pack/2.
+
+**Done when**
+
+- [ ] A three-mission operation with one branch and a fallback goes from export through read and install into empty folders and comes out as the authored design with fresh progress; scenarios installed without a clash are the author's files byte for byte.
+- [ ] Installed beside a scenario with the same name and another with the same id, as a copy and as a revision, every mission is bound to the installed file, and `Playlist.Identity` says `same` for each straight after the install.
+- [ ] A pack whose operation names a scenario not in it, pins another revision or hash, carries progress keys or a `repeat` seed, or that holds two operations is refused whole, with the same codes and paths in Core and the editor.
+- [ ] The 0.27 pack reader, kept as a verbatim copy in `tests/Pure/Legacy/` as for plan/2, refuses an operation pack with `future-version`; a pack without an operation is written as pack/1, identical to today's output.
+- [ ] A skipped needed scenario or a failed write leaves no operation file; the scenarios already written are listed, and installing again treats them as `same` and installs the operation.
+- [ ] Installing a newer release of an operation a squad is part-way through leaves that operation's file, its `.prev.json` and `selected.txt` as they were.
+- [ ] In the game: host A exports an operation; host B, on a clean install (ML-039) with one colliding scenario, installs it and plays mission one, and the operation follows the authored branch. Recorded in `docs/backlog-status.md` with both builds.
+
+**Current source:** [Pack conflict plan](https://github.com/Zaybrah/missionlab/blob/6b23cf34dea72fca8df3d1053e77428e5e450277/src/MissionLab.Core/Pack.cs#L329-L396) · [Pack install writes](https://github.com/Zaybrah/missionlab/blob/6b23cf34dea72fca8df3d1053e77428e5e450277/src/MissionLab.Director/Packs.cs#L62-L84) · [Operation design and progress in one file](https://github.com/Zaybrah/missionlab/blob/6b23cf34dea72fca8df3d1053e77428e5e450277/src/MissionLab.Core/Operation.cs#L99-L157) · [Pinned scenario identity and seed policy](https://github.com/Zaybrah/missionlab/blob/6b23cf34dea72fca8df3d1053e77428e5e450277/src/MissionLab.Core/Playlist.cs#L199-L330) · [The page's design-only copy](https://github.com/Zaybrah/missionlab/blob/6b23cf34dea72fca8df3d1053e77428e5e450277/tools/editor/src/29p-operations.js#L148-L151)

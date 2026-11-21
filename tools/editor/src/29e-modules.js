@@ -76,7 +76,9 @@ function moduleStandIn(obj) {
     delete t.place;
   }
   if (watchesOutside) c.triggers.push({ id: outside, when: 'after', after: 0 });
-  return { schema: 'missionlab-plan/2', mission: c };
+  // A zone or hold that waits for a trigger of its own module (ML-055) is read as plan/4, as the scenario would be written.
+  const gated = c.triggers.some(t => t && (t.when === 'zone' || t.when === 'hold' || t.when === undefined) && Number.isInteger(t.after) && t.after !== 0);
+  return { schema: gated ? 'missionlab-plan/4' : 'missionlab-plan/2', mission: c };
 }
 
 // ----- saving a selection as a module
@@ -93,7 +95,7 @@ function moduleOfSelection(name) {
   const relArea = area => areaWrite({ parts: area.parts.map(part => ({ floor: [part.floor[0] - A[1], part.floor[1] - A[1]], outline: relRing(part.outline), holes: (part.holes || []).map(relRing) })) });
   const chosen = new Set(list), byId = id => state.zones.find(z => z.id === id);
   const bringsOnly = z => state.enemies.every((e, i) => e.trigger !== z.id || chosen.has(i));
-  const needs = z => (z.when === 'after' || z.when === 'outcome' ? [z.after] : z.when === 'all' || z.when === 'any' ? z.of || [] : []).filter(id => id && id !== z.id && byId(id));
+  const needs = z => (z.when === 'after' || z.when === 'outcome' || z.when === 'zone' ? [z.after] : z.when === 'all' || z.when === 'any' ? z.of || [] : []).filter(id => id && id !== z.id && byId(id));
   const inside = new Set(list.map(i => state.enemies[i].trigger).filter(id => id && byId(id))), outside = new Set();
   const follow = z => { for (const id of needs(z)) { if (inside.has(id) || outside.has(id)) continue; if (bringsOnly(byId(id))) { inside.add(id); follow(byId(id)); } else outside.add(id); } };
   [...inside].forEach(id => follow(byId(id)));

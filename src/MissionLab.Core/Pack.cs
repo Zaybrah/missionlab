@@ -55,7 +55,7 @@ namespace MissionLab.Core
         /// <summary>Every feature word this version knows (Capabilities.Of). A pack needing another one was made by a newer MissionLab.</summary>
         public static readonly string[] Known = { "areas", "chance", "director", "door-trigger", "doors", "endings", "extraction-hold", "goals", "hunt", "hvt",
             "insertion", "intel-move", "messages", "options", "outcomes", "places", "power", "pressure", "rally", "repeat", "respawn", "scatter", "sealed", "teams", "things",
-            "vehicles", "weather" };
+            "vehicles", "weather", "zone-after" };
 
         // What the game or MissionLab makes from the game: none of it may travel in a pack.
         private static readonly string[] Forbidden = { ".bytes", ".binary", ".mlgeo", ".dll", ".zip", ".assets", ".bundle", ".exe" };

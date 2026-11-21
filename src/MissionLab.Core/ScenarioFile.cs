@@ -18,7 +18,7 @@ namespace MissionLab.Core
     /// </summary>
     public static class ScenarioFile
     {
-        public const int Version = 3;
+        public const int Version = 4;
         public static readonly string[] Kinds = { "zone", "hold", "alert", "intel", "time", "after", "down", "all", "any", "door", "outcome" };
 
         // Field tables: n number, i whole number, b yes/no, s text. The editor has the same tables.
@@ -97,7 +97,7 @@ namespace MissionLab.Core
                 }
                 // FromJson reads an object under "mission" whatever the version, so in a plan/1 file the checks below would
                 // look at the root while something else is loaded. Any "mission" there is refused, which is simpler to say.
-                else if (Has(root, "mission", out _)) { Bad("wrong-type", "mission", "\"mission\" holds the scenario only in a missionlab-plan/2 or /3 file; this file is read as missionlab-plan/1, with the scenario at the root"); return found; }
+                else if (Has(root, "mission", out _)) { Bad("wrong-type", "mission", "\"mission\" holds the scenario only in a missionlab-plan/2, /3 or /4 file; this file is read as missionlab-plan/1, with the scenario at the root"); return found; }
 
                 var ids = new HashSet<long>();
                 // Named places a zone or hold may link, collected first like the trigger numbers: id, and whether it is painted.
@@ -138,6 +138,14 @@ namespace MissionLab.Core
                                 else if (Has(t, "area", out _)) Bad("bad-area", at + ".place", "a trigger links a place or has an area of its own, not both");
                                 else if (!placeShaped.TryGetValue(pid, out bool painted)) Bad("missing-ref", at + ".place", "there is no place " + pid);
                                 else if (!painted) Bad("bad-area", at + ".place", "place " + pid + " is a point: only a place with a painted area can be linked");
+                            }
+                            if ((when == "zone" || when == "hold") && Has(t, "after", out JsonElement gate) && Whole(gate) && gate.GetInt64() != 0)
+                            {
+                                // A zone or hold that waits for another trigger is new in plan/4: an older MissionLab would watch it at once.
+                                long a = gate.GetInt64();
+                                if (version < 4) Bad("unknown-format", at + ".after", "a zone or hold that waits for another trigger needs missionlab-plan/4: save the file again with this MissionLab");
+                                else if (a == me) Bad("self-ref", at + ".after", "the trigger waits for itself");
+                                else if (!ids.Contains(a)) Bad("missing-ref", at + ".after", "there is no trigger " + a);
                             }
                             if (when == "after" && Has(t, "after", out JsonElement after) && Whole(after))
                             {

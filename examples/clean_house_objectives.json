@@ -1,5 +1,5 @@
 {
- "schema": "missionlab-plan/3",
+ "schema": "missionlab-plan/4",
  "mission": {
   "name": "Clean House: objectives",
   "id": "sc-cleanhouse-objectives",
@@ -7,8 +7,8 @@
   "navFile": "suburbv2.bytes",
   "seed": 0,
   "notes": [
-   "A small mission for the objective notices (ML-046) and the co-op record's row 8 (docs/coop-record.md). Written as missionlab-plan/3 because it has goals; versions before 0.27 refuse it. Objectives as a whole are untested in the game (docs/capabilities.json, 'objectives'): nothing here has been seen on a screen yet, the host's or a client's.",
-   "Goals: 'Recover the phone' (required, active from the start, done by trigger 1 'Phone taken'); 'Secure the upper floor' (required, becomes active when the phone goal succeeds, done by trigger 2 'Upstairs held', everyone alive inside the painted upstairs for 30 s in one go); 'Take down the officer' (optional, active from the start, done by trigger 3 'Officer down'). Goals active from the start get no 'New objective' notice: the briefing names them. 'Secure the upper floor' is announced with 'New objective' when it becomes active; every goal says 'Objective complete' when done.",
+   "A small mission for the objective notices (ML-046) and the co-op record's row 8 (docs/coop-record.md). Written as missionlab-plan/4 because its upstairs hold waits for the phone (ML-055); earlier versions refuse it. Played once solo on 21 November (0.27.0, as plan/3 without that wait): the goals, their order and the extraction worked by the host's log, but the hold had already been reached while the phone was searched for upstairs, so 'Secure the upper floor' was done the moment it became active. Nothing here has been seen on a client's screen yet.",
+   "Goals: 'Recover the phone' (required, active from the start, done by trigger 1 'Phone taken'); 'Secure the upper floor' (required, becomes active when the phone goal succeeds, done by trigger 2 'Upstairs held', everyone alive inside the painted upstairs for 30 s in one go, counted only once trigger 1 has fired: \"after\": 1); 'Take down the officer' (optional, active from the start, done by trigger 3 'Officer down'). Goals active from the start get no 'New objective' notice: the briefing names them. 'Secure the upper floor' is announced with 'New objective' when it becomes active; every goal says 'Objective complete' when done.",
    "Extraction: held until trigger 1 has fired and every required goal has succeeded (\"goals\": true). The optional officer never holds it up.",
    "The phone stays where the game puts it (an intel mission of Clean House). Only the cell phone fires trigger 1; the sim cards do not.",
    "Failure: trigger 4 'Out of time' ends the mission as failed 15 minutes after the start, told at five minutes, one minute and ten seconds left. Everyone dead also ends it, as in the game. No respawn.",
@@ -32,6 +32,7 @@
     "id": 2,
     "name": "Upstairs held",
     "when": "hold",
+    "after": 1,
     "pos": [-21.5, 3.68, -2.0],
     "radius": 10,
     "area": {

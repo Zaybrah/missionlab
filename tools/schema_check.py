@@ -49,7 +49,7 @@ STRUCTURAL = [
     'area_in_plan1.json', 'area_on_alert.json', 'envelope_without_mission.json', 'mission_in_plan1.json',
     'schema_in_mission.json', 'signed_version.json', 'future_version.json', 'no_spawns.json', 'wrong_types.json',
     'unknown_values.json', 'bad_metadata.json', 'bad_metadata_types.json', 'place_in_plan2.json', 'bad_place_links.json',
-    'goals_in_plan2.json', 'bad_goals.json', 'bad_outcomes.json', 'bad_pressure.json',
+    'goals_in_plan2.json', 'bad_goals.json', 'bad_outcomes.json', 'bad_pressure.json', 'zone_after_in_plan3.json',
 ]
 
 

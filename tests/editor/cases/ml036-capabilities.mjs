@@ -50,7 +50,8 @@ export default async function (h) {
     const now = api.capJudge('chance', '0.26.0'), next = api.capJudge('chance', '0.27.0');
     h.check('the trigger engine is confirmed on 0.26.0, where it was seen', now.confirmed && now.shown === 'supported', now.words);
     h.check('on 0.27.0 it is seen on 0.26.0, not yet on 0.27.0, and not confirmed', !next.confirmed && next.shown === 'seen-earlier' && next.words.includes('not yet on 0.27.0') && next.words.includes('no client has seen it'), next.words);
-    h.check('no capability is confirmed on a build no evidence names', api.PACK_KNOWN.every(w => !api.capJudge(w, '0.27.0').confirmed), '');
+    // 0.27.0 has evidence of its own since 21 November; a build that none names is the case pinned here.
+    h.check('no capability is confirmed on a build no evidence names', api.PACK_KNOWN.every(w => !api.capJudge(w, '0.99.0').confirmed), api.PACK_KNOWN.filter(w => api.capJudge(w, '0.99.0').confirmed).join(','));
     const area = api.capJudge('areas', '0.26.1');
     h.check('a two-player run with only the host\'s log says so', area.words.includes('host\'s log') && !area.client, area.words);
   }

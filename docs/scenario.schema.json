@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/Zaybrah/missionlab/blob/main/docs/scenario.schema.json",
- "title": "MissionLab scenario, missionlab-plan/1, missionlab-plan/2 and missionlab-plan/3",
- "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1, or a file that names no format, holds the scenario at the root. missionlab-plan/2 holds the same body ($defs/missionBody) under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. missionlab-plan/3 is the same envelope, written only when a zone or hold trigger links a named place (\"place\": the place's id) instead of carrying an area of its own, or when the mission has player goals (\"goals\", or an extraction with \"goals\": true); v0.26 reads plan/2 and refuses plan/3, so a link is never read as a circle and goals are never quietly left out. A mission record written by the Director holds the scenario it played under \"plan\", and only that is read. The v0.26 keys (sealed, placement, options, director, and scatter, within and fallback on enemies) never force missionlab-plan/2: an older version that ignores them plays the authored content. This schema checks the shape: types, allowed values, where the body sits for each version, that only zone and hold triggers in missionlab-plan/2 or /3 have an area, that only zone and hold triggers in missionlab-plan/3 link a place, never together with an area, and that only missionlab-plan/3 has goals. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger, place, placement, option, action and goal ids are unique, every link points at a trigger, placement, goal or painted place that exists, a goal does not wait for itself, an hvt or a vehicle is never skipped, and every area is a sound shape. Keys that are not listed are ignored.",
+ "title": "MissionLab scenario, missionlab-plan/1 to missionlab-plan/4",
+ "description": "A scenario for MissionLab, an unofficial mod toolkit for OPERATOR. missionlab-plan/1, or a file that names no format, holds the scenario at the root. missionlab-plan/2 holds the same body ($defs/missionBody) under \"mission\" (without its own schema key); it is written only when a zone or hold trigger has a shaped area, so that older versions refuse the file instead of reading the shape as a circle. missionlab-plan/3 is the same envelope, written only when a zone or hold trigger links a named place (\"place\": the place's id) instead of carrying an area of its own, or when the mission has player goals (\"goals\", or an extraction with \"goals\": true); v0.26 reads plan/2 and refuses plan/3, so a link is never read as a circle and goals are never quietly left out. missionlab-plan/4 is the same envelope, written only when a zone or hold trigger waits for another trigger before it watches its area (\"after\" not 0); the 0.27.0 candidate before it reads plan/3 and would watch such an area from the start, so it refuses plan/4. A mission record written by the Director holds the scenario it played under \"plan\", and only that is read. The v0.26 keys (sealed, placement, options, director, and scatter, within and fallback on enemies) never force missionlab-plan/2: an older version that ignores them plays the authored content. This schema checks the shape: types, allowed values, where the body sits for each version, that only zone and hold triggers in missionlab-plan/2 or later have an area, that only zone and hold triggers in missionlab-plan/3 or later link a place, never together with an area, that only missionlab-plan/3 or later has goals, and that only missionlab-plan/4 has a zone or hold that waits for another trigger. The plugin (ScenarioFile.cs) and the editor read files strictly by these rules, and also check what a schema cannot say: trigger, place, placement, option, action and goal ids are unique, every link points at a trigger, placement, goal or painted place that exists, a goal or a trigger does not wait for itself, an hvt or a vehicle is never skipped, and every area is a sound shape. Keys that are not listed are ignored.",
  "type": "object",
  "if": {
   "required": [
@@ -27,10 +27,10 @@
  "properties": {
   "schema": {
    "type": "string",
-   "description": "The format, missionlab-plan/1, /2 or /3 ($defs/document). A file with a higher number is refused by this version"
+   "description": "The format, missionlab-plan/1 to /4 ($defs/document). A file with a higher number is refused by this version"
   },
   "mission": {
-   "description": "missionlab-plan/2 and /3 only: the scenario itself, the same keys as a missionlab-plan/1 file without its schema key. A missionlab-plan/1 file with a \"mission\" is refused"
+   "description": "missionlab-plan/2 to /4 only: the scenario itself, the same keys as a missionlab-plan/1 file without its schema key. A missionlab-plan/1 file with a \"mission\" is refused"
   },
   "plan": {
    "description": "A mission record only: the scenario it played, read in place of the record's own keys"
@@ -266,7 +266,7 @@
    "properties": {
     "schema": {
      "type": "string",
-     "pattern": "^missionlab-plan/0*[123]$"
+     "pattern": "^missionlab-plan/0*[1234]$"
     }
    },
    "if": {
@@ -276,7 +276,7 @@
     "properties": {
      "schema": {
       "type": "string",
-      "pattern": "^missionlab-plan/0*[23]$"
+      "pattern": "^missionlab-plan/0*[234]$"
      }
     }
    },
@@ -306,14 +306,50 @@
          "triggers": {
           "items": {
            "not": {
-            "required": [
-             "place"
+            "anyOf": [
+             {
+              "required": [
+               "place"
+              ]
+             },
+             {
+              "$ref": "#/$defs/gatedZone"
+             }
             ]
            }
           },
-          "description": "A link to a named place needs missionlab-plan/3"
+          "description": "A link to a named place needs missionlab-plan/3, a zone or hold that waits for another trigger missionlab-plan/4"
          },
          "goals": false
+        }
+       }
+      }
+     }
+    },
+    {
+     "if": {
+      "required": [
+       "schema"
+      ],
+      "properties": {
+       "schema": {
+        "type": "string",
+        "pattern": "^missionlab-plan/0*3$"
+       }
+      }
+     },
+     "then": {
+      "properties": {
+       "mission": {
+        "properties": {
+         "triggers": {
+          "items": {
+           "not": {
+            "$ref": "#/$defs/gatedZone"
+           }
+          },
+          "description": "A zone or hold that waits for another trigger needs missionlab-plan/4"
+         }
         }
        }
       }
@@ -321,8 +357,27 @@
     }
    ]
   },
+  "gatedZone": {
+   "description": "A zone (also when \"when\" is absent) or hold trigger that waits for another trigger before it watches its area: \"after\" present and not 0. Only missionlab-plan/4 holds one",
+   "required": [
+    "after"
+   ],
+   "properties": {
+    "when": {
+     "enum": [
+      "zone",
+      "hold"
+     ]
+    },
+    "after": {
+     "not": {
+      "const": 0
+     }
+    }
+   }
+  },
   "envelope": {
-   "description": "missionlab-plan/2 and /3: the body under \"mission\", which names no format of its own. MissionLab reads nothing beside \"mission\"",
+   "description": "missionlab-plan/2 to /4: the body under \"mission\", which names no format of its own. MissionLab reads nothing beside \"mission\"",
    "required": [
     "mission"
    ],
@@ -338,7 +393,7 @@
    }
   },
   "plan1": {
-   "description": "missionlab-plan/1, or a file that names no format: the body at the root, without a shaped area, without a link to a place and without \"mission\", which only missionlab-plan/2 and /3 read",
+   "description": "missionlab-plan/1, or a file that names no format: the body at the root, without a shaped area, without a link to a place, without a zone or hold that waits for another trigger and without \"mission\", which only missionlab-plan/2 to /4 read",
    "$ref": "#/$defs/missionBody",
    "not": {
     "required": [
@@ -359,17 +414,20 @@
          "required": [
           "place"
          ]
+        },
+        {
+         "$ref": "#/$defs/gatedZone"
         }
        ]
       }
      },
-     "description": "A shaped area needs missionlab-plan/2, a link to a place missionlab-plan/3"
+     "description": "A shaped area needs missionlab-plan/2, a link to a place missionlab-plan/3, a zone or hold that waits for another trigger missionlab-plan/4"
     },
     "goals": false
    }
   },
   "missionBody": {
-   "description": "The scenario itself: at the root in missionlab-plan/1, under \"mission\" in missionlab-plan/2 and /3. Each key's rule is written once, under the root's properties; tools/schema_check.py checks that this list names the same keys",
+   "description": "The scenario itself: at the root in missionlab-plan/1, under \"mission\" in missionlab-plan/2 to /4. Each key's rule is written once, under the root's properties; tools/schema_check.py checks that this list names the same keys",
    "type": "object",
    "required": [
     "spawns"
@@ -933,12 +991,12 @@
     },
     "area": {
      "$ref": "#/$defs/area",
-     "description": "zone and hold, missionlab-plan/2 or /3: a shaped place that replaces the circle for who is inside; pos stays the anchor. Never together with place"
+     "description": "zone and hold, missionlab-plan/2 or later: a shaped place that replaces the circle for who is inside; pos stays the anchor. Never together with place"
     },
     "place": {
      "type": "integer",
      "minimum": 1,
-     "description": "zone and hold, missionlab-plan/3 only: the id of a named place with a painted area, whose shape the trigger uses instead of an area of its own (ML-040). The place must exist and be painted; renaming it keeps the link"
+     "description": "zone and hold, missionlab-plan/3 or later: the id of a named place with a painted area, whose shape the trigger uses instead of an area of its own (ML-040). The place must exist and be painted; renaming it keeps the link"
     },
     "facePlayer": {
      "type": "boolean",
@@ -954,7 +1012,7 @@
     },
     "after": {
      "type": "integer",
-     "description": "after: the trigger it waits for; 0 means it is fired by hand. outcome: the trigger whose latest firing it watches (required, must exist)"
+     "description": "after: the trigger it waits for; 0 means it is fired by hand. outcome: the trigger whose latest firing it watches (required, must exist). zone and hold, missionlab-plan/4 only: the trigger that has to have fired before it watches its area (0 or absent: from the start; ML-055); the zone's delay or the hold's time count from then"
     },
     "outcome": {
      "type": "string",

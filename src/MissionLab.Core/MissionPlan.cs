@@ -53,6 +53,8 @@ namespace MissionLab.Core
         public static bool Known(string when) => when == OnZone || when == OnAlert || when == OnIntel || when == OnTime || when == OnAfter || when == OnHold || when == OnDown || when == OnAll || when == OnAny || when == OnDoor || when == OnOutcome;
         /// <summary>Kinds that are a place on the map.</summary>
         public static bool Placed(string when) => when == OnZone || when == OnHold;
+        /// <summary>A zone or hold that does not watch its area until trigger After has fired (plan/4).</summary>
+        public bool Gated => Placed(When) && After != 0;
         public float Hold = 30f;          // seconds, for OnHold
         public int Count;                 // enemies, for OnDown
         public List<int> Of = new List<int>();   // triggers, for OnAll and OnAny
@@ -388,6 +390,7 @@ namespace MissionLab.Core
         public const string Schema = "missionlab-plan/1";
         public const string Schema2 = "missionlab-plan/2";    // the envelope, written only when a trigger has a shaped area
         public const string Schema3 = "missionlab-plan/3";    // the same envelope, written only when a trigger links a named place or the mission has goals
+        public const string Schema4 = "missionlab-plan/4";    // the same envelope, written only when a zone or hold waits for another trigger
         public string Id = "";            // a stable identity across renames: 1 to 64 of A-Z, a-z, 0-9, _ and -
         public int Revision;              // the author's save counter
         public int SquadMin, SquadMax;    // the author's recommended squad size, 1 to 16 (0: not said)
@@ -580,7 +583,7 @@ namespace MissionLab.Core
                 if (z.Linked) sb.Append(",\"place\":").Append(z.Place);
                 else if (z.Shaped) { sb.Append(",\"area\":"); z.Area.Write(sb); }
                 if (z.When == TriggerPlan.OnIntel) sb.Append(",\"item\":\"").Append(Text(z.Item)).Append('"');
-                if (z.When == TriggerPlan.OnAfter) sb.Append(",\"after\":").Append(z.After);
+                if (z.When == TriggerPlan.OnAfter || z.Gated) sb.Append(",\"after\":").Append(z.After);
                 if (z.When == TriggerPlan.OnOutcome)
                 {
                     sb.Append(",\"after\":").Append(z.After).Append(",\"outcome\":\"").Append(TriggerPlan.OutcomeWord(z.Outcome)).Append('"');
@@ -864,9 +867,10 @@ namespace MissionLab.Core
             // A shaped area goes under "mission": v0.23 finds no root "spawns" there and skips the file, instead of
             // quietly reading the shape as its anchor circle. A link to a place raises the number again, because v0.26 reads
             // plan/2 and would take a linked trigger for its circle; it refuses plan/3 as a newer format. Goals do the same:
-            // v0.26 would run the mission without them, and would open an extraction that waits for them.
+            // v0.26 would run the mission without them, and would open an extraction that waits for them. A zone or hold
+            // that waits for another trigger raises it to plan/4: v0.27 would watch it from the start.
             bool three = Triggers.Exists(t => t.Linked) || Goals.Count > 0 || ExtractionGoals;
-            string envelope = three ? Schema3 : Triggers.Exists(t => t.Shaped) ? Schema2 : null;
+            string envelope = Triggers.Exists(t => t.Gated) ? Schema4 : three ? Schema3 : Triggers.Exists(t => t.Shaped) ? Schema2 : null;
             if (envelope != null)
             {
                 string plain = "{\"schema\":" + S(Schema) + ",";
@@ -1081,6 +1085,10 @@ namespace MissionLab.Core
                     if ((t.When != TriggerPlan.OnAfter && t.When != TriggerPlan.OnOutcome) || t.After == 0 || plan.Triggers.Exists(o => o.Id == t.After)) continue;
                     t.When = TriggerPlan.OnAfter; t.After = 0; t.Outcome = ""; t.Within = TriggerPlan.WithinDefault;
                 }
+                // A zone or hold gated by itself or by a trigger that does not exist would never watch its area: a gate that
+                // cannot open was never installed, so it watches from the start.
+                foreach (TriggerPlan t in plan.Triggers)
+                    if (TriggerPlan.Placed(t.When) && t.After != 0 && (t.After == t.Id || !plan.Triggers.Exists(o => o.Id == t.After))) t.After = 0;
                 // Links to things that are not there are dropped: such an enemy scatters anywhere the other rules allow, a choice
                 // switches off only triggers that exist, and an action with nothing to fire is no action.
                 foreach (SpawnPlan s in plan.Spawns) if (s.Within != 0 && !plan.Placement.Exists(p => p.Id == s.Within && p.Mode == PlacementPlan.Allow)) s.Within = 0;

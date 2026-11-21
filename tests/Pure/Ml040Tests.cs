@@ -98,15 +98,17 @@ static class Ml040Tests
             unlinked.Goals.Clear(); unlinked.ExtractionGoals = false;      // goals alone keep plan/3 (ML-046)
             check("dropping every link drops the format to plan/2", Format(unlinked.ToJson()) == MissionPlan.Schema2, "");
             // Every file that existed before reads back to the text it was written as; it is plan/3 exactly when it links a
-            // place or has goals (clean_house_objectives.json, ML-046), never otherwise.
+            // place or has goals (clean_house_objectives.json, ML-046) and no zone or hold waits for a trigger (that is plan/4, ML-055).
             var olds = new List<string> { "all_fields.json", "all_fields_v2.json", "all_fields_v26.json", "legacy_minimal.json", "extraction_chance_defect.json" }.Select(n => Path.Combine(root, "tests", "fixtures", n)).ToList();
             olds.AddRange(Directory.GetFiles(Path.Combine(root, "examples"), "*.json"));
             foreach (string file in olds)
             {
                 MissionPlan plan = MissionPlan.FromJson(File.ReadAllText(file));
                 string first = plan.ToJson(), second = MissionPlan.FromJson(first).ToJson();
-                bool needs3 = plan.Goals.Count > 0 || plan.ExtractionGoals || plan.Triggers.Any(t => t.Place != 0);
-                check(Path.GetFileName(file) + " is written the same way twice, and as plan/3 exactly when it has place links or goals", first == second && (Format(first) == MissionPlan.Schema3) == needs3, first.Substring(0, Math.Min(60, first.Length)));
+                bool four = plan.Triggers.Any(t => t.Gated);
+                bool needs3 = !four && (plan.Goals.Count > 0 || plan.ExtractionGoals || plan.Triggers.Any(t => t.Place != 0));
+                check(Path.GetFileName(file) + " is written the same way twice, as plan/4 exactly when a zone or hold waits, else as plan/3 exactly when it has place links or goals",
+                      first == second && (Format(first) == MissionPlan.Schema3) == needs3 && (Format(first) == MissionPlan.Schema4) == four, first.Substring(0, Math.Min(60, first.Length)));
             }
         }
         {   // Renaming a place keeps its links: they name its id.
@@ -122,8 +124,8 @@ static class Ml040Tests
             var lenient = MissionPlan.FromJson(Fixture("invalid/dangling_place_link.json"));
             check("the lenient reader drops the dangling link and keeps the circle", lenient.Triggers[0].Place == 0 && lenient.Triggers[0].Area == null, "");
             check("a link from a plan/2 file is refused: plan/2 readers would read a circle", Codes(ScenarioFile.Read(Fixture("invalid/place_in_plan2.json"), out _)) == "bad-area triggers[0].place", "");
-            var future = ScenarioFile.Read("{\"schema\":\"missionlab-plan/4\",\"mission\":{\"spawns\":[{\"pos\":[0,0,0]}]}}", out _);
-            check("a format newer than plan/3 is still refused as future-version", Codes(future) == "future-version schema", Codes(future));
+            var future = ScenarioFile.Read("{\"schema\":\"missionlab-plan/5\",\"mission\":{\"spawns\":[{\"pos\":[0,0,0]}]}}", out _);
+            check("a format newer than plan/4 is still refused as future-version", Codes(future) == "future-version schema", Codes(future));
         }
         {   // The flattened export: no links, plan/2, and the exact effective shape for every trigger.
             var original = MissionPlan.FromJson(v27);

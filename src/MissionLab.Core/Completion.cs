@@ -57,6 +57,9 @@ namespace MissionLab.Core
                     no = circle.Count == 1 ? Name(t) + " waits for itself"
                        : Name(t) + " waits for itself through other triggers: triggers " + string.Join(", ", circle) + " wait for each other in a circle, and the game never fires them";
                 }
+                else if (t.Gated && t.After == t.Id) { ok = false; no = Name(t) + " waits for itself"; }
+                else if (t.Gated && !byId.ContainsKey(t.After)) { ok = false; no = Name(t) + " waits for trigger " + t.After + ", which does not exist"; }
+                else if (t.Gated && !Can(byId[t.After])) { ok = false; no = Name(t) + " waits for it: " + why[t.After]; }
                 else switch (t.When)
                 {
                     case TriggerPlan.OnAfter:
@@ -125,7 +128,7 @@ namespace MissionLab.Core
                         {
                             int id = walk.Pop();
                             if (!blocked.Add(id) || !byId.TryGetValue(id, out TriggerPlan t)) continue;
-                            if ((t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome) && t.After != 0) walk.Push(t.After);
+                            if ((t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome || t.Gated) && t.After != 0) walk.Push(t.After);
                             if (t.When == TriggerPlan.OnAll || t.When == TriggerPlan.OnAny) foreach (int one in t.Of) walk.Push(one);
                         }
                     }

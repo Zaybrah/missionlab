@@ -1291,8 +1291,8 @@ namespace MissionLab
             if (placedNow > 0) more += ", " + placedNow + (placedNow == 1 ? " thing is placed" : " things are placed");
             if (placedNow < due) f.Fail((due - placedNow) + " of " + due + (due == 1 ? " thing" : " things") + " could not be placed (see the log)");
             string why = t.When == TriggerPlan.OnDoor ? "(a door is opened)" : t.When == TriggerPlan.OnAll ? "(all of triggers " + string.Join(", ", t.Of) + ")" : t.When == TriggerPlan.OnAny ? "(one of triggers " + string.Join(", ", t.Of) + ")" :
-                         t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s)" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
-                         t.When == TriggerPlan.OnZone ? "reached" : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
+                         t.When == TriggerPlan.OnHold ? "(zone held for " + t.Hold.ToString("0", Inv) + " s" + (t.Gated ? ", after trigger " + t.After : "") + ")" : t.When == TriggerPlan.OnDown ? "(enemies down)" :
+                         t.When == TriggerPlan.OnZone ? (t.Gated ? "reached (after trigger " + t.After + ")" : "reached") : t.When == TriggerPlan.OnAlert ? "(the enemy is alerted)" : t.When == TriggerPlan.OnIntel ? "(intel taken)"
                        : t.When == TriggerPlan.OnTime ? "(time)"
                        : t.When == TriggerPlan.OnOutcome ? (t.Outcome == TriggerPlan.Timeout ? "(no answer from trigger " + t.After + " within " + t.Within.ToString("0.##", Inv) + " s)" : "(trigger " + t.After + " came to " + t.Outcome + ")")
                        : "(after trigger " + t.After + ")";

@@ -37,7 +37,8 @@ function missionCheck() {
     if (memo.has(z.id)) return memo.get(z.id);
     let ok = true;
     if (inRing.has(z.id)) ok = false;
-    else if (z.when === 'zone' || z.when === 'door') ok = isVec(z.pos);
+    // A zone or hold with a gate (ML-055) needs its place and, like an after trigger, the gate to fire.
+    else if (z.when === 'zone' || z.when === 'door') { ok = isVec(z.pos); if (ok && z.when === 'zone' && z.after) { const p = byId(z.after); ok = !!p && p.id !== z.id && !trail.includes(p.id) && canFire(p, trail.concat(z.id)); } }
     else if (z.when === 'after' || z.when === 'outcome') { const p = byId(z.after); ok = !!p && p.id !== z.id && !trail.includes(p.id) && !blind(z) && canFire(p, trail.concat(z.id)); }
     else if (z.when === 'all' || z.when === 'any') {
       const list = (z.of || []).map(byId).filter(q => q && q.id !== z.id), can = q => !trail.includes(q.id) && canFire(q, trail.concat(z.id));
@@ -56,6 +57,10 @@ function missionCheck() {
       if (!z.after) return state.gameMaster ? '' : name(z) + ' is fired by hand';
       const p = byId(z.after); if (!p) return name(z) + ' waits for a trigger that is gone';
       const w = sure(p, on); return w ? name(z) + ' waits for it: ' + w : '';
+    }
+    if (z.when === 'zone' && z.after) {
+      const p = byId(z.after); if (!p) return name(z) + ' waits for a trigger that is gone';
+      const w = sure(p, on); if (w) return name(z) + ' waits for it: ' + w;
     }
     if (z.when === 'outcome') {
       const p = byId(z.after); if (!p) return name(z) + ' watches a trigger that is gone';
@@ -97,12 +102,12 @@ function missionCheck() {
   const exitNeeds = new Set();
   if (exitNever) {
     const walk = q => { if (!q || exitNeeds.has(q.id)) return; exitNeeds.add(q.id);
-      for (const id of (q.when === 'after' || q.when === 'outcome') && q.after ? [q.after] : q.when === 'all' || q.when === 'any' ? q.of || [] : []) walk(byId(id)); };
+      for (const id of (q.when === 'after' || q.when === 'outcome' || q.when === 'zone') && q.after ? [q.after] : q.when === 'all' || q.when === 'any' ? q.of || [] : []) walk(byId(id)); };
     walk(gate);
   }
   state.zones.forEach((z, zi) => {
     const n = state.enemies.filter(e => e.trigger === z.id).length;
-    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked != null || d.open != null) || z.opensExtraction || z.power || z.message || z.end || z.rally > 0 || z.respawn || state.extractionAfter === z.id || state.zones.some(q => ((q.when === 'after' || q.when === 'outcome') && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
+    const does = n || state.things.some(t => t.trigger === z.id) || (z.doors || []).some(d => d.locked != null || d.open != null) || z.opensExtraction || z.power || z.message || z.end || z.rally > 0 || z.respawn || state.extractionAfter === z.id || state.zones.some(q => ((q.when === 'after' || q.when === 'outcome' || q.when === 'zone') && q.after === z.id) || ((q.when === 'all' || q.when === 'any') && (q.of || []).includes(z.id)));
     const byHand = z.when === 'after' && !z.after;
     if (z.when === 'door' && !isVec(z.pos)) add('problem', name(z) + ' waits for a door, but no door is chosen.', toTriggers);
     if (z.when === 'down' && z.tag && !state.enemies.some(e => e.tag === z.tag)) add('problem', name(z) + ' waits for enemies tagged "' + z.tag + '", but no enemy has that tag.', toTriggers);
@@ -117,8 +122,9 @@ function missionCheck() {
         + (held ? ' The extraction waits for it, so nobody could leave.' : ''), toTriggers, null, Object.assign({ triggers: [z.id], why: 'blind' }, held ? { extraction: true } : {}));
     }
     else if (!canFire(z, [])) {
-      const gone = (z.when === 'after' || z.when === 'outcome') && z.after && !byId(z.after);
-      add('problem', name(z) + ' can never fire: ' + (z.when === 'zone' ? 'it has no place on the map' : z.when === 'all' || z.when === 'any' ? ((z.of || []).length ? 'the triggers it waits for can never fire, or wait for it' : 'no triggers are ticked for it') : z.when === 'outcome' && !z.after ? 'it watches no trigger' : byId(z.after) ? 'it waits for a trigger that in turn waits for it' : 'the trigger it waits for is gone') + '.', toTriggers, gone ? { kind: 'after', zi } : null, { triggers: [z.id], why: gone ? 'missing' : 'never' });
+      const gone = (z.when === 'after' || z.when === 'outcome' || z.when === 'zone') && z.after && !byId(z.after);
+      const gateWhy = () => { const p = byId(z.after); return !p ? 'the trigger it waits for is gone' : inRing.has(z.id) ? 'it waits for a trigger that in turn waits for it' : 'it waits for ' + lower(p) + ', which can never fire'; };
+      add('problem', name(z) + ' can never fire: ' + (z.when === 'zone' ? (!isVec(z.pos) ? 'it has no place on the map' : gateWhy()) : z.when === 'all' || z.when === 'any' ? ((z.of || []).length ? 'the triggers it waits for can never fire, or wait for it' : 'no triggers are ticked for it') : z.when === 'outcome' && !z.after ? 'it watches no trigger' : byId(z.after) ? 'it waits for a trigger that in turn waits for it' : 'the trigger it waits for is gone') + '.', toTriggers, gone ? { kind: 'after', zi } : null, { triggers: [z.id], why: gone ? 'missing' : 'never' });
     }
     if ((z.when === 'all' || z.when === 'any') && (z.of || []).some(id => id === z.id || !byId(id))) add('warning', name(z) + ' lists ' + (z.of || []).filter(id => id === z.id || !byId(id)).map(id => (id === z.id ? 'itself' : 'trigger ' + id + ', which is gone')).join(' and ') + '. The saved file leaves that out.', toTriggers, { kind: 'unlist', zi }, { triggers: [z.id], why: (z.of || []).some(id => id !== z.id && !byId(id)) ? 'missing' : 'self' });
     if (!does) add('warning', name(z) + ' does nothing: no enemy, door, message or other action belongs to it.', toTriggers);
@@ -268,7 +274,8 @@ function syncCheck() {
 function checkRings(zones) {
   const byId = new Map();
   for (const z of zones) if (!byId.has(z.id)) byId.set(z.id, z);
-  const needs = z => ((z.when === 'after' || z.when === 'outcome') && z.after ? [z.after] : z.when === 'all' || z.when === 'any' ? (z.of || []).filter(id => id !== z.id) : [])
+  // A zone or hold's gate (ML-055) is such a link too; one naming itself is dropped on reading, so it is no circle.
+  const needs = z => ((z.when === 'after' || z.when === 'outcome') && z.after ? [z.after] : z.when === 'zone' && z.after && z.after !== z.id ? [z.after] : z.when === 'all' || z.when === 'any' ? (z.of || []).filter(id => id !== z.id) : [])
     .filter(id => byId.has(id)).sort((a, b) => a - b);
   const index = new Map(), low = new Map(), on = new Set(), stack = [], rings = [];
   let next = 0;

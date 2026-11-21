@@ -10,7 +10,7 @@
 // already in the scenarios folder (copy, new revision or skip). The game installs; it never writes over a file.
 const PACK_SCHEMA = 'missionlab-pack/1', PACK_SUFFIX = '.mlpack.json', PACK_MODULE = '.module.json', PACK_PVE = 'pve', PACK_MAX_FILES = 64;
 const PACK_KNOWN = ['areas', 'chance', 'director', 'door-trigger', 'doors', 'endings', 'extraction-hold', 'goals', 'hunt', 'hvt', 'insertion', 'intel-move', 'messages',
-  'options', 'outcomes', 'places', 'power', 'pressure', 'rally', 'repeat', 'respawn', 'scatter', 'sealed', 'teams', 'things', 'vehicles', 'weather'];
+  'options', 'outcomes', 'places', 'power', 'pressure', 'rally', 'repeat', 'respawn', 'scatter', 'sealed', 'teams', 'things', 'vehicles', 'weather', 'zone-after'];
 const PACK_FORBIDDEN = ['.bytes', '.binary', '.mlgeo', '.dll', '.zip', '.assets', '.bundle', '.exe'];
 const PACK_FORBIDDEN_SCHEMAS = ['missionlab-replay/', 'missionlab-recon/', 'missionlab-movement/'];
 const packs = { extra: [], include: new Set(), text: '', fileName: '', preview: null, choices: {}, key: '', busy: false, lastExport: null };
@@ -328,13 +328,16 @@ async function packModuleText(key) {
 const packDay = () => new Date().toISOString().slice(0, 10);
 // The scenario goes in as it is saved: links to named places stay links, and the places they name are in the same text
 // (ML-040). Flattened (the box under the module list, or opts.flat), each linked zone carries its own copy of its shape
-// instead, as missionlab-plan/2, for players whose MissionLab cannot read links.
+// instead, as missionlab-plan/2, for players whose MissionLab cannot read links. A file opened and not changed since goes
+// in as its own text, as laid out on disk: the page's text of it can differ, and then its fingerprint would too, so the
+// pack installed back would clash with the very file it came from instead of being the same.
 async function packExport(opts) {
   const held = moduleBlock();
   if (held) return packNote('export', held);
   if (state.example || !state.enemies.length) return packNote('export', state.example ? 'Open a real map file first: the example cannot be exported.' : 'Place at least one enemy first: a pack carries a scenario.');
   const flat = opts && typeof opts.flat === 'boolean' ? opts.flat : $('packFlat').checked === true;
-  const text = flat ? scenarioText(scenarioFlatObject()) : scenarioText(), wrong = scenarioProblems(text).filter(f => f.level === 'error');
+  const page = scenarioText(), own = !flat && catalogue.savedFile !== null && catalogue.savedText === page;
+  const text = own ? catalogue.savedFile : flat ? scenarioText(scenarioFlatObject()) : page, wrong = scenarioProblems(text).filter(f => f.level === 'error');
   if (wrong.length) return packNote('export', 'Not exported: MissionLab would refuse the scenario (' + packFindingText(wrong[0]) + '). The Mission tab lists every problem.');
   const files = [[fileName(), text]];
   try {
@@ -352,7 +355,8 @@ async function packExport(opts) {
   try { await packDownload(out, w.text); }
   catch (e) { return packNote('export', e && e.code === 'declined' ? 'Not saved.' : 'The pack could not be saved here (' + (e && e.message ? e.message : e) + ').'); }
   const caps = packRead(w.text).info;
-  return packNote('export', 'Saved as ' + out + ': ' + files.map(f => f[0]).join(', ') + '. It needs ' + (caps.maps.join(', ') || 'no particular map') + ', PvE and MissionLab ' + EDITOR_VERSION
+  return packNote('export', 'Saved as ' + out + ': ' + files.map(f => f[0]).join(', ') + '.' + (own ? ' The scenario goes in exactly as ' + catalogue.savedName + ' holds it on disk.' : '')
+    + ' It needs ' + (caps.maps.join(', ') || 'no particular map') + ', PvE and MissionLab ' + EDITOR_VERSION
     + ' or later' + (caps.capabilities.length ? ', with ' + caps.capabilities.join(', ') : '') + '. No map data, geometry or replays are in it.');
 }
 // Downloads where the page can (a browser always can); the viewer's own saver when it gives one.

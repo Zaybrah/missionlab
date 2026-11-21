@@ -802,7 +802,7 @@ namespace MissionLab.Core
                 if (TriggerPlan.Placed(t.When) || t.When == TriggerPlan.OnDoor) sb.Append(",\"pos\":").Append(P(t.Pos));
                 if (t.Linked) sb.Append(",\"place\":").Append(t.Place.ToString(Inv));
                 else if (t.Shaped) sb.Append(",\"shaped\":true");
-                if (t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome) sb.Append(",\"after\":").Append(t.After.ToString(Inv));
+                if (t.When == TriggerPlan.OnAfter || t.When == TriggerPlan.OnOutcome || t.Gated) sb.Append(",\"after\":").Append(t.After.ToString(Inv));
                 if (t.When == TriggerPlan.OnAll || t.When == TriggerPlan.OnAny) sb.Append(",\"of\":[").Append(string.Join(",", t.Of)).Append(']');
                 if (t.When == TriggerPlan.OnHold) sb.Append(",\"hold\":").Append(F(t.Hold));
                 if (t.When == TriggerPlan.OnIntel) sb.Append(",\"item\":").Append(Q(t.Item));

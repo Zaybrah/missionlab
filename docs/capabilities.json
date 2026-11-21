@@ -420,10 +420,22 @@
     {
       "id": "objectives",
       "label": "Mission objectives (`goals`: required and optional, notices, extraction waiting for them)",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.27.0, Clean House by night, solo",
+      "summary": "21 November (solo, by the host's log): `clean_house_objectives` played to a success; the goals moved in order, the extraction stayed shut until both required goals were done, and the run record holds all three as succeeded. The notices on the host's screen were not checked; a client's view is unseen. The upstairs hold had been reached before the phone, so that goal was done the moment it became active; 0.27 lets the hold wait for the phone (row zone-after)",
+      "uses": ["goals"],
+      "evidence": [
+        { "build": "0.27.0", "date": "2026-11-21", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "officer at 189.8 s, phone at 198.5 s, 'Secure the upper floor' active and succeeded at 198.5 s (its hold had fired before), the extraction opened after both required goals; success in 274 s" }
+      ]
+    },
+    {
+      "id": "zone-after",
+      "label": "Zones and holds that wait for another trigger (`after` on zone and hold, missionlab-plan/4)",
       "status": "untested",
       "where": "any",
-      "summary": "New in 0.27 (missionlab-plan/3). Objectives are driven by triggers; the plugin shows 'New objective', 'Objective complete' and 'Objective failed' through the same on-screen message as trigger messages, and can hold the extraction until every required objective is done. No run on record has one; a client's view of the notices is unseen",
-      "uses": ["goals"],
+      "summary": "New in 0.27 (ML-055), after the objectives run of 21 November. Covered only by the tests; not run in the game yet",
+      "uses": ["zone-after"],
       "evidence": []
     },
     {
@@ -530,11 +542,14 @@
     {
       "id": "packs",
       "label": "Scenario packs (0.26)",
-      "status": "untested",
-      "where": "any",
-      "summary": "Covered only by the tests; not installed in a game yet",
+      "status": "supported",
+      "qualifier": "solo",
+      "where": "0.27.0, Clean House by night, solo",
+      "summary": "21 November: exported from the live page; installed through the running plugin as the same text (nothing written), as a copy with a new name and id and as a revision; the copy played to its extraction as the second mission of an operation. The install was sent to the plugin's route directly; the page's Open pack file was not used",
       "uses": [],
-      "evidence": []
+      "evidence": [
+        { "build": "0.27.0", "date": "2026-11-21", "map": "Clean House by night", "mode": "PvE raid", "scope": "solo", "result": "worked", "note": "same text: nothing written; clash installed as clean_house_quiet_raid-copy.json (id sc-cleanhouse-quiet-copy) and as -r1 (revision 1); the copy played to a success in 263 s, its run record naming the copy's id and hash" }
+      ]
     }
   ]
 }

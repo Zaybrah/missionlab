@@ -357,6 +357,28 @@ they had the mod, is not recorded, so none of this is a client's word.
 - **A timer from the start is not told when it starts** (by design, pinned by a test); the scenario's note claimed it was.
   Nothing in the mission names the 25-minute limit before five minutes are left.
 
+## Run of 21 November 2026 (0.27.0, Clean House by night, solo host)
+
+One host alone, game build 0.09.5, plugin 0.27.0 as built for the candidate. The browser link was driven from outside
+the game for everything but playing: a pack exported and installed, an operation made and set up. Only the host's log,
+run records and the operation file were kept.
+- **Packs through the running game.** A pack holding the file's own text was found to be the same and nothing was
+  written. The page's export of `clean_house_quiet_raid.json` holds the page's own text (3,562 bytes; the hand-formatted
+  file is 5,046), so installing it back clashed and went in as `clean_house_quiet_raid-copy.json` with the id
+  `sc-cleanhouse-quiet-copy`, and as `clean_house_quiet_raid-r1.json`, revision 1. The page now exports an unchanged
+  file's own text.
+- **An operation over two runs and a restart.** Objectives, then on a success with the phone the installed copy, else
+  Escalation. The objectives run (success, 274 s) was counted once and the branch taken; the game was restarted with the
+  copy set up as the next mission, and the copy (6 of 8 enemies rolled) played to a success in 263 s, counted once, and
+  the fallback ended the operation.
+- **A hold reached before its objective.** "Upstairs held" fired while the phone was searched for upstairs; when the
+  phone was taken at 198.5 s, "Secure the upper floor" became active and succeeded in the same moment. Goals ask whether
+  a trigger has ever fired, so a hold done early completes a later goal at once (the run of 19 November showed the same
+  order of hold and intel). From ML-055 a zone or hold can wait for another trigger; the example's hold waits for the
+  phone.
+- **The extraction waited for the required goals** and opened only after both; the squad extracted and the run record
+  holds all three goals as succeeded.
+
 ## Not yet verified
 - Moved intel as seen by an unmodded client; HVT/intel/asset modes in co-op; maps other than
   Suburb, Mexico Depot and Georgia.

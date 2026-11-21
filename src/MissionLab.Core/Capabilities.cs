@@ -54,6 +54,7 @@ namespace MissionLab.Core
                 if (t.Chance < 100) found.Add("chance");
                 if (t.Repeat > 0f) found.Add("repeat");
                 if (t.When == TriggerPlan.OnOutcome) found.Add("outcomes");
+                if (t.Gated) found.Add("zone-after");
             }
             foreach (SpawnPlan s in plan.Spawns)
             {

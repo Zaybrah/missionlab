@@ -3,7 +3,8 @@
 // counted and the choices stay the game's), so a second page on the same fake is a reload. Checked: the operation is built
 // and shown with its branches and fallback; an end the game did not say shows a decision that is labelled as the host's and
 // sends exactly that run and branch; a scenario changed since it was pinned is never set up until it is retargeted, and the
-// progress made stays; retry and restart are sent as such.
+// progress made stays; retry and restart are sent as such; a change the game refuses is shown as saved again, even in the
+// control that still has focus.
 const windowOf = api => api.setView.constructor('return this')();
 const tick = () => new Promise(r => setTimeout(r, 0));
 const reply = (status, body) => ({ status, ok: status === 200, json: async () => body, text: async () => JSON.stringify(body), arrayBuffer: async () => new ArrayBuffer(0) });
@@ -31,6 +32,8 @@ function plugin() {
     if (url === '/api/catalogue') return reply(200, { scenarios: store.catalogue.slice(), skipped: 0 });
     if (url === '/api/operations') return reply(200, view());
     if (url === '/api/operations/save') {
+      // As Core's Operation does: a branch with neither a result nor an objective would always be taken.
+      if (body.operation.nodes.some(n => n.branches.some(x => !x.result && !x.goal))) return reply(400, { error: 'the operation cannot be used: a branch without a result or an objective would always be taken; that is what the fallback is for; nothing was saved' });
       const old = body.file ? store.files.get(body.file) : null, file = body.file || body.operation.name.toLowerCase().replace(/\s+/g, '-') + '.json', p = body.operation;
       const progress = old ? { id: old.id, next: old.next, round: old.round, steps: old.steps, armed: old.armed } : { id: 'op-1', next: p.start, round: 1, steps: [], armed: false };
       store.files.set(file, Object.assign({}, p, progress));
@@ -132,4 +135,58 @@ export default async function (h) {
   await b.operationRestart();
   const restarted = game.store.files.get('phone-job.json');
   h.check('ML-051 restart begins a new round at the start and keeps the runs on record', restarted.round === 2 && restarted.next === 'intel' && restarted.steps.length === 2 && String(b.byId('opOutcome').textContent).startsWith('Round 2. Next: Intel raid'), String(b.byId('opOutcome').textContent));
+
+  await refusedBranch(h);
+}
+
+// Just enough of the browser's elements for the rows of #opNodes: children, aria labels, listeners, value and focus.
+function fakeDom(api) {
+  const doc = windowOf(api).document;
+  class El {
+    constructor(tag) { this.tagName = String(tag).toUpperCase(); this.children = []; this.attrs = {}; this.on = {}; this.dataset = {}; this.style = {}; this.value = ''; this.className = ''; this.disabled = false; this.text = ''; }
+    get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
+    set textContent(t) { this.text = String(t); this.children = []; }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+    addEventListener(type, fn) { (this.on[type] = this.on[type] || []).push(fn); }
+    append(...xs) { this.children.push(...xs); }
+    appendChild(x) { this.children.push(x); return x; }
+    contains(x) { return x === this || this.children.some(c => c.contains(x)); }
+    all() { return this.children.flatMap(c => [c, ...c.all()]); }
+    querySelectorAll(sel) { if (sel !== '[aria-label]') throw new Error('the stand-in knows only [aria-label]'); return this.all().filter(c => 'aria-label' in c.attrs); }
+    focus() { doc.activeElement = this; }
+    async fire(type) { await Promise.all((this.on[type] || []).map(fn => fn())); }
+  }
+  const ul = new El('ul'), byId = doc.getElementById;
+  doc.getElementById = id => (id === 'opNodes' ? ul : byId(id));
+  doc.createElement = tag => new El(tag);
+  doc.activeElement = new El('body');
+  return { doc, ul, labelled: re => ul.all().find(c => re.test(c.getAttribute('aria-label') || '')) || null };
+}
+
+// 21 November, in the game: a branch set to 'any result' (and no objective) is refused by the plugin, but the select went
+// on showing 'any result' while the file kept 'a success', because the rows are not drawn while a control in them has focus.
+async function refusedBranch(h) {
+  const game = plugin();
+  const c = await linked(h, game);
+  await tick(); await tick();        // Play's catalogue read is over before the rows are drawn into the stand-in
+  const dom = fakeDom(c);
+  c.byId('opName').value = 'Phone job';
+  c.catalogue.pick = 'intel.json'; await c.operationNew();
+  c.catalogue.pick = 'quiet.json'; await c.operationAdd();
+  await c.operationAddBranch('intel');
+  const old = dom.labelled(/^Result for .* branch 1$/);
+  h.check('ML-051 the new branch shows a success, as saved', !!old && old.value === 'success' && game.store.files.get('phone-job.json').nodes[0].branches[0].result === 'success', old && old.value);
+  if (!old) return;
+  old.focus(); old.value = ''; await old.fire('change');
+  const now = dom.labelled(/^Result for .* branch 1$/), kept = game.store.files.get('phone-job.json').nodes[0].branches[0];
+  h.check('ML-051 any result on a branch without an objective is refused and the note says so', kept.result === 'success' && String(c.state.operation.note).startsWith('Not saved: ') && String(c.state.operation.note).includes('without a result or an objective'), c.state.operation.note);
+  h.check('ML-051 after the refusal the select shows the saved result, not the refused one', !!now && now !== old && now.value === 'success', now && now.value);
+  h.check('ML-051 and focus is back on the result select', dom.doc.activeElement === now, dom.doc.activeElement && dom.doc.activeElement.getAttribute('aria-label'));
+  // Typing in a field is still not drawn over by an ordinary sync, even when the operation changed meanwhile.
+  const goal = dom.labelled(/^Objective for .* branch 1$/);
+  goal.focus(); goal.value = 'pho';
+  game.store.files.get('phone-job.json').nodes[1].fallback = 'intel';
+  await c.operationRefresh();
+  h.check('ML-051 an ordinary sync leaves the field being typed in alone', dom.labelled(/^Objective for .* branch 1$/) === goal && goal.value === 'pho' && dom.doc.activeElement === goal);
 }

@@ -42,7 +42,7 @@ Rules that are never negotiable:
 
 | Schema | Writer | Output under `BepInEx/MissionLab/` |
 |---|---|---|
-| `missionlab-plan/1` (scenario); `missionlab-plan/2` = envelope `{"schema":"missionlab-plan/2","mission":{body}}`, written only when a zone/hold trigger has a shaped `area`; `missionlab-plan/3` = the same envelope, written only when the scenario has `goals` or a zone/hold trigger linked to a place (`"place": <id>`, no own `area`) | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
+| `missionlab-plan/1` (scenario); `missionlab-plan/2` = envelope `{"schema":"missionlab-plan/2","mission":{body}}`, written only when a zone/hold trigger has a shaped `area`; `missionlab-plan/3` = the same envelope, written only when the scenario has `goals` or a zone/hold trigger linked to a place (`"place": <id>`, no own `area`); `missionlab-plan/4` = the same envelope, written only when a zone/hold trigger waits for another trigger (`"after": <id>`, ML-055) | `MissionPlan.ToJson`, editor `scenarioObject` | `scenarios/*.json` (subfolders are ignored, which is how a file is switched off) |
 | `missionlab-mission/1` | `Director.WriteRecord` | `missions/last.json` + timestamped copies |
 | `missionlab-run/1` | `RunRecord` | `runs/` (pruned to 60) |
 | `missionlab-replay/1` (`semantics:4`: rows carry `who` ids, `alert` per enemy, `fire` per trigger; 0.27 adds event kinds `goal` (objective notices) and `pressure` (the pressure director's decisions) without raising `semantics`; 1–3 still open) | `Replay` | `replays/` |
@@ -177,7 +177,8 @@ Other rules for the format:
 - The error codes are fixed: `not-json wrong-type no-version(note) unknown-format future-version bad-id duplicate-id unknown-kind missing-field self-ref missing-ref unknown-value unreadable bad-area out-of-range`. Add a code only with an `invalid/*.json` fixture and `expected.json` entry that both readers pass.
 - Raise `missionlab-plan/N` only for an incompatible change. A file with a higher N is refused (`future-version`) and never rewritten. plan/2 exists because v0.23 ignores `schema` and unknown keys and would read a shaped area as its anchor circle; the `mission` envelope makes v0.23 refuse the file (no root `spawns`), tested against a verbatim copy of the v0.23 reader in `tests/Pure/Legacy/`.
 - There are two readers. The strict `ScenarioFile.Read` handles user files at mission start. The lenient `FromJson` clamps and defaults, and is used for runs, Game Master and live edits, and `CoreTest --check`.
-- plan/3 exists for `goals` and for zone/hold triggers linked to a place. v0.26 ignores unknown keys, so it would play a linked zone as its anchor circle and drop the goals and an extraction waiting for them; plan/3 makes it refuse the file (`future-version`). A file is written as plan/3 only when it uses one of them, otherwise as plan/2 or plan/1 as before; `tests/fixtures/invalid/future_version.json` is now plan/4.
+- plan/3 exists for `goals` and for zone/hold triggers linked to a place. v0.26 ignores unknown keys, so it would play a linked zone as its anchor circle and drop the goals and an extraction waiting for them; plan/3 makes it refuse the file (`future-version`). A file is written as plan/3 only when it uses one of them, otherwise as plan/2 or plan/1 as before.
+- plan/4 exists for a zone or hold with `after` (ML-055): it does not watch its area until that trigger has fired. The first 0.27.0 candidate reads `after` only on `after`/`outcome` triggers and would watch the area from the start, so plan/4 makes it refuse the file. Written only when a zone/hold has a gate; `tests/fixtures/invalid/future_version.json` is now plan/5. The gate is a dependency edge like `after`'s (circles, Completion, the graph, the inspector, module renumbering and repairs); a gate that names itself or no trigger is refused by the strict readers and dropped by the lenient one. Capability word `zone-after`.
 - The `outcome` kind (ML-047) is in places 1 to 5 above. Its `after` is a dependency edge like `after`'s (circles, Completion, the graph, module renumbering and repairs). `TriggerPlan.NeverSeen` (Core) and `outcomeNeverSeen` (editor) decide together which outcomes a trigger can never report: change both.
 - Goals (ML-046): Core `GoalBook` is the one implementation of goal states, used by Completion, Rehearsal and GameMaster; do not add a second. When a goal's success and failure come in the same step, failure wins.
 - `director.pressure` (ML-052) is optional and needs no format bump: older readers ignore it and play the mission without pacing, which is acceptable for an optional aid. Its refusals use the existing codes (`invalid/bad_pressure.json`); its capability word is `pressure`, listed whenever the plan keeps any bounds, even authored `off`, because the host can switch it on.
@@ -234,7 +235,7 @@ Other rules for the format:
   }
   ```
 - Fixtures are found by walking up from `AppContext.BaseDirectory`, so the build output must stay inside the repo.
-- **Counts at the 0.27.0 candidate:** 1643 C# checks, 1556 editor checks, 67 browser checks, 18 adapter self-test checks.
+- **Counts at 0.27.0 (released 21 November, with the fixes from its first solo run):** 1680 C# checks, 1619 editor checks, 67 browser checks, 18 adapter self-test checks.
 - **Enforced today:**
   - the `ToJson` round trip;
   - each invalid fixture gives exactly the codes and paths in `expected.json`, in order, and the file is left unchanged, in the plugin and in the editor;

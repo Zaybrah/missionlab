@@ -90,8 +90,8 @@ static class Ml036Tests
             check("evidence from an unrecorded build never confirms", !unrec.Confirmed && unrec.Words.Contains("an unrecorded build"), unrec.Words);
         }
 
-        {   // The shipped list confirms nothing on a build no evidence names yet.
-            var confirmed = Pack.Known.Where(w => Capabilities.Judge(shipped, w, "0.27.0").Confirmed).ToList();
+        {   // The shipped list confirms nothing on a build no evidence names (0.27.0 has evidence of its own since 21 November).
+            var confirmed = Pack.Known.Where(w => Capabilities.Judge(shipped, w, "0.99.0").Confirmed).ToList();
             check("a build without evidence of its own inherits no confirmation", confirmed.Count == 0, string.Join(",", confirmed));
         }
 
