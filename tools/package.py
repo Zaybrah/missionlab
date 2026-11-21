@@ -24,6 +24,8 @@ for p in refuse: print('REFUSED: ' + p)
 if refuse: sys.exit(1)
 TEXT = f"""MissionLab {version}
 An unofficial, free mod toolkit for OPERATOR. It is not made or supported by Vector Interactive.
+MIT license (BepInEx/plugins/MissionLab/LICENSE.txt); three.js beside the page is MIT too (three.LICENSE.txt).
+Source and releases: https://github.com/Zaybrah/missionlab
 
 Tried with OPERATOR {tested} and BepInEx 6 (IL2CPP build be.785). Only the host needs it; friends join without it.
 It stays out of PvP modes.
@@ -63,6 +65,7 @@ Problems
 FILES = [
     ('BepInEx/plugins/MissionLab/MissionLab.Director.dll', 'dist/MissionLab.Director.dll'),
     ('BepInEx/plugins/MissionLab/MissionLab.Recon.dll', 'dist/MissionLab.Recon.dll'),
+    ('BepInEx/plugins/MissionLab/LICENSE.txt', 'LICENSE'),
     ('BepInEx/MissionLab/web/index.html', 'tools/editor/index.html'),
     ('BepInEx/MissionLab/web/three.min.js', 'tools/editor/three.min.js'),
     ('BepInEx/MissionLab/web/three.LICENSE.txt', 'tools/editor/three.LICENSE.txt'),

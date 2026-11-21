@@ -803,7 +803,8 @@ Build: `python3 tools/build.py --refs <OPERATOR folder>` (or set `OPERATOR_REFS`
 Roslyn from the newest installed .NET SDK against the game's `dotnet`, `BepInEx/core` and `BepInEx/interop`; the game folder itself works. Built for Unity 6000.3.8f1,
 BepInEx 6.0.0-be.785, game code dated 7 July 2026.
 
-Install: unzip the release ZIP (`python3 tools/package.py` after `./build.sh`) into the OPERATOR folder. By hand: copy
+Install: download `MissionLab-<version>.zip` from [Releases](https://github.com/Zaybrah/missionlab/releases), or build it
+(`python3 tools/package.py` after `./build.sh`), and unzip it into the OPERATOR folder. By hand: copy
 both DLLs to `BepInEx/plugins/MissionLab/`, and `tools/editor/index.html` with `three.min.js` to
 `BepInEx/MissionLab/web/` for the browser link. The example scenarios land in `BepInEx/MissionLab/examples/`; copy one
 into `BepInEx/MissionLab/scenarios/` to use it.
@@ -830,3 +831,9 @@ missions carry the "cheated" flag is up to the mod.
 This is permission to make and use the mod on those conditions. It is not an endorsement:
 MissionLab is unofficial and is not made or endorsed by Vector Interactive. If you host with it,
 do so for people who know the lobby is modded.
+
+## License
+MIT: see `LICENSE`, also shipped as `BepInEx/plugins/MissionLab/LICENSE.txt`. The page's 3D library, three.js
+(`tools/editor/three.min.js`), is MIT as well, by the three.js authors (`tools/editor/three.LICENSE.txt`).
+OPERATOR's mod policy applies to anyone who shares a mod for the game, whatever this license allows: it stays free for
+everyone, with no paid access or supporter-only files, and is labelled unofficial.
